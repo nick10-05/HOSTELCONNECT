@@ -1,0 +1,28 @@
+# Local development database only. Production uses Supabase.
+services:
+  db:
+    # Same major version as Supabase, so local behaviour matches production.
+    # Confirm Supabase's version on day 3 and change this number if it differs.
+    image: postgres:17-alpine
+    container_name: hostelconnect-db
+    restart: unless-stopped
+    environment:
+      # This user owns the database and runs migrations (the "admin" credential).
+      # The limited app role is created by a migration in the next step.
+      POSTGRES_USER: hostel_admin
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-admin_password_change_me}
+      POSTGRES_DB: hostelconnect
+    ports:
+      # 127.0.0.1 so only your own computer can reach it, not the Wi-Fi network.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Named volume: data survives `docker compose down`; `down -v` wipes it.
+      - hostelconnect-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hostel_admin -d hostelconnect"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  hostelconnect-pgdata:
