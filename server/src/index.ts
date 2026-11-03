@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { createPool } from "./db";
@@ -7,10 +8,13 @@ loadDotEnv();
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
 
+const production = config.NODE_ENV === "production";
 const app = createApp({
   db,
   jwtSecret: config.JWT_SECRET,
-  production: config.NODE_ENV === "production",
+  production,
+  // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
+  clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });
 
 const server = app.listen(config.PORT, () => {

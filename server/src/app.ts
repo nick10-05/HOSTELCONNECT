@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import cookieParser from "cookie-parser";
-import express from "express";
+import express, { type Express } from "express";
 import type { Db } from "./db";
 import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
@@ -11,11 +13,14 @@ export type AppDeps = {
   jwtSecret: string;
   // Production runs behind Render's proxy, over HTTPS.
   production?: boolean;
+  // Folder of the built React app (client/dist). Given in production only; in
+  // development Vite serves the pages and forwards /api here.
+  clientDir?: string;
 };
 
 // Builds the Express app but does NOT start listening.
 // Tests import this and call it directly, so they need no open port.
-export function createApp({ db, jwtSecret, production = false }: AppDeps) {
+export function createApp({ db, jwtSecret, production = false, clientDir }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
   // Render puts one proxy in front of the app. Trusting exactly that one hop lets the
@@ -41,7 +46,33 @@ export function createApp({ db, jwtSecret, production = false }: AppDeps) {
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
 
   app.use("/api", apiNotFound);
+  if (clientDir) serveClient(app, clientDir);
   app.use(errorHandler);
 
   return app;
+}
+
+// Page and API come from the same origin, so the session cookie and the Origin check
+// need no cross-site setup.
+function serveClient(app: Express, clientDir: string): void {
+  const indexHtml = path.resolve(clientDir, "index.html");
+  // Fail at startup, not on the first visitor, if the image was built without the client.
+  if (!existsSync(indexHtml)) throw new Error(`Client build not found: ${indexHtml} is missing`);
+
+  // Vite puts a content hash in every asset name (index-Bx12ab.js), so a changed file
+  // gets a new name and the old one can be cached forever.
+  app.use("/assets", express.static(path.join(clientDir, "assets"), { maxAge: "1y", immutable: true }));
+  // An asset an old page asks for after a deploy: a plain 404, not index.html,
+  // which the browser would fail to run as JavaScript.
+  app.use("/assets", (_req, res) => {
+    res.sendStatus(404);
+  });
+  // Other files Vite copies to the root of the build (favicon and the like).
+  app.use(express.static(clientDir, { index: false }));
+  // Every other page is the React app, which picks the screen from the URL. no-cache
+  // makes the browser check for a new index.html on each visit, so a deploy shows at once.
+  app.get("/{*path}", (_req, res) => {
+    res.set("Cache-Control", "no-cache");
+    res.sendFile(indexHtml);
+  });
 }
