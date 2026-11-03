@@ -1,6 +1,8 @@
-import { Pool, types } from "pg";
+import { Pool, types, type PoolClient } from "pg";
 
 export type Db = Pool;
+// What a service function needs: the pool, or one client inside a transaction.
+export type Queryable = Pick<PoolClient, "query">;
 
 // pg returns bigint (ids, count(*), sums) as strings because they can exceed
 // JavaScript's safe integer range. Ours never get near 2^53, so parse them as numbers.

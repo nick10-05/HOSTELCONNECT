@@ -7,6 +7,7 @@ import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { authRouter } from "./routes/auth";
+import { structureRouter } from "./routes/structure";
 
 export type AppDeps = {
   db: Db;
@@ -44,6 +45,7 @@ export function createApp({ db, jwtSecret, production = false, clientDir }: AppD
   });
 
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
+  app.use("/api", structureRouter({ db, jwtSecret }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);
