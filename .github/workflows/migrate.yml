@@ -1,0 +1,48 @@
+name: Migrate production database
+
+# Run by hand from the Actions tab (Run workflow), choosing the branch whose
+# migrations to apply. Never automatic: a schema change is a deliberate step.
+# Order for a change with a new migration: run this on the branch first, then merge,
+# so the new code never runs against the old schema.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two at once (the runner also takes a database lock).
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The secrets live in the "production" environment (Settings > Environments),
+    # so only this job can read them.
+    environment: production
+    defaults:
+      run:
+        working-directory: server
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      # Only its password is used: migration 001 sets it on the hostel_app role.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Check the secrets are set
+        run: |
+          test -n "$MIGRATION_DATABASE_URL" || { echo "MIGRATION_DATABASE_URL secret is missing"; exit 1; }
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is missing"; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+      # Prints one line per migration file: "applied" or "skip". Never the URLs.
+      - run: npm run migrate

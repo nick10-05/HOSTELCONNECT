@@ -1,0 +1,26 @@
+# Render Blueprint: Render reads this file to create and configure the web service.
+# Setup steps: docs/deploy.md.
+services:
+  - type: web
+    name: hostelconnect
+    runtime: docker # builds the Dockerfile in the repo root
+    plan: free
+    # Closest Render region to India. Put the Supabase project in Singapore as well,
+    # so each request does not cross an ocean to reach the database.
+    region: singapore
+    branch: main
+    # Deploy a push to main only after GitHub Actions (CI) passed for that commit.
+    autoDeployTrigger: checksPass
+    # Render waits for this to answer 200 before switching traffic to a new deploy.
+    # It queries the database, so a deploy that cannot reach Supabase never goes live.
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Supabase connection for the hostel_app role. Entered by hand in the Render
+      # dashboard (sync: false), never written in this public file.
+      - key: DATABASE_URL
+        sync: false
+      # Render generates a long random value once. Never the placeholder from .env.example.
+      - key: JWT_SECRET
+        generateValue: true
