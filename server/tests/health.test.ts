@@ -4,6 +4,8 @@ import { createApp } from "../src/app";
 import { createPool } from "../src/db";
 import { testPool } from "./helpers/db";
 
+const SECRET = "test-secret-that-is-at-least-32-characters";
+
 describe("GET /api/health", () => {
   const db = testPool();
   // Nothing listens on port 1, so every query fails the way an unreachable database does.
@@ -14,13 +16,13 @@ describe("GET /api/health", () => {
   });
 
   it("answers 200 when the database responds", async () => {
-    const res = await request(createApp({ db })).get("/api/health");
+    const res = await request(createApp({ db, jwtSecret: SECRET })).get("/api/health");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: "ok" });
   });
 
   it("answers 503 without leaking connection details when the database is down", async () => {
-    const res = await request(createApp({ db: deadDb })).get("/api/health");
+    const res = await request(createApp({ db: deadDb, jwtSecret: SECRET })).get("/api/health");
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe("db_unavailable");
     expect(JSON.stringify(res.body)).not.toContain("127.0.0.1");

@@ -7,7 +7,13 @@ loadDotEnv();
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
 
-const server = createApp({ db }).listen(config.PORT, () => {
+const app = createApp({
+  db,
+  jwtSecret: config.JWT_SECRET,
+  production: config.NODE_ENV === "production",
+});
+
+const server = app.listen(config.PORT, () => {
   console.log(`HostelConnect server listening on port ${config.PORT}`);
 });
 
