@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { logout, me, type User } from "./api/auth";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
+import { StructurePage } from "./owner/StructurePage";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
 
@@ -39,7 +40,7 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // Placeholder until the owner and student pages exist (day 3 onwards).
+  // The owner's only page so far; students get a placeholder until their pages exist.
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -55,9 +56,13 @@ export function App() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <p className="text-slate-700">
-          Signed in as <strong>{user.name}</strong> ({user.role}).
-        </p>
+        {user.role === "owner" ? (
+          <StructurePage />
+        ) : (
+          <p className="text-slate-700">
+            Signed in as <strong>{user.name}</strong> ({user.role}).
+          </p>
+        )}
       </main>
     </div>
   );
