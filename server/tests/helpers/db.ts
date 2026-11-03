@@ -82,3 +82,37 @@ export async function insertStudent(c: Queryable, opts: UserOptions = {}): Promi
   );
   return rows[0].id;
 }
+
+// A building with one floor, one room on that floor and two beds (A, B) in the room,
+// written straight to the tables so a test does not depend on the code it checks.
+export async function insertStructure(c: Queryable) {
+  const id = async (sql: string, params: unknown[]) =>
+    (await c.query<{ id: number }>(sql, params)).rows[0].id;
+  const buildingName = `Building ${randomUUID()}`;
+  const building = await id("INSERT INTO buildings (name) VALUES ($1) RETURNING id", [buildingName]);
+  const floor = await id("INSERT INTO floors (building_id, number) VALUES ($1, 1) RETURNING id", [
+    building,
+  ]);
+  const room = await id(
+    "INSERT INTO rooms (building_id, floor_id, room_number) VALUES ($1, $2, '101') RETURNING id",
+    [building, floor],
+  );
+  const bed1 = await id("INSERT INTO beds (room_id, bed_number) VALUES ($1, 'A') RETURNING id", [room]);
+  const bed2 = await id("INSERT INTO beds (room_id, bed_number) VALUES ($1, 'B') RETURNING id", [room]);
+  return { building, buildingName, floor, room, bed1, bed2 };
+}
+
+// A current stay (or an ended one, with endedOn) for a new student.
+export async function insertStay(
+  c: Queryable,
+  at: { building: number; room?: number; bed?: number; endedOn?: string },
+): Promise<number> {
+  const owner = await insertOwner(c);
+  const student = await insertStudent(c);
+  const { rows } = await c.query<{ id: number }>(
+    `INSERT INTO stays (student_id, building_id, room_id, bed_id, started_on, ended_on, created_by)
+     VALUES ($1, $2, $3, $4, '2026-01-14', $5, $6) RETURNING id`,
+    [student, at.building, at.room ?? null, at.bed ?? null, at.endedOn ?? null, owner],
+  );
+  return rows[0].id;
+}
