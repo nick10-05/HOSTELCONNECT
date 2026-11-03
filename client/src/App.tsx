@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { logout, me, type User } from "./api/auth";
+import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
@@ -14,6 +15,11 @@ export function App() {
       .catch(() => setSession({ status: "anonymous" }));
   }, []);
 
+  const signIn = (user: User) => setSession({ status: "signed-in", user });
+  const signOut = () => {
+    void logout().finally(() => setSession({ status: "anonymous" }));
+  };
+
   if (session.status === "loading") {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-50 text-sm text-slate-500">
@@ -23,11 +29,17 @@ export function App() {
   }
 
   if (session.status === "anonymous") {
-    return <LoginPage onLoggedIn={(user) => setSession({ status: "signed-in", user })} />;
+    return <LoginPage onLoggedIn={signIn} />;
+  }
+
+  const { user } = session;
+
+  // A temporary password unlocks nothing else (the server enforces the same rule).
+  if (user.mustChangePassword) {
+    return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
   // Placeholder until the owner and student pages exist (day 3 onwards).
-  const { user } = session;
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -35,9 +47,7 @@ export function App() {
           <span className="font-semibold text-slate-900">HostelConnect</span>
           <button
             type="button"
-            onClick={() => {
-              void logout().finally(() => setSession({ status: "anonymous" }));
-            }}
+            onClick={signOut}
             className="text-sm text-slate-600 hover:text-slate-900"
           >
             Sign out
@@ -48,9 +58,6 @@ export function App() {
         <p className="text-slate-700">
           Signed in as <strong>{user.name}</strong> ({user.role}).
         </p>
-        {user.mustChangePassword && (
-          <p className="mt-2 text-sm text-amber-700">You must change your temporary password.</p>
-        )}
       </main>
     </div>
   );

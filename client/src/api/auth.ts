@@ -25,6 +25,16 @@ export async function me(): Promise<User> {
   return user;
 }
 
+// POST /api/auth/change-password: returns the user with mustChangePassword false.
+// Wrong current password: 400 "wrong_password"; same as current: 400 "same_password".
+export async function changePassword(currentPassword: string, newPassword: string): Promise<User> {
+  const { user } = await apiFetch<{ user: User }>("/api/auth/change-password", {
+    method: "POST",
+    body: { currentPassword, newPassword },
+  });
+  return user;
+}
+
 // POST /api/auth/logout: clears the session cookie.
 export async function logout(): Promise<void> {
   await apiFetch("/api/auth/logout", { method: "POST" });
