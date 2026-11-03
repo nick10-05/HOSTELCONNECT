@@ -1,0 +1,25 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# private keys and backups
+*.key
+keys.txt
+*.age
+*.sql.gz
+credentials*.csv
+credentials*.txt
+backups/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
