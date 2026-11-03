@@ -3,6 +3,7 @@ import express from "express";
 import type { Db } from "./db";
 import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
+import { requireSameOrigin } from "./middleware/sameOrigin";
 import { authRouter } from "./routes/auth";
 
 export type AppDeps = {
@@ -20,6 +21,8 @@ export function createApp({ db, jwtSecret, production = false }: AppDeps) {
   // Render puts one proxy in front of the app. Trusting exactly that one hop lets the
   // rate limiter see each visitor's real IP instead of the proxy's.
   if (production) app.set("trust proxy", 1);
+  // Before the body parser, so a refused write is not even read.
+  app.use("/api", requireSameOrigin);
   app.use(express.json({ limit: "100kb" }));
   app.use(cookieParser());
 
