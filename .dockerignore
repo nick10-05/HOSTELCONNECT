@@ -1,0 +1,25 @@
+# Everything listed here never reaches the Docker build, so it cannot end up in the
+# image. Secrets especially: the image must be safe to publish.
+
+# secrets and keys
+.env
+.env.*
+*.key
+keys.txt
+*.age
+*.sql.gz
+backups/
+credentials*
+
+# rebuilt inside the image
+**/node_modules
+**/dist
+**/coverage
+
+# not needed to build
+.git
+.github
+.claude
+.vscode
+.idea
+**/*.log
