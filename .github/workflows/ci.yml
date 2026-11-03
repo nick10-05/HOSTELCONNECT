@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Read-only token: this workflow only checks code.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run still going for the older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+
+    services:
+      # Same image as docker-compose.yml. A throwaway database that exists only for this run.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: hostel_admin
+          POSTGRES_PASSWORD: ci_admin_password
+          POSTGRES_DB: hostelconnect
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hostel_admin -d hostelconnect"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    # CI-only values for a database that is deleted when the run ends; not real secrets.
+    env:
+      DATABASE_URL: postgres://hostel_app:ci_app_password@localhost:5432/hostelconnect
+      MIGRATION_DATABASE_URL: postgres://hostel_admin:ci_admin_password@localhost:5432/hostelconnect
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-characters
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Apply migrations to an empty database
+        run: npm run migrate
+      - name: A second run must change nothing
+        run: npm run migrate
+      - run: npm test
+      - run: npm run build
+      - name: Check dependencies for known vulnerabilities
+        run: npm audit --audit-level=high
