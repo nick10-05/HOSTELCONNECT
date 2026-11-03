@@ -1,0 +1,73 @@
+name: Backup database
+
+# Nightly encrypted dump of the production database, kept as a workflow artifact.
+#
+# The dump is encrypted with age to the public key in the AGE_PUBLIC_KEY secret before
+# it is stored. Only the matching private key, kept offline by the owner, can open it.
+# That matters because this repository is public: anyone signed in to GitHub can
+# download its artifacts.
+#
+# Restore drill (do it after the first backup and then monthly): docs/deploy.md.
+# GitHub turns off scheduled workflows in a public repository after 60 days without
+# any commit; it emails a warning first. Re-enable it from the Actions tab.
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 India time
+  workflow_dispatch: # "Run workflow" button, e.g. before a risky change
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      # hostel_app through Supabase's session pooler, with sslmode=require (pg_dump
+      # reads the URL the libpq way). hostel_app can read every table, which is all a
+      # dump needs, so the admin password never has to be here.
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
+    steps:
+      - name: Check the secrets are set
+        run: |
+          test -n "$BACKUP_DATABASE_URL" || { echo "BACKUP_DATABASE_URL secret is missing"; exit 1; }
+          case "$AGE_PUBLIC_KEY" in age1*) ;; *) echo "AGE_PUBLIC_KEY must be an age1... public key"; exit 1;; esac
+
+      - name: Install age
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Dump and encrypt
+        run: |
+          set -euo pipefail
+          file="hostelconnect-$(date -u +%Y-%m-%dT%H%MZ).dump.age"
+          # pg_dump must be at least the server's major version, so it runs from the
+          # same image as docker-compose.yml and CI. Only our schema; Supabase's own
+          # schemas are not ours to restore.
+          # Custom format (-Fc) is compressed, and pg_restore can load all of it (the
+          # restore drill) or only the rows into a freshly migrated database (a real
+          # recovery, docs/deploy.md). Owners and grants come from the migrations.
+          # The unencrypted dump only ever exists inside this pipe, never as a file.
+          docker run --rm -e BACKUP_DATABASE_URL postgres:17-alpine \
+            sh -c 'exec pg_dump "$BACKUP_DATABASE_URL" --format=custom --schema=public --no-owner --no-privileges' \
+            | age --encrypt --recipient "$AGE_PUBLIC_KEY" > "$file"
+          # An empty or failed dump would still make a small file; a real one is larger.
+          size=$(stat -c %s "$file")
+          echo "Backup $file: $size bytes"
+          test "$size" -gt 2000 || { echo "Backup is suspiciously small"; exit 1; }
+          echo "BACKUP_FILE=$file" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          if-no-files-found: error
+          # The longest GitHub keeps artifacts: about 90 nightly backups at any time.
+          retention-days: 90
+          # Already compressed and encrypted; zipping again gains nothing.
+          compression-level: 0
