@@ -22,7 +22,9 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     sendError(res, 413, "payload_too_large", "Request body is too large");
     return;
   }
-  // Log the details for us; the client only learns that something failed.
-  console.error(err);
+  // Log the stack for us; the client only learns that something failed. Never log the
+  // whole error object: a database error's `detail` quotes the offending values, such
+  // as "Key (lower(email))=(asha@example.com) already exists".
+  console.error(err instanceof Error ? (err.stack ?? err.message) : "Non-Error value thrown");
   sendError(res, 500, "internal", "Something went wrong");
 };
