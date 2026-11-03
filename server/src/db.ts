@@ -1,6 +1,10 @@
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 
 export type Db = Pool;
+
+// pg returns bigint (ids, count(*), sums) as strings because they can exceed
+// JavaScript's safe integer range. Ours never get near 2^53, so parse them as numbers.
+types.setTypeParser(types.builtins.INT8, (value) => Number(value));
 
 // One pool for the whole process, passed into createApp so tests can hand in their own.
 // Kept small: Supabase's free pooler allows only a limited number of connections.

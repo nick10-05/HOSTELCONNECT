@@ -2,7 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // Loads the repo-root .env locally; in CI the variables come from the workflow.
+    // Recreates and migrates the *_test database once per run.
+    globalSetup: ["tests/globalSetup.ts"],
+    // Loads the repo-root .env locally and points DATABASE_URL at the test database.
     setupFiles: ["tests/setup.ts"],
   },
 });
