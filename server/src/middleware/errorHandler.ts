@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
-import { sendError } from "../lib/http";
+import { HttpError, sendError } from "../lib/http";
 
 // Any /api path no route matched.
 export const apiNotFound: RequestHandler = (_req, res) => {
@@ -10,6 +10,11 @@ export const apiNotFound: RequestHandler = (_req, res) => {
 export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   if (res.headersSent) {
     next(err);
+    return;
+  }
+  // A refusal a service meant to send, e.g. 409 "room_in_use".
+  if (err instanceof HttpError) {
+    sendError(res, err.status, err.code, err.message);
     return;
   }
   // Errors raised by express.json() for a broken or oversized body.

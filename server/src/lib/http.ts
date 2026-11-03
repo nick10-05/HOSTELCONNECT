@@ -6,6 +6,20 @@ export function sendError(res: Response, status: number, code: string, message: 
   res.status(status).json({ error: { code, message } });
 }
 
+// Thrown by service functions for an expected refusal (not found, already exists, in
+// use). Services know nothing about Express; errorHandler turns this into the normal
+// error answer. Anything else thrown is a bug and becomes a 500.
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 // Validates the request body. On failure it answers 400 and returns undefined, so a
 // route reads: `const body = parseBody(schema, req, res); if (!body) return;`
 // The message names fields and problems only, never the submitted values.

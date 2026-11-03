@@ -2,6 +2,7 @@ import { format } from "node:util";
 import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../src/lib/http";
 import { errorHandler } from "../src/middleware/errorHandler";
 
 afterEach(() => {
@@ -42,6 +43,16 @@ describe("errorHandler", () => {
 
     expect(printed(log)).toContain("users_email_lower_key");
     expect(printed(log)).not.toContain("asha@example.com");
+  });
+
+  it("answers an HttpError with its own status and code, without logging it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await request(throwing(new HttpError(409, "room_in_use", "Room is in use"))).get(
+      "/boom",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: { code: "room_in_use", message: "Room is in use" } });
+    expect(log).not.toHaveBeenCalled();
   });
 
   it("does not print a thrown non-Error value", async () => {
