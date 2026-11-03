@@ -1,0 +1,139 @@
+import type { RequestHandler } from "express";
+
+import type { Db } from "../db";
+
+import { verifySession, type Role } from "../lib/token";
+
+export const SESSION_COOKIE = "hc_session";
+
+export type AuthUser = {
+  id: number;
+  role: Role;
+  mustChangePassword: boolean;
+};
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthUser;
+    }
+  }
+}
+
+export type AuthDeps = { db: Db; jwtSecret: string };
+
+export type AuthOptions = {
+  allowTemporaryPassword?: boolean;
+};
+
+export function requireAuth(
+  deps: AuthDeps,
+  options: AuthOptions = {}
+): RequestHandler {
+  return async (req, res, next) => {
+    try {
+      // 1. Read session cookie
+      const token = req.cookies?.[SESSION_COOKIE];
+
+      if (!token) {
+        res.status(401).json({
+          error: {
+            code: "unauthenticated",
+            message: "Authentication required",
+          },
+        });
+        return;
+      }
+
+      // 2. Verify JWT
+      const claims = verifySession(token, deps.jwtSecret);
+
+      if (!claims) {
+        res.status(401).json({
+          error: {
+            code: "unauthenticated",
+            message: "Invalid or expired session",
+          },
+        });
+        return;
+      }
+
+      // 3. Load current user from database
+      const result = await deps.db.query<{
+        id: number;
+        role: Role;
+        must_change_password: boolean;
+        is_active: boolean;
+      }>(
+        `SELECT id, role, must_change_password, is_active
+         FROM users
+         WHERE id = $1`,
+        [claims.userId]
+      );
+
+      const user = result.rows[0];
+
+      // 4. Check user exists and is active
+      if (!user || !user.is_active) {
+        res.status(401).json({
+          error: {
+            code: "unauthenticated",
+            message: "User not found or inactive",
+          },
+        });
+        return;
+      }
+
+      // 5. Check temporary password restriction
+      if (
+        user.must_change_password &&
+        options.allowTemporaryPassword !== true
+      ) {
+        res.status(403).json({
+          error: {
+            code: "password_change_required",
+            message: "You must change your temporary password",
+          },
+        });
+        return;
+      }
+
+      // 6. Attach database user to request
+      req.user = {
+        id: user.id,
+        role: user.role,
+        mustChangePassword: user.must_change_password,
+      };
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+export function requireRole(role: Role): RequestHandler {
+  return (req, res, next) => {
+    if (!req.user) {
+      res.status(401).json({
+        error: {
+          code: "unauthenticated",
+          message: "Authentication required",
+        },
+      });
+      return;
+    }
+
+    if (req.user.role !== role) {
+      res.status(403).json({
+        error: {
+          code: "forbidden",
+          message: "You do not have permission to access this resource",
+        },
+      });
+      return;
+    }
+
+    next();
+  };
+}
