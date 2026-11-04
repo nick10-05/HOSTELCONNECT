@@ -1,28 +1,37 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { getStudent, type StudentProfile, type TransferredStay } from "../api/students";
+import { getStudent, type Admission, type StudentProfile, type TransferredStay } from "../api/students";
 import { hostelToday } from "./admissionForm";
 import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeText } from "./format";
-import { secondaryButton } from "./styles";
+import { MoveOutConfirm } from "./MoveOutConfirm";
+import { ReactivateForm } from "./ReactivateForm";
+import { primaryButton, secondaryButton } from "./styles";
+import { TemporaryPassword } from "./TemporaryPassword";
 import { TransferForm } from "./TransferForm";
 
-// One student's profile for the owner (design doc, section 5), with the transfer form
-// (day 5). Deactivation arrives later on day 5; fee history on day 9.
-// Phone numbers appear only here, never in the directory or the page address.
+// One student's profile for the owner (design doc, section 5), with the day 5 actions:
+// transfer and move out for a current student, reactivate for a former one. Fee history
+// arrives on day 9. Phone numbers appear only here, never in the directory or the page
+// address.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
+
+type Action = "transfer" | "moveOut" | "reactivate";
 
 export function StudentProfilePage() {
   const { id } = useParams();
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [transferring, setTransferring] = useState(false);
-  // What the last transfer did, shown until the owner starts another.
+  // The action form that is open, if any; only one at a time.
+  const [action, setAction] = useState<Action | null>(null);
+  // What the last action did, shown until the owner starts another.
   const [notice, setNotice] = useState<string | null>(null);
-  // The profile could not be reloaded after a saved transfer; the page keeps the old one.
+  // The profile could not be reloaded after a saved action; the page keeps the old one.
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  // After a reactivation: the temporary password, held only until the owner presses Done.
+  const [reactivated, setReactivated] = useState<Admission | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -36,23 +45,31 @@ export function StudentProfilePage() {
     };
   }, [id]);
 
-  // After a transfer: close the form, say what happened and show the new place and history.
+  // After a saved action: close the form and show the profile as it is now. The action
+  // is saved whatever happens here, so a failed reload must not replace the page (and
+  // the notice) with an error.
+  const refresh = (what: string) => {
+    setAction(null);
+    getStudent(Number(id))
+      .then(setStudent)
+      .catch((err: unknown) =>
+        setRefreshError(`The page could not be refreshed: ${errorText(err)} Reload the page to see ${what}.`),
+      );
+  };
+
+  const open = (next: Action) => {
+    setNotice(null);
+    setRefreshError(null);
+    setAction(next);
+  };
+
   const transferred = (result: TransferredStay) => {
-    setTransferring(false);
     setNotice(
       result.kind === "reassigned"
         ? `Room and bed changed. The stay still starts on ${formatDate(result.startedOn)}.`
         : "Transferred. The new stay starts today.",
     );
-    // The transfer is saved whatever happens here, so a failed reload must not replace the
-    // page (and the notice) with an error.
-    getStudent(Number(id))
-      .then(setStudent)
-      .catch((err: unknown) =>
-        setRefreshError(
-          `The page could not be refreshed: ${errorText(err)} Reload the page to see the new stay.`,
-        ),
-      );
+    refresh("the new stay");
   };
 
   const back = (
@@ -131,31 +148,66 @@ export function StudentProfilePage() {
         </p>
       )}
 
-      {s.isActive &&
-        s.currentStay &&
-        (transferring ? (
-          <TransferForm
-            studentId={s.id}
-            stay={s.currentStay}
-            onDone={transferred}
-            onCancel={() => setTransferring(false)}
-          />
-        ) : (
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setNotice(null);
-                setRefreshError(null);
-                setTransferring(true);
-              }}
-              className={secondaryButton}
-            >
+      {reactivated ? (
+        <section
+          aria-labelledby="reactivated-heading"
+          className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"
+        >
+          <h2 id="reactivated-heading" className="text-sm font-semibold text-slate-700">
+            Student reactivated
+          </h2>
+          <p className="text-slate-700">
+            <strong>{reactivated.student.name}</strong> can log in again now; the new stay
+            starts on {formatDate(reactivated.student.joiningDate)}.
+          </p>
+          <TemporaryPassword password={reactivated.temporaryPassword} />
+          {/* Done forgets the password: it is never shown again. */}
+          <button type="button" onClick={() => setReactivated(null)} className={primaryButton}>
+            Done
+          </button>
+        </section>
+      ) : action === "transfer" && s.currentStay ? (
+        <TransferForm studentId={s.id} stay={s.currentStay} onDone={transferred} onCancel={() => setAction(null)} />
+      ) : action === "moveOut" ? (
+        <MoveOutConfirm
+          studentId={s.id}
+          name={s.name}
+          stay={s.currentStay}
+          onDone={() => {
+            setNotice(`Moved out. ${s.name} can no longer log in.`);
+            refresh("the change");
+          }}
+          onCancel={() => setAction(null)}
+        />
+      ) : action === "reactivate" ? (
+        <ReactivateForm
+          studentId={s.id}
+          leftOn={s.deactivatedAt}
+          onDone={(result) => {
+            setReactivated(result);
+            refresh("the change");
+          }}
+          onCancel={() => setAction(null)}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          {s.isActive && s.currentStay && (
+            <button type="button" onClick={() => open("transfer")} className={secondaryButton}>
               {/* A stay that has not started is only reassigned (decided on day 5). */}
               {s.currentStay.startedOn > hostelToday() ? "Change room or bed" : "Transfer"}
             </button>
-          </div>
-        ))}
+          )}
+          {s.isActive ? (
+            <button type="button" onClick={() => open("moveOut")} className={secondaryButton}>
+              Move out
+            </button>
+          ) : (
+            <button type="button" onClick={() => open("reactivate")} className={secondaryButton}>
+              Reactivate
+            </button>
+          )}
+        </div>
+      )}
 
       <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 id="stay-history" className="text-sm font-semibold text-slate-700">

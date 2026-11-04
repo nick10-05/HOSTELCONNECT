@@ -88,43 +88,8 @@ export async function admitStudent(
     await c.query("BEGIN");
     transactionStarted = true;
 
-    // 1. Check whether the building exists.
-    const building = await c.query(
-      "SELECT id FROM buildings WHERE id = $1",
-      [input.buildingId],
-    );
-
-    if (building.rowCount === 0) {
-      throw new HttpError(404, "building_not_found", "The selected building was not found.");
-    }
-
-    // 2. If a room was provided, verify that it belongs to this building.
-    if (input.roomId !== null) {
-      const room = await c.query(
-        "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
-        [input.roomId, input.buildingId],
-      );
-
-      if (room.rowCount === 0) {
-        throw new HttpError(404, "room_not_found", "The selected room was not found in this building.");
-      }
-    }
-
-    // 3. If a bed was provided, verify its room and active status.
-    if (input.bedId !== null) {
-      const bed = await c.query<{ id: number; is_active: boolean }>(
-        "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
-        [input.bedId, input.roomId],
-      );
-
-      if (bed.rowCount === 0) {
-        throw new HttpError(404, "bed_not_found", "The selected bed was not found in this room.");
-      }
-
-      if (!bed.rows[0].is_active) {
-        throw new HttpError(409, "bed_retired", "The selected bed is retired and cannot be assigned.");
-      }
-    }
+    // 1 to 3. Check the building, and the room and bed if given.
+    await checkPlace(c, input);
 
     // 4 and 5. Create the student account and the first stay.
     const studentId = await insertStudentWithStay(c, ownerId, input, passwordHash);
@@ -225,6 +190,57 @@ export async function insertStudentWithStay(
   );
 
   return studentId;
+}
+
+// Checks a place before a stay is written there, inside the caller's transaction:
+// admission, transfer and reactivation all apply exactly these rules (refactored out of
+// admitStudent and transferStudent on day 5, unchanged).
+//   404 building_not_found  the building does not exist
+//   404 room_not_found      the room does not exist or is in another building
+//   404 bed_not_found       the bed does not exist or is in another room
+//   409 bed_retired         the bed is retired (no foreign key looks at beds.is_active)
+// An occupied bed is not checked here: the unique index refuses the stay's INSERT or
+// UPDATE, which stays right when two requests race for the same bed.
+async function checkPlace(
+  c: Queryable,
+  place: { buildingId: number; roomId: number | null; bedId: number | null },
+): Promise<void> {
+  const building = await c.query(
+    "SELECT id FROM buildings WHERE id = $1",
+    [place.buildingId],
+  );
+
+  if (building.rowCount === 0) {
+    throw new HttpError(404, "building_not_found", "The selected building was not found.");
+  }
+
+  // If a room was provided, verify that it belongs to this building.
+  if (place.roomId !== null) {
+    const room = await c.query(
+      "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
+      [place.roomId, place.buildingId],
+    );
+
+    if (room.rowCount === 0) {
+      throw new HttpError(404, "room_not_found", "The selected room was not found in this building.");
+    }
+  }
+
+  // If a bed was provided, verify its room and active status.
+  if (place.bedId !== null) {
+    const bed = await c.query<{ id: number; is_active: boolean }>(
+      "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
+      [place.bedId, place.roomId],
+    );
+
+    if (bed.rowCount === 0) {
+      throw new HttpError(404, "bed_not_found", "The selected bed was not found in this room.");
+    }
+
+    if (!bed.rows[0].is_active) {
+      throw new HttpError(409, "bed_retired", "The selected bed is retired and cannot be assigned.");
+    }
+  }
 }
 
 // ---- Transfer (owner only) ----
@@ -343,59 +359,8 @@ export async function transferStudent(
 
     const oldStay = current.rows[0];
 
-    // 3. Check that the destination building exists.
-    const building = await c.query(
-      "SELECT id FROM buildings WHERE id = $1",
-      [to.buildingId],
-    );
-
-    if (building.rowCount === 0) {
-      throw new HttpError(
-        404,
-        "building_not_found",
-        "The selected building was not found.",
-      );
-    }
-
-    // 4. If a room was provided, verify that it belongs to the building.
-    if (to.roomId !== null) {
-      const room = await c.query(
-        "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
-        [to.roomId, to.buildingId],
-      );
-
-      if (room.rowCount === 0) {
-        throw new HttpError(
-          404,
-          "room_not_found",
-          "The selected room was not found in this building.",
-        );
-      }
-    }
-
-    // 5. If a bed was provided, verify its room and active status.
-    if (to.bedId !== null) {
-      const bed = await c.query<{ id: number; is_active: boolean }>(
-        "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
-        [to.bedId, to.roomId],
-      );
-
-      if (bed.rowCount === 0) {
-        throw new HttpError(
-          404,
-          "bed_not_found",
-          "The selected bed was not found in this room.",
-        );
-      }
-
-      if (!bed.rows[0].is_active) {
-        throw new HttpError(
-          409,
-          "bed_retired",
-          "The selected bed is retired and cannot be assigned.",
-        );
-      }
-    }
+    // 3 to 5. Check the destination building, and the room and bed if given.
+    await checkPlace(c, to);
 
     // 6. Refuse a move to the exact same building, room and bed.
     if (
@@ -495,6 +460,260 @@ export async function transferStudent(
         409,
         "stay_started",
         "This student's stay has just started. Please try the transfer again.",
+      );
+    }
+
+    throw err;
+  } finally {
+    c.release(rollbackFailed);
+  }
+}
+
+// ---- Moving out and coming back (owner only) ----
+
+// Moves a student out (design doc, sections 3 and 6), all or nothing: the account is
+// deactivated, so login and every request stop at once (requireAuth checks is_active),
+// and the current stay ends. Complaints and fees stay; nothing is deleted.
+//
+// - is_active = false, deactivated_at = now().
+// - The current stay ends today. A stay that has not started (a future joining date)
+//   ends on its own start date instead, since ended_on may not come before started_on
+//   (decided on day 5: a booking cancelled before arrival).
+// - A student without a current stay is still deactivated.
+// `today` is India's date ('YYYY-MM-DD'); the route passes hostelToday(), tests a fixed day.
+//
+// The refusals (status, code):
+//   404 student_not_found   no student with this id (an owner's id counts as missing)
+//   409 student_inactive    the student has already moved out
+// Locking: lock the student's users row first, as transferStudent does, so a move-out and
+// a transfer (or two move-outs) of the same student run one after the other.
+// Tests: tests/deactivation.test.ts.
+export async function deactivateStudent(db: Db, studentId: number, today: string): Promise<void> {
+  const c = await db.connect();
+  let transactionStarted = false;
+  let rollbackFailed = false;
+
+  try {
+    await c.query("BEGIN");
+    transactionStarted = true;
+
+    // Lock the student first, so a transfer and a move-out cannot interleave.
+    const student = await c.query<{ isActive: boolean }>(
+      `SELECT is_active AS "isActive"
+       FROM users
+       WHERE id = $1 AND role = 'student'
+       FOR UPDATE`,
+      [studentId],
+    );
+
+    if (student.rowCount === 0) {
+      throw new HttpError(404, "student_not_found", "That student does not exist.");
+    }
+
+    if (!student.rows[0].isActive) {
+      throw new HttpError(409, "student_inactive", "This student has already moved out.");
+    }
+
+    // Deactivate the account. requireAuth and login both check is_active.
+    await c.query(
+      `UPDATE users
+       SET is_active = false, deactivated_at = now()
+       WHERE id = $1`,
+      [studentId],
+    );
+
+    // End the current stay. A future stay ends on its own start date so the
+    // database never receives an ended_on earlier than started_on.
+    await c.query(
+      `UPDATE stays
+       SET ended_on = GREATEST(started_on, $1::date)
+       WHERE student_id = $2 AND ended_on IS NULL`,
+      [today, studentId],
+    );
+
+    await c.query("COMMIT");
+    transactionStarted = false;
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await c.query("ROLLBACK");
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+
+    throw err;
+  } finally {
+    c.release(rollbackFailed);
+  }
+}
+
+// What the owner gives when a former student comes back. Already validated by the route:
+// the joining date is at most MAX_DAYS_AHEAD days ahead, and a bed comes with its room.
+export type ReactivationInput = {
+  joiningDate: string; // 'YYYY-MM-DD'
+  buildingId: number;
+  roomId: number | null;
+  bedId: number | null;
+};
+
+// Brings a former student back (design doc, sections 5, 6 and 9), all or nothing. Used by
+// the owner directly, and later by the approval of a rejoin request.
+//
+// - is_active = true, deactivated_at = NULL, joining_date = the new date (the fee cycle
+//   follows it), a new temporary password (only its hash stored) and
+//   must_change_password = true.
+// - A new stay starts on the joining date in the given place, created_by the owner.
+// - Everything else on the account (name, email, phones, category, food, fee) is kept.
+// - Returns the same shape as admitStudent, with the temporary password shown once.
+//
+// The refusals (status, code):
+//   404 student_not_found       no student with this id (an owner's id counts as missing)
+//   409 student_active          the student is already current
+//   409 joining_before_leaving  the joining date is before the move-out day
+//                               (India date from deactivated_at), falling back to
+//                               the latest ended_on when deactivated_at is empty.
+//   404 building_not_found  \
+//   404 room_not_found       > checkPlace, as at admission
+//   404 bed_not_found        |
+//   409 bed_retired         /
+//   409 bed_occupied        another student's current stay holds the bed (unique index)
+// Locking: lock the student's users row first, as in transferStudent.
+// Tests: tests/reactivation.test.ts.
+export async function reactivateStudent(
+  db: Db,
+  ownerId: number,
+  studentId: number,
+  input: ReactivationInput,
+): Promise<Admission> {
+  // Generate and hash the new temporary password before opening the transaction.
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordHash = await hashPassword(temporaryPassword);
+
+  const c = await db.connect();
+  let transactionStarted = false;
+  let rollbackFailed = false;
+
+  try {
+    await c.query("BEGIN");
+    transactionStarted = true;
+
+    // Lock the student first, matching transferStudent and deactivateStudent.
+    const student = await c.query<{
+      id: number;
+      name: string;
+      email: string;
+      isActive: boolean;
+    }>(
+      `SELECT id, name, email, is_active AS "isActive"
+       FROM users
+       WHERE id = $1 AND role = 'student'
+       FOR UPDATE`,
+      [studentId],
+    );
+
+    if (student.rowCount === 0) {
+      throw new HttpError(404, "student_not_found", "That student does not exist.");
+    }
+
+    const formerStudent = student.rows[0];
+
+    if (formerStudent.isActive) {
+      throw new HttpError(409, "student_active", "This student is already active.");
+    }
+
+    // Use the actual move-out day when available. MAX(ended_on) alone is
+    // insufficient because a future booking cancelled before arrival ends on
+    // its scheduled start date, not on the day the student moved out.
+    const lastStay = await c.query<{ leftOn: string | null }>(
+      `SELECT to_char(
+                COALESCE(
+                  (u.deactivated_at AT TIME ZONE 'Asia/Kolkata')::date,
+                  (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id)
+                ),
+                'YYYY-MM-DD'
+              ) AS "leftOn"
+       FROM users u
+       WHERE u.id = $1`,
+      [studentId],
+    );
+
+    const leftOn = lastStay.rows[0]?.leftOn ?? null;
+
+    if (leftOn !== null && input.joiningDate < leftOn) {
+      throw new HttpError(
+        409,
+        "joining_before_leaving",
+        "The joining date cannot be before the student's last leaving date.",
+      );
+    }
+
+    // Apply the same building, room, bed and retired-bed rules as admission.
+    await checkPlace(c, input);
+
+    // Reactivate the existing account without changing its other personal details.
+    await c.query(
+      `UPDATE users
+       SET is_active = true,
+           deactivated_at = NULL,
+           joining_date = $1,
+           password_hash = $2,
+           must_change_password = true
+       WHERE id = $3`,
+      [input.joiningDate, passwordHash, studentId],
+    );
+
+    // Keep all previous stays as history and create a new stay for this return.
+    await c.query(
+      `INSERT INTO stays (
+         student_id, building_id, room_id, bed_id, started_on, created_by
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        studentId,
+        input.buildingId,
+        input.roomId,
+        input.bedId,
+        input.joiningDate,
+        ownerId,
+      ],
+    );
+
+    await c.query("COMMIT");
+    transactionStarted = false;
+
+    return {
+      student: {
+        id: formerStudent.id,
+        name: formerStudent.name,
+        email: formerStudent.email,
+        joiningDate: input.joiningDate,
+        buildingId: input.buildingId,
+        roomId: input.roomId,
+        bedId: input.bedId,
+      },
+      temporaryPassword,
+    };
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await c.query("ROLLBACK");
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+
+    // Convert the occupied-bed unique-index error into an owner-friendly 409.
+    const pgError = err as { code?: string; constraint?: string };
+
+    if (
+      pgError.code === "23505" &&
+      pgError.constraint === "stays_one_current_per_bed"
+    ) {
+      throw new HttpError(
+        409,
+        "bed_occupied",
+        "The selected bed is already occupied.",
       );
     }
 

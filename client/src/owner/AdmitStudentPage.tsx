@@ -13,7 +13,8 @@ import {
 } from "./admissionForm";
 import { WEEKDAYS } from "./format";
 import { PlacePicker, withPlaceChange } from "./PlacePicker";
-import { inputClass, primaryButton, secondaryButton } from "./styles";
+import { inputClass, primaryButton } from "./styles";
+import { TemporaryPassword } from "./TemporaryPassword";
 
 // The owner's "Admit student" screen (design doc, section 9). Room and bed are offered
 // only where the owner has built them. On success the temporary password is shown once,
@@ -338,14 +339,6 @@ function Admitted({
   buildingName?: string;
   onNext: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard
-      .writeText(admission.temporaryPassword)
-      .then(() => setCopied(true))
-      .catch(() => setCopied(false));
-  };
-
   return (
     <section className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
       <h1 className="text-xl font-semibold text-slate-900">Student admitted</h1>
@@ -353,21 +346,7 @@ function Admitted({
         <strong>{admission.student.name}</strong> ({admission.student.email}) can now log in
         {buildingName ? ` and lives in ${buildingName}` : ""}.
       </p>
-      <div>
-        <p className="mb-1 text-sm font-medium text-slate-700">Temporary password</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <code className="rounded-lg bg-slate-100 px-3 py-2 font-mono text-2xl tracking-widest text-slate-900">
-            {admission.temporaryPassword}
-          </code>
-          <button type="button" onClick={copy} className={secondaryButton}>
-            {copied ? "Copied" : "Copy password"}
-          </button>
-        </div>
-      </div>
-      <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        It is shown only now and cannot be seen again. Give it to the student in person; they
-        must choose their own password when they first log in.
-      </p>
+      <TemporaryPassword password={admission.temporaryPassword} />
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={onNext} className={primaryButton}>
           Admit another student

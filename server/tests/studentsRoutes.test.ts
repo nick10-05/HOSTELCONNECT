@@ -16,6 +16,8 @@ vi.mock("../src/services/students", () => ({
   listStudents: vi.fn(),
   getStudent: vi.fn(),
   transferStudent: vi.fn(),
+  deactivateStudent: vi.fn(),
+  reactivateStudent: vi.fn(),
 }));
 const service = vi.mocked(students);
 
@@ -400,5 +402,137 @@ describe("POST /api/students/:id/transfer", () => {
       .send({ buildingId: 2 });
     expect(res.status).toBe(403);
     expect(service.transferStudent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/students/:id/deactivate", () => {
+  const deactivate = async (id: string, cookie?: string) =>
+    request(app)
+      .post(`/api/students/${id}/deactivate`)
+      .set("Cookie", cookie ?? (await asOwner()))
+      .send({});
+
+  it("needs the owner", async () => {
+    expect((await request(app).post("/api/students/7/deactivate").send({})).status).toBe(401);
+    const student = await insertStudent(db);
+    expect((await deactivate("7", cookieFor(student, "student"))).status).toBe(403);
+    expect(service.deactivateStudent).not.toHaveBeenCalled();
+  });
+
+  it("moves the student out with India's date for today and answers 204", async () => {
+    service.deactivateStudent.mockResolvedValue(undefined);
+    const res = await deactivate("7");
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
+    expect(service.deactivateStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+  });
+
+  it("answers 404 for an id that is not a positive number", async () => {
+    const res = await deactivate("abc");
+    expect(res.status).toBe(404);
+    expect(service.deactivateStudent).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's refusal on as the normal error answer", async () => {
+    service.deactivateStudent.mockRejectedValue(
+      new HttpError(409, "student_inactive", "This student has already moved out."),
+    );
+    const res = await deactivate("7");
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: { code: "student_inactive", message: "This student has already moved out." } });
+  });
+
+  it("refuses a cross-site request", async () => {
+    const res = await request(app)
+      .post("/api/students/7/deactivate")
+      .set("Cookie", await asOwner())
+      .set("Origin", "https://elsewhere.example")
+      .send({});
+    expect(res.status).toBe(403);
+    expect(service.deactivateStudent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/students/:id/reactivate", () => {
+  const reactivate = async (id: string, body: unknown, cookie?: string) =>
+    request(app)
+      .post(`/api/students/${id}/reactivate`)
+      .set("Cookie", cookie ?? (await asOwner()))
+      .send(body as object);
+
+  const back: students.Admission = { ...admission, student: { ...admission.student, joiningDate: hostelToday() } };
+
+  it("needs the owner", async () => {
+    const body = { joiningDate: hostelToday(), buildingId: 1 };
+    expect((await request(app).post("/api/students/7/reactivate").send(body)).status).toBe(401);
+    const student = await insertStudent(db);
+    expect((await reactivate("7", body, cookieFor(student, "student"))).status).toBe(403);
+    expect(service.reactivateStudent).not.toHaveBeenCalled();
+  });
+
+  it("reactivates with the owner from the session and returns the password once, never cached", async () => {
+    service.reactivateStudent.mockResolvedValue(back);
+    const owner = await insertOwner(db);
+    const body = { joiningDate: hostelToday(), buildingId: 1, roomId: 4, bedId: 9 };
+    const res = await reactivate("7", body, cookieFor(owner, "owner"));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(back);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(service.reactivateStudent).toHaveBeenCalledWith(db, owner, 7, body);
+  });
+
+  it("treats a missing room and bed as none, and accepts any past date or up to 30 days ahead", async () => {
+    service.reactivateStudent.mockResolvedValue(back);
+    for (const joiningDate of ["2019-07-01", addDays(hostelToday(), 30)]) {
+      const res = await reactivate("7", { joiningDate, buildingId: 1 });
+      expect(res.status).toBe(200);
+    }
+    expect(service.reactivateStudent.mock.calls[0][3]).toEqual({
+      joiningDate: "2019-07-01",
+      buildingId: 1,
+      roomId: null,
+      bedId: null,
+    });
+  });
+
+  it.each([
+    ["missing joining date", { buildingId: 1 }, "joiningDate"],
+    ["date in the wrong format", { joiningDate: "04/11/2026", buildingId: 1 }, "joiningDate"],
+    ["a day that does not exist", { joiningDate: "2026-02-30", buildingId: 1 }, "joiningDate"],
+    ["joining more than 30 days ahead", { joiningDate: addDays(hostelToday(), 31), buildingId: 1 }, "joiningDate"],
+    ["missing building", { joiningDate: hostelToday() }, "buildingId"],
+    ["bed without a room", { joiningDate: hostelToday(), buildingId: 1, bedId: 9 }, "roomId"],
+  ])("refuses a %s with 400 before reaching the service", async (_name, body, field) => {
+    const res = await reactivate("7", body);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("invalid_input");
+    expect(res.body.error.message).toContain(field);
+    expect(service.reactivateStudent).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for an id that is not a positive number", async () => {
+    const res = await reactivate("abc", { joiningDate: hostelToday(), buildingId: 1 });
+    expect(res.status).toBe(404);
+    expect(service.reactivateStudent).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's refusal on as the normal error answer", async () => {
+    service.reactivateStudent.mockRejectedValue(
+      new HttpError(409, "joining_before_leaving", "The joining date cannot be before the student's last leaving date."),
+    );
+    const res = await reactivate("7", { joiningDate: "2019-07-01", buildingId: 1 });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("joining_before_leaving");
+  });
+
+  it("refuses a cross-site request", async () => {
+    const res = await request(app)
+      .post("/api/students/7/reactivate")
+      .set("Cookie", await asOwner())
+      .set("Origin", "https://elsewhere.example")
+      .send({ joiningDate: hostelToday(), buildingId: 1 });
+    expect(res.status).toBe(403);
+    expect(service.reactivateStudent).not.toHaveBeenCalled();
   });
 });

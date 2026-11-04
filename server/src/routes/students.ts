@@ -135,6 +135,29 @@ export const transferSchema = z
     }
   });
 
+// A former student coming back (POST /api/students/:id/reactivate): the new joining date,
+// under the admission rule, and where they will live. Whether the date is on or after
+// the day they left is the service's check, since it needs the database.
+export const reactivationSchema = z
+  .object({
+    joiningDate: z.iso.date("must be a date written as YYYY-MM-DD"),
+    buildingId: id,
+    roomId: id.nullable().default(null),
+    bedId: id.nullable().default(null),
+  })
+  .superRefine((v, ctx) => {
+    if (v.joiningDate > addDays(hostelToday(), MAX_DAYS_AHEAD)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["joiningDate"],
+        message: `can be at most ${MAX_DAYS_AHEAD} days from today`,
+      });
+    }
+    if (v.bedId !== null && v.roomId === null) {
+      ctx.addIssue({ code: "custom", path: ["roomId"], message: "is required when a bed is chosen" });
+    }
+  });
+
 // The directory's query string: GET /api/students?search=asha&buildingId=2&page=2.
 // Everything arrives as text. Phone numbers are not searchable: a search goes into the
 // address, and phone numbers never go in URLs (they end up in history and host logs).
@@ -201,6 +224,24 @@ export function studentsRouter(deps: AuthDeps): Router {
     if (!body) return;
     const transfer = await students.transferStudent(db, req.user!.id, id, body, hostelToday());
     res.json({ transfer });
+  });
+
+  router.post("/students/:id/deactivate", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    await students.deactivateStudent(db, id, hostelToday());
+    res.status(204).end();
+  });
+
+  router.post("/students/:id/reactivate", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    const body = parseBody(reactivationSchema, req, res);
+    if (!body) return;
+    const result = await students.reactivateStudent(db, req.user!.id, id, body);
+    // The answer carries the temporary password, shown once: no browser or proxy may keep it.
+    res.set("Cache-Control", "no-store");
+    res.json(result);
   });
 
   return router;

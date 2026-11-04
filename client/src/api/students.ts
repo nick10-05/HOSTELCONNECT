@@ -144,6 +144,23 @@ export async function transferStudent(id: number, to: TransferTarget): Promise<T
   return transfer;
 }
 
+// ---- Moving out and coming back ----
+
+// POST /api/students/:id/deactivate: login stops at once and the stay ends. Refusals
+// arrive as ApiError: 409 "student_inactive"; 404 "student_not_found".
+export async function deactivateStudent(id: number): Promise<void> {
+  await apiFetch(`/api/students/${id}/deactivate`, { method: "POST" });
+}
+
+export type ReactivationForm = TransferTarget & { joiningDate: string }; // YYYY-MM-DD
+
+// POST /api/students/:id/reactivate: a new joining date, stay and temporary password
+// (shown once). Refusals arrive as ApiError: 409 "student_active",
+// "joining_before_leaving", "bed_occupied", "bed_retired"; 400 "invalid_input".
+export async function reactivateStudent(id: number, form: ReactivationForm): Promise<Admission> {
+  return apiFetch<Admission>(`/api/students/${id}/reactivate`, { method: "POST", body: form });
+}
+
 // GET /api/students/:id: the full profile. 404 "student_not_found" if there is none.
 export async function getStudent(id: number): Promise<StudentProfile> {
   const { student } = await apiFetch<{ student: StudentProfile }>(`/api/students/${id}`);

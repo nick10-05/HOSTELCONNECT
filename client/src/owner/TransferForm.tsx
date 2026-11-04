@@ -4,7 +4,7 @@ import { getStructure, type Building } from "../api/structure";
 import { transferStudent, type Stay, type TransferredStay } from "../api/students";
 import { hostelToday } from "./admissionForm";
 import { formatDate } from "./format";
-import { PlacePicker, withPlaceChange, type PlaceValues } from "./PlacePicker";
+import { bedStillFree, PlacePicker, withPlaceChange, type PlaceValues } from "./PlacePicker";
 import { primaryButton, secondaryButton } from "./styles";
 
 // Moving a current student (design doc, section 9), opened from the profile. The server
@@ -18,15 +18,6 @@ const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
 const idText = (id: number | null) => (id === null ? "" : String(id));
-
-// Whether the chosen bed can still be taken in this (fresh) tree: free and not retired,
-// or the student's own bed.
-function bedStillFree(buildings: Building[], bedId: string, currentBedId: number | null): boolean {
-  if (!bedId || Number(bedId) === currentBedId) return true;
-  const beds = buildings.flatMap((b) => [...b.floors.flatMap((f) => f.rooms), ...b.rooms]).flatMap((r) => r.beds);
-  const bed = beds.find((b) => String(b.id) === bedId);
-  return bed !== undefined && bed.isActive && !bed.occupied;
-}
 
 export function TransferForm({
   studentId,

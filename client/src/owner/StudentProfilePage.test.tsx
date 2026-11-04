@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Building } from "../api/structure";
 import type { StudentProfile } from "../api/students";
 import { jsonResponse, mockFetch } from "../test/fetch";
+import { addDays, hostelToday } from "./admissionForm";
 import { StudentProfilePage } from "./StudentProfilePage";
 
 const place = {
@@ -376,6 +377,12 @@ describe("transfer on the profile", () => {
     expect(posts).toEqual([]);
   });
 
+  it("is offered next to Move out, and both hide while the form is open", async () => {
+    const { user } = transferServer([asha], () => jsonResponse(500, {}));
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    expect(screen.queryByRole("button", { name: "Move out" })).not.toBeInTheDocument();
+  });
+
   it("changes the room or bed of a student who has not joined yet, without history", async () => {
     const { user, posts } = transferServer([notYetJoined], () =>
       jsonResponse(200, {
@@ -396,5 +403,193 @@ describe("transfer on the profile", () => {
       "Room and bed changed. The stay still starts on 1 Dec 2099.",
     );
     expect(posts).toEqual([{ buildingId: 2, roomId: null, bedId: null }]);
+  });
+});
+
+// ---- Moving out and coming back ----
+
+// Asha after moving out on 30 Jun 2026.
+const formerAsha: StudentProfile = {
+  ...asha,
+  isActive: false,
+  deactivatedAt: "2026-06-30",
+  mustChangePassword: false,
+  currentStay: null,
+  nextDueDate: null,
+  stays: [{ ...asha.stays[0], endedOn: "2026-06-30" }, asha.stays[1]],
+};
+
+// A fake server for the profile's actions: GET /api/students/7 answers each profile in
+// turn (the last one again after that), GET /api/structure the two blocks, and each POST
+// to /api/students/7/<action> is recorded and answered by answers[action].
+function actionServer(profiles: StudentProfile[], answers: Record<string, () => Response>) {
+  const posts: { action: string; body: unknown }[] = [];
+  let profileCalls = 0;
+  mockFetch(async (url, init) => {
+    if (url === "/api/students/7" && init?.method !== "POST") {
+      const student = profiles[Math.min(profileCalls, profiles.length - 1)];
+      profileCalls += 1;
+      return jsonResponse(200, { student });
+    }
+    if (url === "/api/structure") return jsonResponse(200, { buildings: [blockA, blockB] });
+    const action = url.match(/^\/api\/students\/7\/(\w+)$/)?.[1];
+    if (action && init?.method === "POST" && answers[action]) {
+      posts.push({ action, body: init.body ? JSON.parse(init.body as string) : undefined });
+      return answers[action]();
+    }
+    return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
+  });
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={["/students/7"]}>
+      <Routes>
+        <Route path="/students/:id" element={<StudentProfilePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return { user, posts, profileCalls: () => profileCalls };
+}
+
+const noContent = () => new Response(null, { status: 204 });
+
+describe("moving out", () => {
+  it("asks first, and Cancel sends nothing", async () => {
+    const { user, posts } = actionServer([asha], { deactivate: noContent });
+    await user.click(await screen.findByRole("button", { name: "Move out" }));
+
+    expect(
+      screen.getByText("Move out Asha Rao? They will no longer be able to log in, and their stay ends today."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("button", { name: "Move out" })).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
+
+  it("says the booking is cancelled for a student who has not joined yet", async () => {
+    const { user } = actionServer([notYetJoined], { deactivate: noContent });
+    await user.click(await screen.findByRole("button", { name: "Move out" }));
+
+    expect(
+      screen.getByText(
+        "Move out Asha Rao? They will no longer be able to log in, and their booking for 1 Dec 2099 is cancelled.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("moves the student out and shows them as a former student", async () => {
+    const { user, posts, profileCalls } = actionServer([asha, formerAsha], { deactivate: noContent });
+    await user.click(await screen.findByRole("button", { name: "Move out" }));
+    await user.click(screen.getByRole("button", { name: "Yes, move out" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Moved out. Asha Rao can no longer log in.");
+    expect(posts).toEqual([{ action: "deactivate", body: undefined }]);
+    expect(profileCalls()).toBe(2);
+    expect(screen.getByText("Former student")).toBeInTheDocument();
+    expect(valueOf("Lives in")).toHaveTextContent("Left on 30 Jun 2026");
+    expect(screen.queryByRole("button", { name: "Transfer" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivate" })).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal", async () => {
+    const { user } = actionServer([asha], {
+      deactivate: () =>
+        jsonResponse(409, { error: { code: "student_inactive", message: "This student has already moved out." } }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Move out" }));
+    await user.click(screen.getByRole("button", { name: "Yes, move out" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This student has already moved out.");
+    expect(screen.getByRole("button", { name: "Yes, move out" })).toBeEnabled();
+  });
+});
+
+describe("reactivating", () => {
+  const admitted = {
+    student: { id: 7, name: "Asha Rao", email: "asha@example.com", joiningDate: hostelToday(), buildingId: 1, roomId: 20, bedId: 32 },
+    temporaryPassword: "ABCD234567",
+  };
+  const backInBedC: StudentProfile = { ...inBedC, joiningDate: hostelToday() };
+
+  it("is offered to a former student only, starting today with no building chosen", async () => {
+    const { user } = actionServer([formerAsha], {});
+    await user.click(await screen.findByRole("button", { name: "Reactivate" }));
+
+    expect(screen.queryByRole("button", { name: "Move out" })).not.toBeInTheDocument();
+    expect(field("Joining date")).toHaveValue(hostelToday());
+    expect(await screen.findByLabelText("Building")).toHaveValue("");
+    expect(
+      screen.getByText("Left on 30 Jun 2026. The new joining date can be that day or later, up to 30 days from today."),
+    ).toBeInTheDocument();
+  });
+
+  it("checks the date and the building before sending anything", async () => {
+    const { user, posts } = actionServer([formerAsha], {});
+    await user.click(await screen.findByRole("button", { name: "Reactivate" }));
+    await screen.findByLabelText("Building");
+    const submit = screen.getByRole("button", { name: "Reactivate student" });
+
+    await user.click(submit);
+    expect(field("Building")).toHaveAccessibleDescription("Choose a building.");
+
+    await user.selectOptions(field("Building"), "Block B");
+    await user.clear(field("Joining date"));
+    await user.type(field("Joining date"), "2026-06-29");
+    await user.click(submit);
+    expect(field("Joining date")).toHaveAccessibleDescription("Choose 30 Jun 2026 or later, the day they left.");
+
+    await user.clear(field("Joining date"));
+    await user.type(field("Joining date"), addDays(hostelToday(), 31));
+    await user.click(submit);
+    expect(field("Joining date")).toHaveAccessibleDescription("Choose a date at most 30 days from today.");
+
+    expect(posts).toEqual([]);
+  });
+
+  it("reactivates, shows the temporary password once, and forgets it on Done", async () => {
+    const { user, posts, profileCalls } = actionServer([formerAsha, backInBedC], {
+      reactivate: () => jsonResponse(200, admitted),
+    });
+    await user.click(await screen.findByRole("button", { name: "Reactivate" }));
+    await user.selectOptions(await screen.findByLabelText("Building"), "Block A");
+    await user.selectOptions(field(/Room/), "101 · Floor 1");
+    await user.selectOptions(field(/Bed/), "C");
+    await user.click(screen.getByRole("button", { name: "Reactivate student" }));
+
+    expect(await screen.findByText("ABCD234567")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Student reactivated" })).toBeInTheDocument();
+    expect(posts).toEqual([
+      { action: "reactivate", body: { joiningDate: hostelToday(), buildingId: 1, roomId: 20, bedId: 32 } },
+    ]);
+    // The profile behind the password is already the current one.
+    expect(profileCalls()).toBe(2);
+    expect(screen.queryByText("Former student")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("ABCD234567")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Move out" })).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal and keeps the form", async () => {
+    const { user } = actionServer([formerAsha], {
+      reactivate: () =>
+        jsonResponse(409, { error: { code: "bed_occupied", message: "The selected bed is already occupied." } }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Reactivate" }));
+    await user.selectOptions(await screen.findByLabelText("Building"), "Block B");
+    await user.click(screen.getByRole("button", { name: "Reactivate student" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The selected bed is already occupied.");
+    expect(screen.getByRole("button", { name: "Reactivate student" })).toBeEnabled();
+  });
+
+  it("closes the form on Cancel without sending anything", async () => {
+    const { user, posts } = actionServer([formerAsha], {});
+    await user.click(await screen.findByRole("button", { name: "Reactivate" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("Joining date")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivate" })).toBeInTheDocument();
+    expect(posts).toEqual([]);
   });
 });

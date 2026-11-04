@@ -36,6 +36,15 @@ export function withPlaceChange<V extends PlaceValues>(v: V, name: keyof V, valu
   };
 }
 
+// Whether the chosen bed can still be taken in this (fresh) tree: free and not retired,
+// or the student's own bed. Used after a refusal, to let go of a bed that has just gone.
+export function bedStillFree(buildings: Building[], bedId: string, currentBedId: number | null = null): boolean {
+  if (!bedId || Number(bedId) === currentBedId) return true;
+  const beds = buildings.flatMap((b) => [...b.floors.flatMap((f) => f.rooms), ...b.rooms]).flatMap((r) => r.beds);
+  const bed = beds.find((b) => String(b.id) === bedId);
+  return bed !== undefined && bed.isActive && !bed.occupied;
+}
+
 export function PlacePicker({
   buildings,
   values,
