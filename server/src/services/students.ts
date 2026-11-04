@@ -557,15 +557,18 @@ export type ReactivationInput = {
   bedId: number | null;
 };
 
-// Brings a former student back (design doc, sections 5, 6 and 9), all or nothing. Used by
-// the owner directly, and later by the approval of a rejoin request.
+// Brings a former student back (design doc, sections 5, 6 and 9). Used by the owner
+// directly (reactivateStudent, below) and by the approval of a rejoin request
+// (approveRejoinRequest in services/rejoin.ts); both run this core in their own
+// transaction.
 //
 // - is_active = true, deactivated_at = NULL, joining_date = the new date (the fee cycle
-//   follows it), a new temporary password (only its hash stored) and
-//   must_change_password = true.
+//   follows it), the new temporary password's hash and must_change_password = true.
 // - A new stay starts on the joining date in the given place, created_by the owner.
 // - Everything else on the account (name, email, phones, category, food, fee) is kept.
-// - Returns the same shape as admitStudent, with the temporary password shown once.
+// - The student's pending rejoin request, if any, is marked approved by the owner, so
+//   both ways back close it (decided on day 5). Decided requests are left alone.
+// - Returns the student as admitStudent does; the caller adds the plain password.
 //
 // The refusals (status, code):
 //   404 student_not_found       no student with this id (an owner's id counts as missing)
@@ -578,92 +581,85 @@ export type ReactivationInput = {
 //   404 bed_not_found        |
 //   409 bed_retired         /
 //   409 bed_occupied        another student's current stay holds the bed (unique index)
-// Locking: lock the student's users row first, as in transferStudent.
-// Tests: tests/reactivation.test.ts.
-export async function reactivateStudent(
-  db: Db,
+// Locking: the student's users row first, as in transferStudent; the rejoin request is
+// touched last. Every caller keeps that order (student, then request), or two of them
+// can deadlock.
+// The caller generates and hashes the temporary password before BEGIN, and owns
+// COMMIT and ROLLBACK. Tests: tests/reactivation.test.ts, tests/rejoinReview.test.ts.
+export async function reactivateInTransaction(
+  c: Queryable,
   ownerId: number,
   studentId: number,
   input: ReactivationInput,
-): Promise<Admission> {
-  // Generate and hash the new temporary password before opening the transaction.
-  const temporaryPassword = generateTemporaryPassword();
-  const passwordHash = await hashPassword(temporaryPassword);
+  passwordHash: string,
+): Promise<AdmittedStudent> {
+  // Lock the student first, matching transferStudent and deactivateStudent.
+  const student = await c.query<{
+    id: number;
+    name: string;
+    email: string;
+    isActive: boolean;
+  }>(
+    `SELECT id, name, email, is_active AS "isActive"
+     FROM users
+     WHERE id = $1 AND role = 'student'
+     FOR UPDATE`,
+    [studentId],
+  );
 
-  const c = await db.connect();
-  let transactionStarted = false;
-  let rollbackFailed = false;
+  if (student.rowCount === 0) {
+    throw new HttpError(404, "student_not_found", "That student does not exist.");
+  }
 
+  const formerStudent = student.rows[0];
+
+  if (formerStudent.isActive) {
+    throw new HttpError(409, "student_active", "This student is already active.");
+  }
+
+  // Use the actual move-out day when available. MAX(ended_on) alone is
+  // insufficient because a future booking cancelled before arrival ends on
+  // its scheduled start date, not on the day the student moved out.
+  const lastStay = await c.query<{ leftOn: string | null }>(
+    `SELECT to_char(
+              COALESCE(
+                (u.deactivated_at AT TIME ZONE 'Asia/Kolkata')::date,
+                (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id)
+              ),
+              'YYYY-MM-DD'
+            ) AS "leftOn"
+     FROM users u
+     WHERE u.id = $1`,
+    [studentId],
+  );
+
+  const leftOn = lastStay.rows[0]?.leftOn ?? null;
+
+  if (leftOn !== null && input.joiningDate < leftOn) {
+    throw new HttpError(
+      409,
+      "joining_before_leaving",
+      "The joining date cannot be before the student's last leaving date.",
+    );
+  }
+
+  // Apply the same building, room, bed and retired-bed rules as admission.
+  await checkPlace(c, input);
+
+  // Reactivate the existing account without changing its other personal details.
+  await c.query(
+    `UPDATE users
+     SET is_active = true,
+         deactivated_at = NULL,
+         joining_date = $1,
+         password_hash = $2,
+         must_change_password = true
+     WHERE id = $3`,
+    [input.joiningDate, passwordHash, studentId],
+  );
+
+  // Keep all previous stays as history and create a new stay for this return.
   try {
-    await c.query("BEGIN");
-    transactionStarted = true;
-
-    // Lock the student first, matching transferStudent and deactivateStudent.
-    const student = await c.query<{
-      id: number;
-      name: string;
-      email: string;
-      isActive: boolean;
-    }>(
-      `SELECT id, name, email, is_active AS "isActive"
-       FROM users
-       WHERE id = $1 AND role = 'student'
-       FOR UPDATE`,
-      [studentId],
-    );
-
-    if (student.rowCount === 0) {
-      throw new HttpError(404, "student_not_found", "That student does not exist.");
-    }
-
-    const formerStudent = student.rows[0];
-
-    if (formerStudent.isActive) {
-      throw new HttpError(409, "student_active", "This student is already active.");
-    }
-
-    // Use the actual move-out day when available. MAX(ended_on) alone is
-    // insufficient because a future booking cancelled before arrival ends on
-    // its scheduled start date, not on the day the student moved out.
-    const lastStay = await c.query<{ leftOn: string | null }>(
-      `SELECT to_char(
-                COALESCE(
-                  (u.deactivated_at AT TIME ZONE 'Asia/Kolkata')::date,
-                  (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id)
-                ),
-                'YYYY-MM-DD'
-              ) AS "leftOn"
-       FROM users u
-       WHERE u.id = $1`,
-      [studentId],
-    );
-
-    const leftOn = lastStay.rows[0]?.leftOn ?? null;
-
-    if (leftOn !== null && input.joiningDate < leftOn) {
-      throw new HttpError(
-        409,
-        "joining_before_leaving",
-        "The joining date cannot be before the student's last leaving date.",
-      );
-    }
-
-    // Apply the same building, room, bed and retired-bed rules as admission.
-    await checkPlace(c, input);
-
-    // Reactivate the existing account without changing its other personal details.
-    await c.query(
-      `UPDATE users
-       SET is_active = true,
-           deactivated_at = NULL,
-           joining_date = $1,
-           password_hash = $2,
-           must_change_password = true
-       WHERE id = $3`,
-      [input.joiningDate, passwordHash, studentId],
-    );
-
-    // Keep all previous stays as history and create a new stay for this return.
     await c.query(
       `INSERT INTO stays (
          student_id, building_id, room_id, bed_id, started_on, created_by
@@ -678,34 +674,8 @@ export async function reactivateStudent(
         ownerId,
       ],
     );
-
-    await c.query("COMMIT");
-    transactionStarted = false;
-
-    return {
-      student: {
-        id: formerStudent.id,
-        name: formerStudent.name,
-        email: formerStudent.email,
-        joiningDate: input.joiningDate,
-        buildingId: input.buildingId,
-        roomId: input.roomId,
-        bedId: input.bedId,
-      },
-      temporaryPassword,
-    };
   } catch (err) {
-    if (transactionStarted) {
-      try {
-        await c.query("ROLLBACK");
-      } catch {
-        rollbackFailed = true;
-      }
-    }
-
-    // Convert the occupied-bed unique-index error into an owner-friendly 409.
     const pgError = err as { code?: string; constraint?: string };
-
     if (
       pgError.code === "23505" &&
       pgError.constraint === "stays_one_current_per_bed"
@@ -716,7 +686,69 @@ export async function reactivateStudent(
         "The selected bed is already occupied.",
       );
     }
+    throw err;
+  }
 
+  // A direct profile reactivation also closes any pending public rejoin request.
+  // In an approval flow, the request row is already locked by the caller.
+  await c.query(
+    `UPDATE rejoin_requests
+     SET status = 'approved', decided_at = now(), decided_by = $2
+     WHERE student_id = $1 AND status = 'pending'`,
+    [studentId, ownerId],
+  );
+
+  return {
+    id: formerStudent.id,
+    name: formerStudent.name,
+    email: formerStudent.email,
+    joiningDate: input.joiningDate,
+    buildingId: input.buildingId,
+    roomId: input.roomId,
+    bedId: input.bedId,
+  };
+}
+
+// Brings a former student back from the profile, all or nothing: a new temporary
+// password (hashed before BEGIN, returned once in plain text), then the core above in
+// one transaction. Same refusals as the core.
+export async function reactivateStudent(
+  db: Db,
+  ownerId: number,
+  studentId: number,
+  input: ReactivationInput,
+): Promise<Admission> {
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordHash = await hashPassword(temporaryPassword);
+
+  const c = await db.connect();
+  let transactionStarted = false;
+  let rollbackFailed = false;
+
+  try {
+    await c.query("BEGIN");
+    transactionStarted = true;
+
+    const student = await reactivateInTransaction(
+      c,
+      ownerId,
+      studentId,
+      input,
+      passwordHash,
+    );
+
+    await c.query("COMMIT");
+    transactionStarted = false;
+
+    return { student, temporaryPassword };
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await c.query("ROLLBACK");
+      } catch {
+        rollbackFailed = true;
+      }
+    }
     throw err;
   } finally {
     c.release(rollbackFailed);

@@ -2,9 +2,16 @@ import { createHash } from "node:crypto";
 import { Router, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
-import type { Db } from "../db";
-import { parseBody, sendError } from "../lib/http";
-import { requestRejoin } from "../services/rejoin";
+import { idParam, parseBody, parseQuery, sendError } from "../lib/http";
+import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import {
+  approveRejoinRequest,
+  listRejoinRequests,
+  rejectRejoinRequest,
+  requestRejoin,
+  type RejoinFilters,
+} from "../services/rejoin";
+import { reactivationSchema } from "./students";
 
 // The public "Request access" form (design doc, sections 5 and 8): a former student
 // cannot log in, so this is the one write anyone may send without a session.
@@ -44,9 +51,23 @@ function emailKey(req: Request): string {
   return `email:${createHash("sha256").update(email).digest("hex")}`;
 }
 
-// Created per router, so every app (and every test) has its own counters.
-export function rejoinRouter({ db }: { db: Db }): Router {
+// The owner's list: GET /api/rejoin-requests?status=decided&page=2. Pending by default.
+export const reviewListSchema = z
+  .object({
+    status: z.enum(["pending", "decided"]).default("pending"),
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .transform((q): RejoinFilters => q);
+
+// The public form and the owner's review of what it sends. Rate-limit counters are
+// created per router, so every app (and every test) has its own.
+export function rejoinRouter(deps: AuthDeps): Router {
+  const { db } = deps;
   const router = Router();
+  // Per route, as in routes/students.ts, so the public form needs no session.
+  const auth = requireAuth(deps);
+  const isOwner = requireRole("owner");
 
   const perIp = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -69,6 +90,33 @@ export function rejoinRouter({ db }: { db: Db }): Router {
     if (!body) return;
     await requestRejoin(db, body.email, body.message);
     res.status(202).json({ message: REJOIN_ANSWER });
+  });
+
+  // ---- The owner's review (design doc, sections 5 and 9) ----
+
+  router.get("/rejoin-requests", auth, isOwner, async (req, res) => {
+    const query = parseQuery(reviewListSchema, req, res);
+    if (!query) return;
+    res.json(await listRejoinRequests(db, query));
+  });
+
+  // The joining date and place follow the same rules as a reactivation from the profile.
+  router.post("/rejoin-requests/:id/approve", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    const body = parseBody(reactivationSchema, req, res);
+    if (!body) return;
+    const result = await approveRejoinRequest(db, req.user!.id, id, body);
+    // The answer carries the temporary password, shown once: no browser or proxy may keep it.
+    res.set("Cache-Control", "no-store");
+    res.json(result);
+  });
+
+  router.post("/rejoin-requests/:id/reject", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    await rejectRejoinRequest(db, req.user!.id, id);
+    res.status(204).end();
   });
 
   return router;

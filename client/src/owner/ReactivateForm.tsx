@@ -1,7 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { getStructure, type Building } from "../api/structure";
-import { reactivateStudent, type Admission } from "../api/students";
+import { reactivateStudent, type Admission, type ReactivationForm } from "../api/students";
 import { addDays, hostelToday, MAX_DAYS_AHEAD } from "./admissionForm";
 import { formatDate } from "./format";
 import { bedStillFree, PlacePicker, withPlaceChange, type PlaceErrors, type PlaceValues } from "./PlacePicker";
@@ -34,11 +34,19 @@ export function ReactivateForm({
   leftOn,
   onDone,
   onCancel,
+  send = (form) => reactivateStudent(studentId, form),
+  title = "Reactivate",
+  submitLabel = "Reactivate student",
 }: {
   studentId: number;
   leftOn: string | null; // the day the student moved out ('YYYY-MM-DD')
   onDone: (result: Admission) => void;
   onCancel: () => void;
+  // How the form is sent: a reactivation from the profile by default, or the approval
+  // of a rejoin request (which reactivates the same way and also closes the request).
+  send?: (form: ReactivationForm) => Promise<Admission>;
+  title?: string;
+  submitLabel?: string;
 }) {
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [values, setValues] = useState<Values>(() => ({
@@ -51,6 +59,8 @@ export function ReactivateForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dateId = useId();
+  // Unique per form: the requests page can show several cards, one form open at a time.
+  const headingId = useId();
 
   useEffect(() => {
     let live = true;
@@ -79,7 +89,7 @@ export function ReactivateForm({
     setBusy(true);
     try {
       onDone(
-        await reactivateStudent(studentId, {
+        await send({
           joiningDate: values.joiningDate,
           buildingId: Number(values.buildingId),
           roomId: values.roomId ? Number(values.roomId) : null,
@@ -110,11 +120,11 @@ export function ReactivateForm({
 
   return (
     <section
-      aria-labelledby="reactivate-heading"
+      aria-labelledby={headingId}
       className="space-y-4 rounded-xl border border-indigo-200 bg-white p-4 shadow-sm"
     >
-      <h2 id="reactivate-heading" className="text-sm font-semibold text-slate-700">
-        Reactivate
+      <h2 id={headingId} className="text-sm font-semibold text-slate-700">
+        {title}
       </h2>
       <p className="text-sm text-slate-600">
         {leftOn
@@ -159,7 +169,7 @@ export function ReactivateForm({
           </div>
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={busy} className={primaryButton}>
-              {busy ? "Saving…" : "Reactivate student"}
+              {busy ? "Saving…" : submitLabel}
             </button>
             {cancel}
           </div>

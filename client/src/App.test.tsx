@@ -11,6 +11,7 @@ function renderAt(path: string) {
   mockFetch(async (url) => {
     if (url === "/api/auth/me") return jsonResponse(200, { user: owner });
     if (url === "/api/structure") return jsonResponse(200, { buildings: [] });
+    if (url.startsWith("/api/rejoin-requests?")) return jsonResponse(200, { items: [], total: 0 });
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
   });
   const user = userEvent.setup();
@@ -37,6 +38,13 @@ describe("owner pages", () => {
     await screen.findByRole("heading", { name: "Buildings and rooms" });
     await user.click(screen.getByRole("link", { name: "Students" }));
     expect(await screen.findByRole("heading", { name: "Students" })).toBeInTheDocument();
+  });
+
+  it("has a Rejoin requests page in the menu", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Rejoin requests" }));
+    expect(await screen.findByRole("heading", { name: "Rejoin requests" })).toBeInTheDocument();
   });
 
   it("opens a page straight from its address", async () => {

@@ -5,6 +5,7 @@ import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
+import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
 import { StudentsPage } from "./owner/StudentsPage";
@@ -74,6 +75,7 @@ export function App() {
             <Route path="/students" element={<StudentsPage />} />
             <Route path="/students/new" element={<AdmitStudentPage />} />
             <Route path="/students/:id" element={<StudentProfilePage />} />
+            <Route path="/rejoin-requests" element={<RejoinRequestsPage />} />
             {/* No dashboard yet: the owner starts on the structure page. Unknown
                 addresses go there too instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/structure" replace />} />
@@ -106,6 +108,9 @@ function OwnerNav() {
       </NavLink>
       <NavLink to="/students/new" className={navLinkClass}>
         Admit student
+      </NavLink>
+      <NavLink to="/rejoin-requests" className={navLinkClass}>
+        Rejoin requests
       </NavLink>
     </nav>
   );

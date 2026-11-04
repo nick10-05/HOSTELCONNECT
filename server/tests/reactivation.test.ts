@@ -218,6 +218,34 @@ describe("reactivateStudent", { timeout: 30_000 }, () => {
     await reactivateStudent(db, owner, student, input({ buildingId: s.building, joiningDate: LEFT_ON }));
   });
 
+  // Decided on day 5: both ways back close the student's pending request, so the owner
+  // never sees a request from someone who is already current.
+  it("marks the student's pending rejoin request approved by the owner, and leaves decided ones alone", async () => {
+    const s = await insertStructure(db);
+    const { owner, student } = await formerStudent({ building: s.building });
+    const earlier = await insertOwner(db);
+    const { rows: made } = await db.query<{ id: number }>(
+      `INSERT INTO rejoin_requests (student_id, status, decided_at, decided_by)
+       VALUES ($1, 'rejected', '2026-07-01T10:00:00+05:30', $2) RETURNING id`,
+      [student, earlier],
+    );
+    const { rows: open } = await db.query<{ id: number }>(
+      "INSERT INTO rejoin_requests (student_id) VALUES ($1) RETURNING id",
+      [student],
+    );
+
+    await reactivateStudent(db, owner, student, input({ buildingId: s.building }));
+
+    const { rows } = await db.query(
+      "SELECT id, status, decided_by FROM rejoin_requests WHERE student_id = $1 ORDER BY id",
+      [student],
+    );
+    expect(rows).toEqual([
+      { id: made[0].id, status: "rejected", decided_by: earlier },
+      { id: open[0].id, status: "approved", decided_by: owner },
+    ]);
+  });
+
   it("refuses a student who is already current", async () => {
     const s = await insertStructure(db);
     const owner = await insertOwner(db);
