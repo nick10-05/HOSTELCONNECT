@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { getStudent, type StudentProfile } from "../api/students";
+import { getStudent, type StudentProfile, type TransferredStay } from "../api/students";
+import { hostelToday } from "./admissionForm";
 import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeText } from "./format";
+import { secondaryButton } from "./styles";
+import { TransferForm } from "./TransferForm";
 
-// One student's profile for the owner (design doc, section 5). Read-only for now:
-// transfer, deactivate and password reset arrive on day 5; fee history on day 9.
+// One student's profile for the owner (design doc, section 5), with the transfer form
+// (day 5). Deactivation arrives later on day 5; fee history on day 9.
 // Phone numbers appear only here, never in the directory or the page address.
 
 const errorText = (err: unknown) =>
@@ -15,6 +18,11 @@ export function StudentProfilePage() {
   const { id } = useParams();
   const [student, setStudent] = useState<StudentProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [transferring, setTransferring] = useState(false);
+  // What the last transfer did, shown until the owner starts another.
+  const [notice, setNotice] = useState<string | null>(null);
+  // The profile could not be reloaded after a saved transfer; the page keeps the old one.
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -27,6 +35,25 @@ export function StudentProfilePage() {
       current = false;
     };
   }, [id]);
+
+  // After a transfer: close the form, say what happened and show the new place and history.
+  const transferred = (result: TransferredStay) => {
+    setTransferring(false);
+    setNotice(
+      result.kind === "reassigned"
+        ? `Room and bed changed. The stay still starts on ${formatDate(result.startedOn)}.`
+        : "Transferred. The new stay starts today.",
+    );
+    // The transfer is saved whatever happens here, so a failed reload must not replace the
+    // page (and the notice) with an error.
+    getStudent(Number(id))
+      .then(setStudent)
+      .catch((err: unknown) =>
+        setRefreshError(
+          `The page could not be refreshed: ${errorText(err)} Reload the page to see the new stay.`,
+        ),
+      );
+  };
 
   const back = (
     <Link to="/students" className="text-sm font-medium text-indigo-700 hover:underline">
@@ -92,6 +119,43 @@ export function StudentProfilePage() {
         <Item label="Monthly fee">{s.monthlyFee === null ? "Not set" : formatRupees(s.monthlyFee)}</Item>
         {s.nextDueDate && <Item label="Next due date">{formatDate(s.nextDueDate)}</Item>}
       </Card>
+
+      {notice && (
+        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {notice}
+        </p>
+      )}
+      {refreshError && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {refreshError}
+        </p>
+      )}
+
+      {s.isActive &&
+        s.currentStay &&
+        (transferring ? (
+          <TransferForm
+            studentId={s.id}
+            stay={s.currentStay}
+            onDone={transferred}
+            onCancel={() => setTransferring(false)}
+          />
+        ) : (
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setNotice(null);
+                setRefreshError(null);
+                setTransferring(true);
+              }}
+              className={secondaryButton}
+            >
+              {/* A stay that has not started is only reassigned (decided on day 5). */}
+              {s.currentStay.startedOn > hostelToday() ? "Change room or bed" : "Transfer"}
+            </button>
+          </div>
+        ))}
 
       <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 id="stay-history" className="text-sm font-semibold text-slate-700">

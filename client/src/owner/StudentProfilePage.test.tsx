@@ -1,6 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
+import type { Building } from "../api/structure";
 import type { StudentProfile } from "../api/students";
 import { jsonResponse, mockFetch } from "../test/fetch";
 import { StudentProfilePage } from "./StudentProfilePage";
@@ -152,5 +154,247 @@ describe("StudentProfilePage", () => {
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("That student does not exist.");
     expect(screen.getByRole("link", { name: /All students/ })).toHaveAttribute("href", "/students");
+  });
+});
+
+// ---- Transfer ----
+
+// Block A: floor 1 with room 101 (bed A is Asha's, bed B retired, bed C free) and room G1
+// without a floor or beds. Block B: nothing below the building yet.
+const blockA: Building = {
+  id: 1,
+  name: "Block A",
+  floors: [
+    {
+      id: 11,
+      buildingId: 1,
+      number: 1,
+      rooms: [
+        {
+          id: 20,
+          buildingId: 1,
+          floorId: 11,
+          roomNumber: "101",
+          beds: [
+            { id: 30, roomId: 20, bedNumber: "A", isActive: true, occupied: true },
+            { id: 31, roomId: 20, bedNumber: "B", isActive: false, occupied: false },
+            { id: 32, roomId: 20, bedNumber: "C", isActive: true, occupied: false },
+          ],
+        },
+      ],
+    },
+  ],
+  rooms: [{ id: 21, buildingId: 1, floorId: null, roomNumber: "G1", beds: [] }],
+};
+const blockB: Building = { id: 2, name: "Block B", floors: [], rooms: [] };
+
+// A fake server: GET /api/students/7 answers each profile in turn (the last one again
+// after that; a null fails with 500), GET /api/structure answers each tree in turn the
+// same way (the two blocks by default), and POST .../transfer is recorded and answered
+// by `onTransfer`.
+function transferServer(
+  profiles: (StudentProfile | null)[],
+  onTransfer: () => Response,
+  trees: (Building[] | null)[] = [[blockA, blockB]],
+) {
+  const posts: unknown[] = [];
+  let profileCalls = 0;
+  let structureCalls = 0;
+  const failure = () => jsonResponse(500, { error: { code: "internal", message: "The server had a problem." } });
+  mockFetch(async (url, init) => {
+    if (url === "/api/students/7" && init?.method !== "POST") {
+      const student = profiles[Math.min(profileCalls, profiles.length - 1)];
+      profileCalls += 1;
+      return student ? jsonResponse(200, { student }) : failure();
+    }
+    if (url === "/api/structure") {
+      const buildings = trees[Math.min(structureCalls, trees.length - 1)];
+      structureCalls += 1;
+      return buildings ? jsonResponse(200, { buildings }) : failure();
+    }
+    if (url === "/api/students/7/transfer" && init?.method === "POST") {
+      posts.push(JSON.parse(init.body as string));
+      return onTransfer();
+    }
+    return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
+  });
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={["/students/7"]}>
+      <Routes>
+        <Route path="/students/:id" element={<StudentProfilePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return { user, posts, profileCalls: () => profileCalls, structureCalls: () => structureCalls };
+}
+
+const field = (label: RegExp | string) => screen.getByLabelText(label);
+const optionLabels = (select: HTMLElement) =>
+  within(select)
+    .getAllByRole("option")
+    .map((o) => o.textContent);
+
+// Asha after moving to bed C today.
+const inBedC: StudentProfile = {
+  ...asha,
+  currentStay: { ...asha.currentStay!, id: 3, bedId: 32, bedNumber: "C", startedOn: "2026-11-04" },
+  stays: [
+    { ...asha.currentStay!, id: 3, bedId: 32, bedNumber: "C", startedOn: "2026-11-04" },
+    { ...asha.stays[0], endedOn: "2026-11-04" },
+    asha.stays[1],
+  ],
+};
+
+// A student who joins on 1 Dec 2099: the stay has not started.
+const notYetJoined: StudentProfile = {
+  ...asha,
+  joiningDate: "2099-12-01",
+  currentStay: { ...asha.currentStay!, startedOn: "2099-12-01" },
+  stays: [{ ...asha.currentStay!, startedOn: "2099-12-01" }],
+};
+
+describe("transfer on the profile", () => {
+  it("offers a transfer to a current student", async () => {
+    transferServer([asha], () => jsonResponse(500, {}));
+    expect(await screen.findByRole("button", { name: "Transfer" })).toBeInTheDocument();
+  });
+
+  it("offers nothing to a former student", async () => {
+    transferServer(
+      [{ ...asha, isActive: false, deactivatedAt: "2026-06-30", currentStay: null, nextDueDate: null }],
+      () => jsonResponse(500, {}),
+    );
+    await screen.findByRole("heading", { name: "Asha Rao" });
+    expect(screen.queryByRole("button", { name: "Transfer" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change room or bed" })).not.toBeInTheDocument();
+  });
+
+  it("starts at the current place, marks the current bed, and waits for a different choice", async () => {
+    const { user } = transferServer([asha], () => jsonResponse(500, {}));
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+
+    expect(await screen.findByLabelText("Building")).toHaveValue("1");
+    expect(field(/Room/)).toHaveValue("20");
+    expect(field(/Bed/)).toHaveValue("30");
+    expect(optionLabels(field(/Bed/))).toEqual(["No bed yet", "A (current)", "B (retired)", "C"]);
+    expect(screen.getByRole("option", { name: "A (current)" })).toBeEnabled();
+    expect(screen.getByRole("option", { name: "B (retired)" })).toBeDisabled();
+    expect(screen.getByText("The current stay ends today and the new one starts today.")).toBeInTheDocument();
+
+    // Nothing to send while the choice is where the student already lives.
+    const submit = screen.getByRole("button", { name: "Transfer student" });
+    expect(submit).toBeDisabled();
+    await user.selectOptions(field(/Bed/), "C");
+    expect(submit).toBeEnabled();
+  });
+
+  it("transfers, reloads the profile and says what happened", async () => {
+    const { user, posts, profileCalls } = transferServer([asha, inBedC], () =>
+      jsonResponse(200, {
+        transfer: { kind: "transferred", id: 3, buildingId: 1, roomId: 20, bedId: 32, startedOn: "2026-11-04" },
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.selectOptions(await screen.findByLabelText(/Bed/), "C");
+    await user.click(screen.getByRole("button", { name: "Transfer student" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Transferred. The new stay starts today.");
+    expect(posts).toEqual([{ buildingId: 1, roomId: 20, bedId: 32 }]);
+    expect(profileCalls()).toBe(2);
+    expect(valueOf("Lives in")).toHaveTextContent("Block A · Floor 1 · Room 101 · Bed C");
+    expect(within(screen.getByRole("list", { name: "Stay history" })).getAllByRole("listitem")).toHaveLength(3);
+    // The form has closed.
+    expect(screen.queryByRole("button", { name: "Transfer student" })).not.toBeInTheDocument();
+  });
+
+  it("shows the server's refusal and keeps the form open", async () => {
+    const { user } = transferServer([asha], () =>
+      jsonResponse(409, { error: { code: "bed_occupied", message: "The selected bed is already occupied." } }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.selectOptions(await screen.findByLabelText(/Bed/), "C");
+    await user.click(screen.getByRole("button", { name: "Transfer student" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The selected bed is already occupied.");
+    expect(screen.getByRole("button", { name: "Transfer student" })).toBeEnabled();
+  });
+
+  it("after a refusal, reloads the beds and lets go of one that has just been taken", async () => {
+    // Between opening the form and sending it, someone else took bed C.
+    const cTaken: Building = structuredClone(blockA);
+    cTaken.floors[0].rooms[0].beds[2].occupied = true;
+    const { user, structureCalls } = transferServer(
+      [asha],
+      () => jsonResponse(409, { error: { code: "bed_occupied", message: "The selected bed is already occupied." } }),
+      [[blockA, blockB], [cTaken, blockB]],
+    );
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.selectOptions(await screen.findByLabelText(/Bed/), "C");
+    await user.click(screen.getByRole("button", { name: "Transfer student" }));
+
+    expect(await screen.findByRole("option", { name: "C (occupied)" })).toBeDisabled();
+    expect(structureCalls()).toBe(2);
+    expect(field(/Bed/)).toHaveValue("");
+    expect(screen.getByRole("alert")).toHaveTextContent("The selected bed is already occupied.");
+  });
+
+  it("can still be cancelled when the buildings cannot be loaded", async () => {
+    const { user } = transferServer([asha], () => jsonResponse(500, {}), [null]);
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server had a problem.");
+    expect(screen.queryByLabelText("Building")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Transfer" })).toBeInTheDocument();
+  });
+
+  it("keeps the profile and says the transfer was saved when the reload fails", async () => {
+    const { user } = transferServer([asha, null], () =>
+      jsonResponse(200, {
+        transfer: { kind: "transferred", id: 3, buildingId: 1, roomId: 20, bedId: 32, startedOn: "2026-11-04" },
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.selectOptions(await screen.findByLabelText(/Bed/), "C");
+    await user.click(screen.getByRole("button", { name: "Transfer student" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Transferred. The new stay starts today.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The page could not be refreshed: The server had a problem. Reload the page to see the new stay.",
+    );
+    expect(screen.getByRole("heading", { name: "Asha Rao" })).toBeInTheDocument();
+  });
+
+  it("closes the form on Cancel without sending anything", async () => {
+    const { user, posts } = transferServer([asha], () => jsonResponse(500, {}));
+    await user.click(await screen.findByRole("button", { name: "Transfer" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("Building")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Transfer" })).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
+
+  it("changes the room or bed of a student who has not joined yet, without history", async () => {
+    const { user, posts } = transferServer([notYetJoined], () =>
+      jsonResponse(200, {
+        transfer: { kind: "reassigned", id: 2, buildingId: 2, roomId: null, bedId: null, startedOn: "2099-12-01" },
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Change room or bed" }));
+    expect(
+      await screen.findByText("Joins on 1 Dec 2099: this only changes the assignment, no history is kept."),
+    ).toBeInTheDocument();
+
+    // A new building forgets the room and bed.
+    await user.selectOptions(field("Building"), "Block B");
+    expect(screen.queryByLabelText(/Room/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save new room or bed" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Room and bed changed. The stay still starts on 1 Dec 2099.",
+    );
+    expect(posts).toEqual([{ buildingId: 2, roomId: null, bedId: null }]);
   });
 });

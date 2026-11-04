@@ -15,6 +15,7 @@ vi.mock("../src/services/students", () => ({
   admitStudent: vi.fn(),
   listStudents: vi.fn(),
   getStudent: vi.fn(),
+  transferStudent: vi.fn(),
 }));
 const service = vi.mocked(students);
 
@@ -309,5 +310,95 @@ describe("GET /api/students/:id", () => {
     const student = await insertStudent(db);
     const res = await request(app).get(`/api/students/${student}`).set("Cookie", cookieFor(student, "student"));
     expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /api/students/:id/transfer", () => {
+  const transfer = async (id: string, body: unknown, cookie?: string) =>
+    request(app)
+      .post(`/api/students/${id}/transfer`)
+      .set("Cookie", cookie ?? (await asOwner()))
+      .send(body as object);
+
+  const moved: students.TransferredStay = {
+    kind: "transferred",
+    id: 12,
+    buildingId: 2,
+    roomId: 4,
+    bedId: 9,
+    startedOn: hostelToday(),
+  };
+
+  it("needs the owner", async () => {
+    expect((await request(app).post("/api/students/7/transfer").send({ buildingId: 2 })).status).toBe(401);
+    const student = await insertStudent(db);
+    expect((await transfer("7", { buildingId: 2 }, cookieFor(student, "student"))).status).toBe(403);
+    expect(service.transferStudent).not.toHaveBeenCalled();
+  });
+
+  it("transfers with the owner from the session and India's date for today", async () => {
+    service.transferStudent.mockResolvedValue(moved);
+    const owner = await insertOwner(db);
+    const res = await transfer("7", { buildingId: 2, roomId: 4, bedId: 9 }, cookieFor(owner, "owner"));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ transfer: moved });
+    expect(service.transferStudent).toHaveBeenCalledWith(
+      db,
+      owner,
+      7,
+      { buildingId: 2, roomId: 4, bedId: 9 },
+      hostelToday(),
+    );
+  });
+
+  it("treats a missing room and bed as none, and answers a reassignment the same way", async () => {
+    const reassigned = { ...moved, kind: "reassigned" as const, roomId: null, bedId: null, startedOn: "2099-12-01" };
+    service.transferStudent.mockResolvedValue(reassigned);
+    const res = await transfer("7", { buildingId: 2 });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ transfer: reassigned });
+    expect(service.transferStudent.mock.calls[0][3]).toEqual({ buildingId: 2, roomId: null, bedId: null });
+  });
+
+  it.each([
+    ["missing building", {}, "buildingId"],
+    ["building id that is not a number", { buildingId: "2" }, "buildingId"],
+    ["bed without a room", { buildingId: 2, bedId: 9 }, "roomId"],
+    ["negative room id", { buildingId: 2, roomId: -4 }, "roomId"],
+  ])("refuses a %s with 400 before reaching the service", async (_name, body, field) => {
+    const res = await transfer("7", body);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("invalid_input");
+    expect(res.body.error.message).toContain(field);
+    expect(service.transferStudent).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a student id that is not a positive number", async () => {
+    const res = await transfer("abc", { buildingId: 2 });
+    expect(res.status).toBe(404);
+    expect(service.transferStudent).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's refusal on as the normal error answer", async () => {
+    service.transferStudent.mockRejectedValue(
+      new HttpError(409, "bed_occupied", "The selected bed is already occupied."),
+    );
+    const res = await transfer("7", { buildingId: 2, roomId: 4, bedId: 9 });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: { code: "bed_occupied", message: "The selected bed is already occupied." },
+    });
+  });
+
+  it("refuses a cross-site request", async () => {
+    const res = await request(app)
+      .post("/api/students/7/transfer")
+      .set("Cookie", await asOwner())
+      .set("Origin", "https://elsewhere.example")
+      .send({ buildingId: 2 });
+    expect(res.status).toBe(403);
+    expect(service.transferStudent).not.toHaveBeenCalled();
   });
 });

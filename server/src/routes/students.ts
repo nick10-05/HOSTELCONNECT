@@ -120,6 +120,21 @@ export const admissionSchema = detailsObject
     }),
   );
 
+// Where a transfer moves the student to (POST /api/students/:id/transfer). Room and bed
+// are optional, as at admission; the service decides between a transfer and, for a stay
+// that has not started, a reassignment in place.
+export const transferSchema = z
+  .object({
+    buildingId: id,
+    roomId: id.nullable().default(null),
+    bedId: id.nullable().default(null),
+  })
+  .superRefine((v, ctx) => {
+    if (v.bedId !== null && v.roomId === null) {
+      ctx.addIssue({ code: "custom", path: ["roomId"], message: "is required when a bed is chosen" });
+    }
+  });
+
 // The directory's query string: GET /api/students?search=asha&buildingId=2&page=2.
 // Everything arrives as text. Phone numbers are not searchable: a search goes into the
 // address, and phone numbers never go in URLs (they end up in history and host logs).
@@ -177,6 +192,15 @@ export function studentsRouter(deps: AuthDeps): Router {
     // The answer carries the temporary password, shown once: no browser or proxy may keep it.
     res.set("Cache-Control", "no-store");
     res.status(201).json(result);
+  });
+
+  router.post("/students/:id/transfer", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    const body = parseBody(transferSchema, req, res);
+    if (!body) return;
+    const transfer = await students.transferStudent(db, req.user!.id, id, body, hostelToday());
+    res.json({ transfer });
   });
 
   return router;

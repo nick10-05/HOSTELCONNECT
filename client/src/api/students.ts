@@ -118,6 +118,32 @@ export async function listStudents(
   return apiFetch(`/api/students${qs ? `?${qs}` : ""}`);
 }
 
+// ---- Transfer ----
+
+export type TransferTarget = { buildingId: number; roomId: number | null; bedId: number | null };
+
+export type TransferredStay = {
+  // "transferred": the old stay ended today and a new one started today.
+  // "reassigned": the stay had not started, so its place was changed with no history.
+  kind: "transferred" | "reassigned";
+  id: number;
+  buildingId: number;
+  roomId: number | null;
+  bedId: number | null;
+  startedOn: string;
+};
+
+// POST /api/students/:id/transfer. Refusals arrive as ApiError: 409 "bed_occupied",
+// "bed_retired", "same_place", "student_inactive", "stay_started"; 404 when the
+// building, room or bed has gone.
+export async function transferStudent(id: number, to: TransferTarget): Promise<TransferredStay> {
+  const { transfer } = await apiFetch<{ transfer: TransferredStay }>(`/api/students/${id}/transfer`, {
+    method: "POST",
+    body: to,
+  });
+  return transfer;
+}
+
 // GET /api/students/:id: the full profile. 404 "student_not_found" if there is none.
 export async function getStudent(id: number): Promise<StudentProfile> {
   const { student } = await apiFetch<{ student: StudentProfile }>(`/api/students/${id}`);

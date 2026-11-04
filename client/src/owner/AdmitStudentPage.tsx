@@ -1,7 +1,7 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { getStructure, type Building, type Room } from "../api/structure";
+import { getStructure, type Building } from "../api/structure";
 import { admitStudent, type Admission } from "../api/students";
 import {
   checkAdmission,
@@ -12,6 +12,8 @@ import {
   type TextValues,
 } from "./admissionForm";
 import { WEEKDAYS } from "./format";
+import { PlacePicker, withPlaceChange } from "./PlacePicker";
+import { inputClass, primaryButton, secondaryButton } from "./styles";
 
 // The owner's "Admit student" screen (design doc, section 9). Room and bed are offered
 // only where the owner has built them. On success the temporary password is shown once,
@@ -19,27 +21,6 @@ import { WEEKDAYS } from "./format";
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
-
-const floorLabel = (number: number) => (number === 0 ? "Ground floor" : `Floor ${number}`);
-
-const inputClass =
-  "block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none aria-invalid:border-red-400";
-const primaryButton =
-  "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60";
-const secondaryButton =
-  "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50";
-
-// Every room of a building, with its floor, in the order the structure screen shows them.
-type RoomChoice = { room: Room; label: string };
-function roomsOf(building: Building | undefined): RoomChoice[] {
-  if (!building) return [];
-  return [
-    ...building.floors.flatMap((f) =>
-      f.rooms.map((room) => ({ room, label: `${room.roomNumber} · ${floorLabel(f.number)}` })),
-    ),
-    ...building.rooms.map((room) => ({ room, label: room.roomNumber })),
-  ];
-}
 
 export function AdmitStudentPage() {
   const [buildings, setBuildings] = useState<Building[] | null>(null);
@@ -61,12 +42,7 @@ export function AdmitStudentPage() {
   // Changing a field clears its error. Changing the building forgets the room and bed;
   // changing the room forgets the bed, so a stale choice is never sent.
   const set = (name: keyof TextValues, value: string) => {
-    setValues((v) => ({
-      ...v,
-      [name]: value,
-      ...(name === "buildingId" && { roomId: "", bedId: "" }),
-      ...(name === "roomId" && { bedId: "" }),
-    }));
+    setValues((v) => withPlaceChange(v, name, value));
     setErrors((e) => ({ ...e, [name]: undefined }));
   };
 
@@ -107,9 +83,6 @@ export function AdmitStudentPage() {
     return <Admitted admission={admitted} buildingName={building?.name} onNext={startAgain} />;
   }
 
-  const building = buildings?.find((b) => String(b.id) === values.buildingId);
-  const rooms = roomsOf(building);
-  const room = rooms.find((r) => String(r.room.id) === values.roomId)?.room;
   const fieldProps = { values, errors, set };
 
   return (
@@ -185,38 +158,7 @@ export function AdmitStudentPage() {
               label="Monthly fee in ₹ (optional)"
               inputMode="numeric"
             />
-            <SelectField {...fieldProps} name="buildingId" label="Building">
-              <option value="">Choose…</option>
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </SelectField>
-            {rooms.length > 0 && (
-              <SelectField {...fieldProps} name="roomId" label="Room (optional)">
-                <option value="">No room yet</option>
-                {rooms.map(({ room: r, label }) => (
-                  <option key={r.id} value={r.id}>
-                    {label}
-                  </option>
-                ))}
-              </SelectField>
-            )}
-            {room && room.beds.length > 0 && (
-              <SelectField {...fieldProps} name="bedId" label="Bed (optional)">
-                <option value="">No bed yet</option>
-                {room.beds.map((b) => {
-                  const note = !b.isActive ? " (retired)" : b.occupied ? " (occupied)" : "";
-                  return (
-                    <option key={b.id} value={b.id} disabled={note !== ""}>
-                      {b.bedNumber}
-                      {note}
-                    </option>
-                  );
-                })}
-              </SelectField>
-            )}
+            <PlacePicker buildings={buildings} values={values} errors={errors} onChange={set} />
           </Section>
 
           <button type="submit" disabled={busy} className={primaryButton}>
