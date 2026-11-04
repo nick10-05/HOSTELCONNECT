@@ -21,6 +21,18 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ JWT_SECRET: valid.JWT_SECRET })).toThrow(/DATABASE_URL/);
   });
 
+  it("names a malformed DATABASE_URL without printing it", () => {
+    const password = "Pw#secret";
+    let message = "";
+    try {
+      loadConfig({ ...valid, DATABASE_URL: `postgres://user:${password}@localhost:5432/db` });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/DATABASE_URL: is not a valid URL/);
+    expect(message).not.toContain(password);
+  });
+
   it("rejects a short JWT_SECRET without printing it", () => {
     const secret = "too-short-secret";
     let message = "";

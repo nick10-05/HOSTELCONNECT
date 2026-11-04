@@ -1,17 +1,24 @@
-import { z } from "zod";
 import { loadDotEnv } from "../src/loadEnv";
+import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { runMigrations } from "./runMigrations";
+
+const NAMES = ["MIGRATION_DATABASE_URL", "DATABASE_URL"] as const;
 
 async function main() {
   loadDotEnv();
-  const env = z
-    .object({
-      MIGRATION_DATABASE_URL: z.string().min(1),
-      DATABASE_URL: z.string().min(1),
-    })
-    .parse(process.env);
 
-  await runMigrations({ migrationUrl: env.MIGRATION_DATABASE_URL, appUrl: env.DATABASE_URL });
+  // Check both before connecting, and name each bad one. Never print a value: these
+  // hold passwords, and this output ends up in the GitHub Actions log.
+  const problems = NAMES.flatMap((name) => {
+    const problem = databaseUrlProblem(process.env[name] ?? "");
+    return problem ? [`${name} ${problem}`] : [];
+  });
+  if (problems.length) throw new Error(problems.join("\n"));
+
+  await runMigrations({
+    migrationUrl: process.env.MIGRATION_DATABASE_URL!.trim(),
+    appUrl: process.env.DATABASE_URL!.trim(),
+  });
 }
 
 main().catch((err) => {
