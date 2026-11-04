@@ -1,16 +1,21 @@
 # Progress against the 10-day plan
 
-Plan: HostelConnect v1 Design Document, Revision 5, section 11. This file records what
-is done and how it was checked, so each day starts from facts, not memory.
+Plan: HostelConnect v1 Design Document, Revision 5, section 12 (day-by-day plan).
+This file records what is done and how it was checked, so each day starts from facts,
+not memory.
 
-## Day 1 — repository and server scaffold (2026-11-03)
+## Day 1 — design (2026-11-03)
+
+- [x] Design document written and reviewed (Revision 5)
+- [ ] Open decisions: Aadhaar storage, record book format (spreadsheet or paper)
+- [x] Accounts and age key pair: done on 2026-11-04 as part of Day 3 (GitHub, Supabase,
+      Render on free plans; age private key stored outside the repo)
+
+## Day 2 — foundation (2026-11-03)
 
 - [x] Root config: `.gitignore`, `.gitattributes`, `.nvmrc` (Node 24), `.env.example`, README
 - [x] Express 5 + TypeScript server with startup config validation and `/api/health`
 - [x] Local PostgreSQL 17 in Docker Compose
-
-## Day 2 — database, auth, client shell (2026-11-03)
-
 - [x] Migration runner; migrations 001 (limited `hostel_app` role), 002 (users),
       003 (buildings, floors, rooms, beds, stays)
 - [x] Database pool; `/api/health` queries the database (503 when it is down)
@@ -49,5 +54,25 @@ Day 3 is complete.
   not exist yet. The first run after adding them (manual, 11:56 UTC) succeeded; the
   next scheduled run is the first unattended one to watch.
 - `actions/checkout` and `actions/setup-node` are at v4; bump them if GitHub warns.
-- Open design decisions from the design document: temporary-password length (8 or
-  10 characters), Aadhaar storage, record book format (spreadsheet or paper).
+- Open design decisions from the design document: temporary-password length (section 6
+  says 8 characters in one place and 10 in another), Aadhaar storage, record book
+  format (spreadsheet or paper).
+
+### Differences from Revision 5 to reconcile
+
+The Day 3 structure API was built before the design document was available in the
+working session, so it differs from section 5:
+
+| Revision 5 (section 5) | Built on Day 3 |
+|---|---|
+| `GET /api/buildings`: tree with students per building and bed counts | `GET /api/structure`: tree with bed occupancy, no student names or counts |
+| `PATCH /api/buildings/:id` rename | Not built |
+| `POST /api/buildings/:id/rooms`: several rooms at once (comma-separated), optional bed count | One room per request, no bed count |
+| `PATCH /api/rooms/:id` rename or move to a floor | Not built |
+| `PATCH /api/beds/:id` retire or restore | `POST /api/beds/:id/retire` and `/reactivate` |
+| Structure screen shows each student's name against their room or bed (section 9) | Shows bed status only (students arrive on Day 4) |
+
+Other differences: backup artifacts are kept 90 days (section 11 says 30 daily
+copies); the recovery steps live in `docs/deploy.md` until `docs/RECOVERY.md` (Day 10);
+client screens are in `client/src/owner/` and `client/src/auth/` rather than
+`pages/owner/`; helmet (Content Security Policy, section 8) is not added yet.
