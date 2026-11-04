@@ -82,6 +82,7 @@ export async function admitStudent(
   // Use one connection for the complete transaction.
   const c = await db.connect();
   let transactionStarted = false;
+  let rollbackFailed = false;
 
   try {
     await c.query("BEGIN");
@@ -150,7 +151,9 @@ export async function admitStudent(
       try {
         await c.query("ROLLBACK");
       } catch {
-        // Preserve the original error if rollback itself fails.
+        // Preserve the original error if rollback itself fails, but the connection may
+        // be broken: release(true) below discards it instead of returning it to the pool.
+        rollbackFailed = true;
       }
     }
 
@@ -169,8 +172,8 @@ export async function admitStudent(
 
     throw err;
   } finally {
-    // Always release the database connection.
-    c.release();
+    // Always release the database connection; discard it if ROLLBACK failed.
+    c.release(rollbackFailed);
   }
 }
 
@@ -222,6 +225,283 @@ export async function insertStudentWithStay(
   );
 
   return studentId;
+}
+
+// ---- Transfer (owner only) ----
+
+// Where the student moves to. Already validated by the route: a bed always comes with
+// its room.
+export type TransferInput = {
+  buildingId: number;
+  roomId: number | null;
+  bedId: number | null;
+};
+
+export type TransferredStay = {
+  // "transferred": the old stay ended today and a new one started today.
+  // "reassigned": the stay had not started, so it was moved in place.
+  kind: "transferred" | "reassigned";
+  id: number; // the student's current stay: the new one, or the same one when reassigned
+  buildingId: number;
+  roomId: number | null;
+  bedId: number | null;
+  startedOn: string; // today, or the unchanged future start when reassigned
+};
+
+// Moves a current student to another building, room or bed, all or nothing. Two paths,
+// chosen by the current stay's started_on (decided on day 5):
+// - started_on <= today, the student has joined: ends the current stay today and starts a
+//   new one today. The old row is the history.
+// - started_on > today, a future joining date: nobody has lived anywhere yet, so the
+//   stay's building, room and bed are updated in place, with no history row.
+//   Migration 007 allows that UPDATE only on such a stay; its trigger refuses any other
+//   (23514, constraint stays_place_fixed_once_started).
+// `today` is India's date ('YYYY-MM-DD'); the route passes hostelToday(), tests a fixed day.
+//
+// The refusals (status, code):
+//   404 student_not_found   no student with this id (an owner's id counts as missing)
+//   409 student_inactive    the student has moved out; reactivate instead
+//   409 no_current_stay     an active student without a current stay (should not happen)
+//   404 building_not_found  \
+//   404 room_not_found       > same rules and messages as admitStudent
+//   404 bed_not_found        |
+//   409 bed_retired          |
+//   409 bed_occupied        /  another student's current stay holds the bed
+//   409 same_place          building, room and bed are all the same as now (decided on
+//                           day 5: no history row that changes nothing)
+//   409 stay_started        the trigger refused a reassignment because the stay started
+//                           between computing `today` and the transaction (around
+//                           midnight); a retry takes the transfer path
+// All of them apply to both paths.
+// A same-day transfer is allowed (decided on day 5): the old stay may start and end today,
+// which is how the owner fixes a wrong bed chosen at admission.
+// Locking: the student's users row is locked first, so two transfers of the same student
+// run one after the other and the second starts from the stay the first created.
+// Tests: tests/transfer.test.ts; the trigger itself: tests/accommodation.test.ts.
+export async function transferStudent(
+  db: Db,
+  ownerId: number,
+  studentId: number,
+  to: TransferInput,
+  today: string,
+): Promise<TransferredStay> {
+  const c = await db.connect();
+  let transactionStarted = false;
+  let rollbackFailed = false;
+
+  try {
+    await c.query("BEGIN");
+    transactionStarted = true;
+
+    // 1. Lock the student account and check that it exists and is active.
+    const student = await c.query<{ isActive: boolean }>(
+      `SELECT is_active AS "isActive"
+       FROM users
+       WHERE id = $1 AND role = 'student'
+       FOR UPDATE`,
+      [studentId],
+    );
+
+    if (student.rowCount === 0) {
+      throw new HttpError(404, "student_not_found", "That student does not exist.");
+    }
+
+    if (!student.rows[0].isActive) {
+      throw new HttpError(
+        409,
+        "student_inactive",
+        "This student is inactive. Reactivate them before transferring.",
+      );
+    }
+
+    // 2. Find and lock the student's current stay.
+    const current = await c.query<{
+      id: number;
+      buildingId: number;
+      roomId: number | null;
+      bedId: number | null;
+      startedOn: string;
+    }>(
+      `SELECT id,
+              building_id AS "buildingId",
+              room_id AS "roomId",
+              bed_id AS "bedId",
+              to_char(started_on, 'YYYY-MM-DD') AS "startedOn"
+       FROM stays
+       WHERE student_id = $1 AND ended_on IS NULL
+       FOR UPDATE`,
+      [studentId],
+    );
+
+    if (current.rowCount === 0) {
+      throw new HttpError(
+        409,
+        "no_current_stay",
+        "This student has no current stay to transfer.",
+      );
+    }
+
+    const oldStay = current.rows[0];
+
+    // 3. Check that the destination building exists.
+    const building = await c.query(
+      "SELECT id FROM buildings WHERE id = $1",
+      [to.buildingId],
+    );
+
+    if (building.rowCount === 0) {
+      throw new HttpError(
+        404,
+        "building_not_found",
+        "The selected building was not found.",
+      );
+    }
+
+    // 4. If a room was provided, verify that it belongs to the building.
+    if (to.roomId !== null) {
+      const room = await c.query(
+        "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
+        [to.roomId, to.buildingId],
+      );
+
+      if (room.rowCount === 0) {
+        throw new HttpError(
+          404,
+          "room_not_found",
+          "The selected room was not found in this building.",
+        );
+      }
+    }
+
+    // 5. If a bed was provided, verify its room and active status.
+    if (to.bedId !== null) {
+      const bed = await c.query<{ id: number; is_active: boolean }>(
+        "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
+        [to.bedId, to.roomId],
+      );
+
+      if (bed.rowCount === 0) {
+        throw new HttpError(
+          404,
+          "bed_not_found",
+          "The selected bed was not found in this room.",
+        );
+      }
+
+      if (!bed.rows[0].is_active) {
+        throw new HttpError(
+          409,
+          "bed_retired",
+          "The selected bed is retired and cannot be assigned.",
+        );
+      }
+    }
+
+    // 6. Refuse a move to the exact same building, room and bed.
+    if (
+      oldStay.buildingId === to.buildingId &&
+      oldStay.roomId === to.roomId &&
+      oldStay.bedId === to.bedId
+    ) {
+      throw new HttpError(
+        409,
+        "same_place",
+        "The student is already assigned to this place.",
+      );
+    }
+
+    // 7. A future stay has not started: update its place without adding history.
+    if (oldStay.startedOn > today) {
+      await c.query(
+        `UPDATE stays
+         SET building_id = $1, room_id = $2, bed_id = $3
+         WHERE id = $4`,
+        [to.buildingId, to.roomId, to.bedId, oldStay.id],
+      );
+
+      await c.query("COMMIT");
+      transactionStarted = false;
+
+      return {
+        kind: "reassigned",
+        id: oldStay.id,
+        buildingId: to.buildingId,
+        roomId: to.roomId,
+        bedId: to.bedId,
+        startedOn: oldStay.startedOn,
+      };
+    }
+
+    // 8. The stay has started: end the old stay today.
+    await c.query(
+      `UPDATE stays
+       SET ended_on = $1
+       WHERE id = $2`,
+      [today, oldStay.id],
+    );
+
+    // 9. Create the new stay, starting today and attributed to the owner.
+    const inserted = await c.query<{ id: number }>(
+      `INSERT INTO stays (
+         student_id, building_id, room_id, bed_id, started_on, created_by
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [studentId, to.buildingId, to.roomId, to.bedId, today, ownerId],
+    );
+
+    await c.query("COMMIT");
+    transactionStarted = false;
+
+    return {
+      kind: "transferred",
+      id: inserted.rows[0].id,
+      buildingId: to.buildingId,
+      roomId: to.roomId,
+      bedId: to.bedId,
+      startedOn: today,
+    };
+  } catch (err) {
+    // Roll back every change if any step fails.
+    if (transactionStarted) {
+      try {
+        await c.query("ROLLBACK");
+      } catch {
+        // Preserve the original error if rollback itself fails, but the connection may
+        // be broken: release(true) below discards it instead of returning it to the pool.
+        rollbackFailed = true;
+      }
+    }
+
+    // Convert the database's refusals into owner-friendly 409s.
+    const pgError = err as { code?: string; constraint?: string };
+
+    if (
+      pgError.code === "23505" &&
+      pgError.constraint === "stays_one_current_per_bed"
+    ) {
+      throw new HttpError(
+        409,
+        "bed_occupied",
+        "The selected bed is already occupied.",
+      );
+    }
+
+    if (
+      pgError.code === "23514" &&
+      pgError.constraint === "stays_place_fixed_once_started"
+    ) {
+      throw new HttpError(
+        409,
+        "stay_started",
+        "This student's stay has just started. Please try the transfer again.",
+      );
+    }
+
+    throw err;
+  } finally {
+    c.release(rollbackFailed);
+  }
 }
 
 // ---- Directory and profile (owner only) ----

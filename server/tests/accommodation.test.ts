@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
+import { hostelToday } from "../src/lib/dates";
 import { inRollback, insertOwner, insertStudent, pgError, testPool } from "./helpers/db";
 
 // These tests prove the rules the database itself enforces for buildings, rooms, beds
@@ -13,6 +14,10 @@ const FOREIGN_KEY_VIOLATION = "23503";
 const UNIQUE_VIOLATION = "23505";
 const CHECK_VIOLATION = "23514";
 const INSUFFICIENT_PRIVILEGE = "42501";
+// The trigger from migration 007 names itself as the constraint.
+const PLACE_FIXED = "stays_place_fixed_once_started";
+// A start date that is always in the future, so these tests never depend on the clock.
+const FUTURE = "2099-12-01";
 
 async function one(c: PoolClient, sql: string, params: unknown[] = []): Promise<number> {
   const { rows } = await c.query<{ id: number }>(sql, params);
@@ -217,7 +222,7 @@ describe("stays", () => {
 });
 
 describe("what the app role may change", () => {
-  it("cannot delete or rewrite stays, only end them", () =>
+  it("cannot delete stays or move a started one, only end them", () =>
     inRollback(db, async (c) => {
       const a = await structure(c);
       const b = await structure(c);
@@ -228,11 +233,13 @@ describe("what the app role may change", () => {
       });
       const del = await pgError(c, "DELETE FROM stays WHERE id = $1", [stay]);
       expect(del.code).toBe(INSUFFICIENT_PRIVILEGE);
+      // Since migration 007 the role may update the place columns, so the trigger is
+      // what refuses moving a stay that has started.
       const move = await pgError(c, "UPDATE stays SET building_id = $1 WHERE id = $2", [
         b.building,
         stay,
       ]);
-      expect(move.code).toBe(INSUFFICIENT_PRIVILEGE);
+      expect(move).toMatchObject({ code: CHECK_VIOLATION, constraint: PLACE_FIXED });
       await c.query("UPDATE stays SET ended_on = '2026-02-01' WHERE id = $1", [stay]);
     }));
 
@@ -274,5 +281,102 @@ describe("what the app role may change", () => {
       const { floor } = await structure(c);
       const err = await pgError(c, "DELETE FROM floors WHERE id = $1", [floor]);
       expect(err.code).toBe(FOREIGN_KEY_VIOLATION);
+    }));
+});
+
+// Migration 007: a current stay that has not started yet (a future joining date) may be
+// moved in place; once it has started, only a transfer can move the student.
+describe("moving a stay that has not started", () => {
+  const MOVE = "UPDATE stays SET building_id = $1, room_id = $2, bed_id = $3 WHERE id = $4";
+
+  async function stayAt(c: PoolClient, place: Omit<StayFields, "student" | "owner">) {
+    return addStay(c, { student: await insertStudent(c), owner: await insertOwner(c), ...place });
+  }
+
+  it("can change the building, room and bed of a current stay that starts in the future", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const b = await structure(c);
+      const stay = await stayAt(c, { building: a.building, room: a.room, bed: a.bed1, startedOn: FUTURE });
+
+      await c.query(MOVE, [b.building, b.room, b.bed2, stay]);
+
+      const { rows } = await c.query(
+        "SELECT building_id, room_id, bed_id, started_on, ended_on FROM stays WHERE id = $1",
+        [stay],
+      );
+      expect(rows[0]).toEqual({
+        building_id: b.building,
+        room_id: b.room,
+        bed_id: b.bed2,
+        started_on: FUTURE,
+        ended_on: null,
+      });
+    }));
+
+  it("cannot move a stay that has started", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const stay = await stayAt(c, { building: a.building, room: a.room, bed: a.bed1 }); // 2026-01-14
+
+      const err = await pgError(c, MOVE, [a.building, a.room, a.bed2, stay]);
+      expect(err).toMatchObject({ code: CHECK_VIOLATION, constraint: PLACE_FIXED });
+    }));
+
+  it("counts a stay that starts today as started", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const stay = await stayAt(c, { building: a.building, startedOn: hostelToday() });
+
+      const err = await pgError(c, MOVE, [a.building, a.room, null, stay]);
+      expect(err).toMatchObject({ code: CHECK_VIOLATION, constraint: PLACE_FIXED });
+    }));
+
+  it("cannot move an ended stay, even one that starts in the future", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const stay = await stayAt(c, { building: a.building, startedOn: FUTURE, endedOn: "2099-12-05" });
+
+      const err = await pgError(c, MOVE, [a.building, a.room, null, stay]);
+      expect(err).toMatchObject({ code: CHECK_VIOLATION, constraint: PLACE_FIXED });
+    }));
+
+  it("still cannot change who, when or by whom, even before the stay starts", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const stay = await stayAt(c, { building: a.building, startedOn: FUTURE });
+      const someone = await insertStudent(c);
+
+      for (const [column, value] of [
+        ["started_on", "2099-12-02"],
+        ["student_id", someone],
+        ["created_by", someone],
+      ] as const) {
+        const err = await pgError(c, `UPDATE stays SET ${column} = $1 WHERE id = $2`, [value, stay]);
+        expect(err.code, column).toBe(INSUFFICIENT_PRIVILEGE);
+      }
+    }));
+
+  it("can still end any stay, started or not", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const started = await stayAt(c, { building: a.building, room: a.room, bed: a.bed1 });
+      const future = await stayAt(c, { building: a.building, room: a.room, bed: a.bed2, startedOn: FUTURE });
+
+      await c.query("UPDATE stays SET ended_on = '2026-02-01' WHERE id = $1", [started]);
+      await c.query("UPDATE stays SET ended_on = $1 WHERE id = $2", [FUTURE, future]);
+    }));
+
+  it("still refuses an occupied bed and a bed from another room", () =>
+    inRollback(db, async (c) => {
+      const a = await structure(c);
+      const b = await structure(c);
+      await stayAt(c, { building: a.building, room: a.room, bed: a.bed2 });
+      const stay = await stayAt(c, { building: a.building, room: a.room, bed: a.bed1, startedOn: FUTURE });
+
+      const occupied = await pgError(c, MOVE, [a.building, a.room, a.bed2, stay]);
+      expect(occupied).toMatchObject({ code: UNIQUE_VIOLATION, constraint: "stays_one_current_per_bed" });
+      const elsewhere = await pgError(c, MOVE, [a.building, a.room, b.bed1, stay]);
+      expect(elsewhere.code).toBe(FOREIGN_KEY_VIOLATION);
     }));
 });
