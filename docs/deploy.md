@@ -94,16 +94,28 @@ From then on, every push to `main` deploys by itself once CI has passed.
 
 ## 5. Owner account
 
-Once, from your laptop, in the `server` folder (PowerShell). The variable set here
-takes priority over `.env`, and is removed afterwards:
+Once, from your laptop, in a new PowerShell window. A variable set in the window takes
+priority over `.env`, so the script writes to production, not your local database.
+
+Never type a URL with a password into a command: PowerShell saves every typed command
+to a history file on disk. Paste it at a hidden prompt instead, which is not saved:
 
 ```powershell
-$env:DATABASE_URL = "<DATABASE_URL from step 1>"
+cd C:\Users\NICK\projects\HOSTELCONNECT\server
+$s = Read-Host "Paste production DATABASE_URL" -AsSecureString; $env:DATABASE_URL = [Net.NetworkCredential]::new('', $s).Password; Remove-Variable s
 npm run seed:owner -- --name "Your Name" --email you@example.com
-Remove-Item Env:DATABASE_URL
 ```
 
-It prints a temporary password once. Log in on the Render URL and change it.
+It prints a temporary password once. Copy it straight into your password manager, then
+clear the screen, remove the variable and close the window:
+
+```powershell
+Clear-Host; Remove-Item Env:DATABASE_URL
+```
+
+Log in on the Render URL with the temporary password. The app allows nothing else until
+you choose a new one (the server enforces this too). If the script says an owner
+already exists, it changed nothing.
 
 ## 6. First backup and restore drill
 
@@ -126,9 +138,13 @@ nightly runs after 60 days without a commit (it emails first; re-enable in Actio
 1. Create a new Supabase project (step 1) and update the three URL secrets (step 2).
 2. Run **Migrate production database** on the commit that matches the backup, so the
    empty schema has the same migrations as the backup.
-3. Load the rows (Git Bash; the admin URL ends in `?sslmode=require` here):
+3. Load the rows, in Git Bash. Paste the admin URL (ending in `?sslmode=require` here)
+   at the hidden `read` prompt: Bash saves typed commands to a history file, and only
+   the name `$RESTORE_URL` ends up there, never the URL.
    ```bash
-   bash ops/restore-data.sh hostelconnect-<date>.dump.age /path/to/hostelconnect-backup.key "postgres://postgres.<ref>:<ADMIN_PW>@<pooler-host>:5432/postgres?sslmode=require"
+   read -rsp "Paste the admin URL: " RESTORE_URL; echo
+   bash ops/restore-data.sh hostelconnect-<date>.dump.age /path/to/hostelconnect-backup.key "$RESTORE_URL"
+   unset RESTORE_URL
    ```
    It refuses a database that already has users, and loads everything or nothing.
 4. In Render, set the new `DATABASE_URL` and redeploy.
