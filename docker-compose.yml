@@ -1,8 +1,8 @@
 # Local development database only. Production uses Supabase.
 services:
   db:
-    # Same major version as Supabase, so local behaviour matches production.
-    # Confirm Supabase's version on day 3 and change this number if it differs.
+    # Same major version as Supabase (17.11 when checked on 2026-11-03), so local
+    # behaviour matches production. Change it together with the workflows if Supabase upgrades.
     image: postgres:17-alpine
     container_name: hostelconnect-db
     restart: unless-stopped
