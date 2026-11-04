@@ -30,12 +30,14 @@ jobs:
       # Only its password is used: migration 001 sets it on the hostel_app role.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
+      # First: every run step works in server/ (defaults above), which only exists
+      # once the repository is checked out.
+      - uses: actions/checkout@v4
+
       - name: Check the secrets are set
         run: |
           test -n "$MIGRATION_DATABASE_URL" || { echo "MIGRATION_DATABASE_URL secret is missing"; exit 1; }
           test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is missing"; exit 1; }
-
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
