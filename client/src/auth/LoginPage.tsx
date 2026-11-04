@@ -116,6 +116,13 @@ export function LoginPage({ onLoggedIn }: Props) {
         <p className="mt-6 text-center text-sm text-slate-500">
           Forgot your password? Ask the hostel owner to reset it.
         </p>
+        <p className="mt-2 text-center text-sm text-slate-500">
+          Former student?{" "}
+          {/* A plain link, so this page needs no router (and its tests none either). */}
+          <a href="/request-access" className="font-medium text-indigo-700 hover:underline">
+            Request access
+          </a>
+        </p>
       </div>
     </main>
   );

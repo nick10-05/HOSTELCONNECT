@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes } from "react-router";
 import { logout, me, type User } from "./api/auth";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
+import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
@@ -33,8 +34,14 @@ export function App() {
     );
   }
 
+  // Signed out: the request form for former students, and the sign-in page everywhere else.
   if (session.status === "anonymous") {
-    return <LoginPage onLoggedIn={signIn} />;
+    return (
+      <Routes>
+        <Route path="/request-access" element={<RequestAccessPage />} />
+        <Route path="*" element={<LoginPage onLoggedIn={signIn} />} />
+      </Routes>
+    );
   }
 
   const { user } = session;
