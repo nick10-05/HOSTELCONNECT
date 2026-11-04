@@ -91,8 +91,8 @@ client screens are in `client/src/owner/` and `client/src/auth/` rather than
 
 Done when: the owner admits a student into a building with an individual temporary
 password, the student is forced to change it, the directory searches and filters, and the
-CSV import loads a test file. All four were met on the local database; production gets
-them when `day-4` is merged (after migration 006 runs there).
+CSV import loads a test file. All four were met on the local database, and the code is
+live in production (see "Deployment" below).
 
 | Task | Who | Status | How it was verified |
 |---|---|---|---|
@@ -109,10 +109,24 @@ them when `day-4` is merged (after migration 006 runs there).
 
 Checks at the end of the day: server 273 tests, client 58 tests, typecheck and builds clean.
 
+### Deployment (2026-11-04, UTC)
+
+| Step | Evidence |
+|---|---|
+| Day 4 committed on `day-4` | `c7427db`, author nick10-05 |
+| CI on `day-4` | Run 41865084494: server and client green (delayed by a GitHub Actions outage) |
+| Migration 006 on production, before the merge | "Migrate production database" run #4 on `day-4` at 16:37: 001–005 skipped, 006 applied |
+| Backup after the migration | "Backup database" run #3 at 16:45: `hostelconnect-2026-11-04T1645Z.dump.age`, 23,364 bytes, kept 90 days |
+| `day-4` merged into `main` | Fast-forward to `c7427db`, pushed |
+| CI on `main` | Run 41871007616 green |
+| Render deploy | `/api/health` answers `ok`; `/api/students` answers 401 without a login (was 404); `/students` and `/students/new` serve the app; a cross-site POST is refused with 403 |
+| Owner check | Signed in on production; Students ("No students yet") and Admit student load; nothing was submitted |
+
+Day 4 is complete. Production has no students yet: the real register is imported at
+go-live, a separate step.
+
 ### Notes for later days
 
-- **Migration 006 must run on production before `day-4` is merged** ("Migrate production
-  database" on the branch).
 - Food counts (day 8) must add non-veg students to the veg side on their veg days.
 - The import and the seed refuse any database that is not on this machine. Importing the
   real register into production is a separate go-live step.
@@ -122,3 +136,4 @@ Checks at the end of the day: server 273 tests, client 58 tests, typecheck and b
   deactivation, reactivation and student password reset belong to day 5; fee history to day 9.
 - The directory does not search phone numbers, because the search is part of the page
   address and phone numbers never go in URLs.
+- Watch the first unattended nightly backup (03:00 IST on 2026-11-05), carried over from day 3.
