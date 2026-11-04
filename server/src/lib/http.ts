@@ -28,7 +28,29 @@ export function parseBody<T extends z.ZodType>(
   req: Request,
   res: Response,
 ): z.infer<T> | undefined {
-  const result = schema.safeParse(req.body);
+  return parseOr400(schema, req.body, res);
+}
+
+// The same for the query string (?search=...&page=2). Its values always arrive as text.
+export function parseQuery<T extends z.ZodType>(
+  schema: T,
+  req: Request,
+  res: Response,
+): z.infer<T> | undefined {
+  return parseOr400(schema, req.query, res);
+}
+
+// Route ids are positive whole numbers. Anything else cannot match a row, so it is a
+// 404 like an unknown id, and the service never sees it.
+export function idParam(req: Request, res: Response): number | undefined {
+  const raw = req.params.id;
+  if (typeof raw === "string" && /^[1-9]\d{0,14}$/.test(raw)) return Number(raw);
+  sendError(res, 404, "not_found", "No such item");
+  return undefined;
+}
+
+function parseOr400<T extends z.ZodType>(schema: T, input: unknown, res: Response): z.infer<T> | undefined {
+  const result = schema.safeParse(input);
   if (result.success) return result.data;
   const problems = result.error.issues
     .map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message))

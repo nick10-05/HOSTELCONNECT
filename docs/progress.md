@@ -7,7 +7,8 @@ not memory.
 ## Day 1 — design (2026-11-03)
 
 - [x] Design document written and reviewed (Revision 5)
-- [ ] Open decisions: Aadhaar storage, record book format (spreadsheet or paper)
+- [ ] Open decisions: Aadhaar storage (still open); record book format decided on day 4:
+      a paper register
 - [x] Accounts and age key pair: done on 2026-11-04 as part of Day 3 (GitHub, Supabase,
       Render on free plans; age private key stored outside the repo)
 
@@ -54,9 +55,8 @@ Day 3 is complete.
   not exist yet. The first run after adding them (manual, 11:56 UTC) succeeded; the
   next scheduled run is the first unattended one to watch.
 - `actions/checkout` and `actions/setup-node` are at v4; bump them if GitHub warns.
-- Open design decisions from the design document: temporary-password length (section 6
-  says 8 characters in one place and 10 in another), Aadhaar storage, record book
-  format (spreadsheet or paper).
+- Open design decisions from the design document: Aadhaar storage. (Temporary-password
+  length and the record book format were decided on day 4.)
 
 ### Differences from Revision 5 to reconcile
 
@@ -72,7 +72,53 @@ working session, so it differs from section 5:
 | `PATCH /api/beds/:id` retire or restore | `POST /api/beds/:id/retire` and `/reactivate` |
 | Structure screen shows each student's name against their room or bed (section 9) | Shows bed status only (students arrive on Day 4) |
 
+Decided on day 4 (2026-11-04), after checking the owner's record book:
+
+- **Veg days.** Some non-veg students avoid non-veg on particular weekdays. Migration 006
+  adds `users.veg_days` (weekday numbers, 1 = Monday ... 7 = Sunday), allowed only for
+  non-veg students. Day 8's food count for a day must add non-veg students whose veg days
+  include that day to the veg side. Weekly days only; whole periods (such as a festival
+  month) are not modelled.
+- **The record book is a paper register** with emails, category details, food habits and
+  individual fees, so it is typed into the import CSV template once.
+
 Other differences: backup artifacts are kept 90 days (section 11 says 30 daily
 copies); the recovery steps live in `docs/deploy.md` until `docs/RECOVERY.md` (Day 10);
 client screens are in `client/src/owner/` and `client/src/auth/` rather than
 `pages/owner/`; helmet (Content Security Policy, section 8) is not added yet.
+
+## Day 4 — students and import (2026-11-04)
+
+Done when: the owner admits a student into a building with an individual temporary
+password, the student is forced to change it, the directory searches and filters, and the
+CSV import loads a test file. All four were met on the local database; production gets
+them when `day-4` is merged (after migration 006 runs there).
+
+| Task | Who | Status | How it was verified |
+|---|---|---|---|
+| Temporary password generator (10 characters, no look-alikes; decided over 8) | Nikhil | Done | 7 tests in `tempPassword.test.ts`; `seed:owner` uses it |
+| Admission transaction (user and first stay, `POST /api/students`) | Nikhil | Done | 12 tests in `students.test.ts`, including two admissions racing for one bed |
+| Must-change gate for an admitted student | Nikhil (day 2) | Done | `admissionFlow.test.ts`: admit, log in, blocked, change password, let through |
+| Due-date function (`nthDueDate`, month-end clamping) | Nikhil | Done | 12 tests in `fees.test.ts`, leap years and the century rule included |
+| Admission form with category fields and building, room and bed pickers | Claude | Done | Screen tests; admitted a fake student in a browser, desktop and phone width |
+| Directory and profile (`GET /api/students`, `GET /api/students/:id`) | Claude | Done | Service and route tests; searched, filtered, paged and opened a profile in a browser |
+| Veg days (migration 006) | Claude | Done | Database, route and screen tests; saved and shown in a browser |
+| `import-students` and its CSV template | Claude | Done | 14 tests; imported a fake 10-row file locally; a second run and a sheet path inside the project were refused |
+| `seed-200-students` | Claude | Done | 6 tests; seeded locally: 202 current students over 11 pages, 10 former |
+| Owner password reset script (planned for day 10, pulled forward) | Claude | Done | 9 tests; used to reset the local owner |
+
+Checks at the end of the day: server 273 tests, client 58 tests, typecheck and builds clean.
+
+### Notes for later days
+
+- **Migration 006 must run on production before `day-4` is merged** ("Migrate production
+  database" on the branch).
+- Food counts (day 8) must add non-veg students to the veg side on their veg days.
+- The import and the seed refuse any database that is not on this machine. Importing the
+  real register into production is a separate go-live step.
+- Development: the Vite proxy now keeps the browser's `Host` header (`changeOrigin: false`).
+  Vite 8 rewrote it, so the Origin check refused every login through the dev server.
+- Not in v1 scope and not built: editing a student (`PATCH /api/students/:id`). Transfer,
+  deactivation, reactivation and student password reset belong to day 5; fee history to day 9.
+- The directory does not search phone numbers, because the search is part of the page
+  address and phone numbers never go in URLs.

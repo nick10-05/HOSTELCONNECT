@@ -7,6 +7,10 @@ export type Queryable = Pick<PoolClient, "query">;
 // pg returns bigint (ids, count(*), sums) as strings because they can exceed
 // JavaScript's safe integer range. Ours never get near 2^53, so parse them as numbers.
 types.setTypeParser(types.builtins.INT8, (value) => Number(value));
+// A DATE column (joining_date, started_on) is a calendar day with no time or zone. pg
+// would turn it into a JavaScript Date at local midnight, which shifts the day when the
+// server and the hostel are in different time zones. Keep it as the text 'YYYY-MM-DD'.
+types.setTypeParser(types.builtins.DATE, (value) => value);
 
 // One pool for the whole process, passed into createApp so tests can hand in their own.
 // Kept small: Supabase's free pooler allows only a limited number of connections.

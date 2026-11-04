@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import { Navigate, NavLink, Route, Routes } from "react-router";
 import { logout, me, type User } from "./api/auth";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
+import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { StructurePage } from "./owner/StructurePage";
+import { StudentProfilePage } from "./owner/StudentProfilePage";
+import { StudentsPage } from "./owner/StudentsPage";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
 
@@ -40,12 +44,13 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // The owner's only page so far; students get a placeholder until their pages exist.
+  // Students get a placeholder until their pages exist.
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <span className="font-semibold text-slate-900">HostelConnect</span>
+          {user.role === "owner" && <OwnerNav />}
           <button
             type="button"
             onClick={signOut}
@@ -57,7 +62,15 @@ export function App() {
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
         {user.role === "owner" ? (
-          <StructurePage />
+          <Routes>
+            <Route path="/structure" element={<StructurePage />} />
+            <Route path="/students" element={<StudentsPage />} />
+            <Route path="/students/new" element={<AdmitStudentPage />} />
+            <Route path="/students/:id" element={<StudentProfilePage />} />
+            {/* No dashboard yet: the owner starts on the structure page. Unknown
+                addresses go there too instead of showing a blank page. */}
+            <Route path="*" element={<Navigate to="/structure" replace />} />
+          </Routes>
         ) : (
           <p className="text-slate-700">
             Signed in as <strong>{user.name}</strong> ({user.role}).
@@ -65,5 +78,28 @@ export function App() {
         )}
       </main>
     </div>
+  );
+}
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `rounded-lg px-3 py-1.5 text-sm font-medium ${
+    isActive ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+  }`;
+
+// One entry per owner page; later days add theirs here.
+function OwnerNav() {
+  return (
+    <nav aria-label="Owner pages" className="order-last flex w-full gap-1 sm:order-none sm:w-auto">
+      <NavLink to="/structure" className={navLinkClass}>
+        Buildings
+      </NavLink>
+      {/* end: highlighted on the directory only, not while admitting at /students/new */}
+      <NavLink to="/students" end className={navLinkClass}>
+        Students
+      </NavLink>
+      <NavLink to="/students/new" className={navLinkClass}>
+        Admit student
+      </NavLink>
+    </nav>
   );
 }

@@ -1,0 +1,3 @@
+name,email,phone,parent_phone,category,college_name,branch,academic_year,company,designation,joining_date,food,veg_days,monthly_fee,building,floor,room,bed
+Example College Student,college.student@example.com,98765 43210,98765 00000,college,City College,CSE,2,,,14-01-2025,non_veg,Tue;Sat,6500,Building A,1,101,A
+Example Working Person,working.person@example.com,+91 91234 56780,91234 00000,working,,,,Acme Pvt Ltd,Analyst,31/03/2024,veg,,7000,Building B,,G1,

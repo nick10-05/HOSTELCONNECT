@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { createPool } from "../src/db";
 import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { loadDotEnv } from "../src/loadEnv";
 import { hashPassword } from "../src/lib/password";
+import { generateTemporaryPassword } from "../src/lib/tempPassword";
 
 // Creates the one owner account with a temporary password, printed once.
 //   npm run seed:owner -- --name "Full Name" --email owner@example.com
@@ -16,36 +16,36 @@ const argsSchema = z.object({
   email: z.email("--email must be a valid email address"),
 });
 
-// 12 characters of base64url, about 72 bits of randomness. Replaced on day 4 by the
-// readable temporary-password generator used for admissions.
-function temporaryPassword(): string {
-  return randomBytes(9).toString("base64url");
-}
-
 async function main() {
   const parsed = argsSchema.safeParse(
     parseArgs({ options: { name: { type: "string" }, email: { type: "string" } } }).values,
   );
+
   if (!parsed.success) {
     throw new Error(
       `${parsed.error.issues.map((i) => i.message).join("\n")}\n` +
         'Usage: npm run seed:owner -- --name "Full Name" --email owner@example.com',
     );
   }
+
   const args = parsed.data;
 
   loadDotEnv();
   const url = process.env.DATABASE_URL?.trim() ?? "";
   const problem = databaseUrlProblem(url);
   if (problem) throw new Error(`DATABASE_URL ${problem}`);
+
   const db = createPool(url);
+
   try {
     const existing = await db.query("SELECT 1 FROM users WHERE role = 'owner' LIMIT 1");
+
     if (existing.rowCount) {
       throw new Error("An owner account already exists. Nothing was changed.");
     }
 
-    const password = temporaryPassword();
+    const password = generateTemporaryPassword();
+
     await db.query(
       `INSERT INTO users (role, name, email, password_hash, must_change_password)
        VALUES ('owner', $1, $2, $3, true)`,
@@ -68,5 +68,6 @@ main().catch((err) => {
   } else {
     console.error(err instanceof Error ? err.message : err);
   }
+
   process.exit(1);
 });

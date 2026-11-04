@@ -1,0 +1,11 @@
+name,email,phone,parent_phone,category,college_name,branch,academic_year,company,designation,joining_date,food,veg_days,monthly_fee,building,floor,room,bed
+Aarav Sample,aarav.sample@example.com,90000 10001,90000 20001,college,Sample Engineering College,CSE,1,,,14-01-2025,veg,,6500,Sample Block A,1,101,A
+Bhavna Sample,bhavna.sample@example.com,+91 90000-10002,90000 20002,college,Sample Arts College,English,3,,,31/01/2025,non_veg,Tue;Sat,6000,Sample Block A,1,101,B
+Chirag Sample,chirag.sample@example.com,9000010003,9000020003,working,,,,Sample Tech Pvt Ltd,Developer,2024-08-30,non_veg,,7500,Sample Block A,1,102,A
+"Dsouza, Diya Sample",diya.sample@example.com,9000010004,9000020004,working,,,,Sample Bank,,29-02-2024,veg,,7000,Sample Block A,2,201,
+Esha Sample,esha.sample@example.com,9000010005,9000020005,other,,,,,,15-06-2023,non_veg,Mon;Thu;Sat,5500,Sample Block A,,,
+Farhan Sample,farhan.sample@example.com,9000010006,9000020006,college,Sample Engineering College,Mechanical,2,,,01-07-2025,non_veg,,,Sample Block B,0,G1,A
+Gauri Sample,gauri.sample@example.com,9000010007,9000020007,college,Sample Medical College,MBBS,4,,,30/09/2024,veg,,8000,Sample Block B,0,G1,B
+Harsh Sample,harsh.sample@example.com,9000010008,9000020008,working,,,,Sample Logistics,Supervisor,10-10-2025,non_veg,sat,6500,Sample Block B,,G2,
+Isha Sample,isha.sample@example.com,9000010009,9000020009,other,,,,,,05-05-2022,veg,,4500,Sample Block B,,,
+Jay Sample,jay.sample@example.com,9000010010,9000020010,college,Sample Commerce College,BCom,1,,,31-10-2025,non_veg,Tuesday,6500,Sample Block B,1,105,A

@@ -1,6 +1,6 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
-import { parseBody, sendError } from "../lib/http";
+import { idParam, parseBody } from "../lib/http";
 import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import * as structure from "../services/structure";
 
@@ -18,15 +18,6 @@ const roomSchema = z.object({
   floorId: z.number().int().positive().nullable().default(null),
 });
 const bedSchema = z.object({ bedNumber: name(10) });
-
-// Route ids are positive whole numbers. Anything else cannot match a row, so it is a
-// 404 like an unknown id, and the service never sees it.
-function idParam(req: Request, res: Response): number | undefined {
-  const raw = req.params.id;
-  if (typeof raw === "string" && /^[1-9]\d{0,14}$/.test(raw)) return Number(raw);
-  sendError(res, 404, "not_found", "No such item");
-  return undefined;
-}
 
 export function structureRouter(deps: AuthDeps): Router {
   const { db } = deps;

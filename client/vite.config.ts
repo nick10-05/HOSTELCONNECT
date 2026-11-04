@@ -8,7 +8,10 @@ export default defineConfig({
     // In development the browser talks only to Vite, which forwards API calls to
     // Express. One origin, as in production, so the session cookie just works.
     proxy: {
-      "/api": "http://localhost:3000",
+      // changeOrigin false keeps the browser's Host header (localhost:5173), so the
+      // server's same-origin check sees it match the Origin. Vite 8 rewrites Host to
+      // the target unless told not to, and every login was refused as cross-site.
+      "/api": { target: "http://localhost:3000", changeOrigin: false },
     },
   },
   test: {
