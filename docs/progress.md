@@ -388,3 +388,106 @@ Signing in to production took several tries: production and the local database h
 owner accounts with separate passwords (the production owner was created on day 3, see
 `docs/deploy.md`, section 5), and the local password was tried first. There is still no tool to
 reset the production owner's password; that belongs in the recovery guide on day 10.
+
+## Day 7 — owner complaint workflow and announcements (2026-11-05)
+
+Done when: the owner filters and sorts, sets priority, changes status and adds notes, the
+student sees the timeline and a notification, and announcements publish, edit, pin, mark urgent
+and delete. Core v1 is live. Met on the local database and checked in a browser as the owner and
+as a student; not yet live (see "Deployment" below).
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Transition map (`STATUS_MOVES`, `checkStatusChange`) | Nikhil (stub, contract and tests first) | Done | 33 table-driven tests in `complaintTransitions.test.ts`: all 16 status pairs, the note rules, 500 characters counted as the database counts them. Checked against a throwaway reference; counting with `note.length` failed 1 test, an extra rejected → open move failed 4 |
+| Owner list query (`listOwnerComplaints`) | Nikhil (stub, contract and tests first) | Done | 9 tests in `ownerComplaints.test.ts`, each in a rolled-back snapshot: every filter, India's dates at both ends (00:10 India time is the new day), the three-level order, paging and totals, moved-out students. A UTC date failed 1 test, a building filter on any past stay failed 2, the order without "active first" failed 1 |
+| Owner detail and the GET routes by role (`getOwnerComplaint`) | Claude | Done | 8 more tests in `ownerComplaints.test.ts` (with the current-stay condition removed, the moved-out test failed); 6 route tests: the owner's list and filters, 12 bad filters answering 400, the student's list unchanged, no phone numbers in any answer |
+| Status change (`changeComplaintStatus`), an event write | Nikhil (stub, contract and tests first) | Done | 15 tests in `statusChange.test.ts`: each of the six moves (status, `updated_at`, `resolved_at`, one event, one notification), every refusal writing nothing, two races of 5 rounds each. Without the student-row lock the reopen race deadlocked (below); a note in the notification failed 6 tests; without `AND status = from` 2 failed |
+| Owner note (`addComplaintNote`), an event write | Claude, at Nikhil's request (section 12 lists it under "You write"); stub, contract and tests first | Done | 14 tests in `complaintNotes.test.ts`: a note on each status touches only `updated_at`, one event, one notification without the note, 6 refusals writing nothing. An untrimmed note and a status reset each failed tests |
+| Priority (`setComplaintPriority`) | Claude | Done | 9 tests in `complaintPriority.test.ts`, including that the student's list and detail are identical after a change. Also setting `updated_at` failed 7 |
+| Write routes: `POST /:id/status`, `PATCH /:id` (priority only, strict), `POST /:id/notes` | Claude | Done | 13 route tests: 401, 403 for a student and for a temporary password, `cross_origin`, 404s, the services' messages passed through unchanged, `no-store`. Without the owner check a student's status change answered 200; a loose PATCH accepted `status` |
+| Migration 010: note length, trimmed note, reopen needs a note; `announcements` | Claude | Done | 2 tests added to `complaintsTable.test.ts`, 5 in `announcementsTable.test.ts`, run as `hostel_app`. Without the reopen CHECK its test failed. Applied to the local database (a second run changed nothing) |
+| Announcement fan-out and delete (`postAnnouncementInTransaction`, `deleteAnnouncementInTransaction`) | Claude, at Nikhil's request (also "You write"); stub, contract and tests first | Done | 8 of the 13 tests in `announcements.test.ts`, in rolled-back snapshots: one notification per active student, fixed text, none for moved-out students or the owner; delete matches the key exactly. Deleting with `LIKE` failed the exact-key test |
+| Announcement edit and list, the transaction wrappers, the routes, `tests/helpers/rollbackDb.ts` | Claude | Done | 5 service tests (an edit that notified again failed 1); 13 route tests through the real app inside one rolled-back transaction; 3 tests of the helper itself. Without the owner check on DELETE a student could delete; a loose PATCH accepted unknown fields |
+| Owner complaint screens: list with filters, detail with status, priority and note controls, shared timeline, dashboard link | Claude | Done | 32 client tests (timeline 4, list 9, detail 17, `App` 2); the student detail's tests unchanged. Reject without a note and `from` sent as the new status each failed tests |
+| Announcement screens, the students' `/notices`, urgent and pinned notices on the student home, a student menu | Claude | Done | 23 client tests (owner page 11, notices 5, home box 3, `App` 4). A delete without confirmation and an Edit button on the students' page each failed tests |
+
+Checks at the end of the day: server 670 tests (527 on day 6), client 191 (136), typecheck and
+builds clean.
+
+Browser check (local dev servers and database):
+
+- Owner, complaints: the dashboard card's new link opened the list; the Electrical filter put
+  `?category=electrical` in the address and left complaint #2. On #1, priority High, Start work
+  with a note, then a note; the database had `in_progress`, `high`, three events, and two
+  notifications for Complaint Tester with no body. Nothing scrolled sideways at 375 px.
+- Student (Nikhil, as Complaint Tester): the bell showed 2 unread with the right titles and no
+  note text, each opening #1; #1 showed In progress, no priority, the timeline with the owner's
+  note, and no controls; #2 stayed Open.
+- Announcements: an urgent, pinned test notice created 204 notifications for the 204 active
+  students, one each, all "Urgent notice from the hostel.", none for the owner or a moved-out
+  student. Editing the title and unpinning left the count at 204. Delete asked first, then
+  removed the notice and all 204 notifications; Complaint Tester's two complaint notifications
+  and the owner's three stayed. Nothing scrolled sideways at 375 px; no console errors from the
+  finished code (the hot reload showed two errors while `App.tsx` was half edited).
+
+Found while building and fixed on the day:
+
+- **A deadlock between a reopen and a new complaint.** `createComplaint` holds the student's
+  `users` row and waits on the one-active-per-category index, which the reopen's UPDATE holds;
+  the reopen's `notify()` then needs a share lock on the same student row (the notification's
+  foreign key). The race test found it ("deadlock detected", a 500). Every path that writes a
+  complaint's timeline now locks the student row first, as `createComplaint` does; the race
+  passes.
+- **Route tests and the fan-out.** A committed announcement would notify the students other test
+  files are checking at the same moment. `tests/helpers/rollbackDb.ts` runs the real app on one
+  test connection, its transactions turned into savepoints, and everything is rolled back.
+- **A cut-off `complaints.ts`.** A save from the editor left the file at 96 lines; it was rebuilt
+  from the last commit plus the day's code, and the cut-off copy was kept outside the repository.
+- **The Windows worker crash, captured.** One full run stopped with `Worker exited unexpectedly
+  with exit code 3221226505` in `importStudents.test.ts`; that file passes on its own, and the
+  next run passed in full (see "Known issue" under day 5).
+
+### Decisions made on day 7
+
+- **Six status moves, not five:** open → in progress, resolved or rejected; in progress →
+  resolved or rejected; resolved → open ("reopen"). Rejected is final. Section 4 says "five legal
+  moves" but also describes reopening; Nikhil chose to keep both.
+- **Notes:** required to reject and to reopen; at most 500 characters, counted as the database
+  counts them; stored trimmed. The database enforces all of it (009 and 010).
+- **A status change sends the status the screen showed (`from`).** If it changed meanwhile, the
+  answer is 409 `status_changed` and the page offers Reload.
+- **Notification text is fixed:** "Your plumbing complaint is now in progress.", "There is a new
+  note on your plumbing complaint.", "New notice from the hostel." or "Urgent notice from the
+  hostel.", always without a body. A note or an announcement could contain a phone number, so its
+  text never reaches a bell, and an edited announcement cannot leave old text there.
+- **Priority stays invisible to students:** setting it changes no `updated_at`, writes no event
+  and notifies no one. A note does move `updated_at`, and is allowed on any status.
+- **Strict PATCH bodies:** priority only on a complaint; title, body, urgent and pinned only on an
+  announcement. A status change is an action with its own route (section 5).
+- **The owner list's building filter is `buildingId`,** as in the student directory, not section
+  5's `building`. Only the default order is offered; section 5 names no other.
+- **Announcements:** the body is required; DELETE answers 204; the confirmation is on the owner's
+  screen (section 8). Urgent and pinned notices sit at the top of the student home (section 9),
+  and students now have a menu (My complaints, Notices).
+- **The dashboard's "Recent notices" card is left for later:** it is in section 9's dashboard but
+  not in day 7's done-when.
+
+### Notes for later days
+
+- **Day 8:** the complaint photo (multipart create, the owner's countdown). The owner's detail
+  page and the shared timeline are where it will show.
+- **Day 10:** the owner's only notification type is the daily digest. The owner's three
+  notifications in the local database are day 5 samples, all read, which is why the owner's bell
+  shows no red count.
+- **Tests:** anything that notifies `"active_students"` through the app runs on `rollbackDb`;
+  every path that writes a complaint's timeline locks the student row first.
+- **Still open, unchanged:** student password reset, the production owner-password tool, Aadhaar,
+  helmet/CSP, backup retention, the Supabase certificate; and now the "Recent notices" card.
+- **Local development data:** the local database is at migration 010. Complaint #1 is in
+  progress, high priority, with two notes; Complaint Tester has two unread notifications; there
+  are no announcements.
+
+### Deployment
+
+To be filled in during the deploy: backup on `main`, migration 010 on `day-7` before the merge,
+CI, the review of `main..day-7`, the fast-forward, Render, and the live checks.
