@@ -138,9 +138,89 @@ go-live, a separate step.
   address and phone numbers never go in URLs.
 - Watch the first unattended nightly backup (03:00 IST on 2026-11-05), carried over from day 3.
 
-## Day 5 — transfers, reactivation, rejoin requests, notifications (in progress)
+## Day 5 — transfers, reactivation, rejoin requests, notifications (2026-11-04 to 2026-11-05)
 
-The full record of day 5 is written when the day ends. Known so far:
+Done when: a transfer keeps history and refuses an occupied bed; deactivate and reactivate
+work; the access-request form and the owner's approval work; the bell works. All four were
+met on the local database. Not in production yet (see "Deployment" below).
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Transfer transaction (`transferStudent`) | Nikhil | Done | 20 tests in `transfer.test.ts`: history kept, occupied and retired beds, same place, same day, two students racing for one bed, two transfers of one student |
+| Reassigning a stay that has not started (migration 007: place grant and trigger) | Claude (migration), Nikhil (service path) | Done | 7 database tests in `accommodation.test.ts`; 5 reassignment tests; the trigger's refusal answers 409 `stay_started` |
+| Transfer route and screen | Claude | Done | 10 route tests; screen tests; transferred a fake student in a browser, desktop and phone width |
+| Move-out (`deactivateStudent`) | Nikhil | Done | 10 tests in `deactivation.test.ts`, two move-outs and a move-out racing a transfer included; `moveOutFlow.test.ts`: an open session gets 401 at once |
+| Reactivation (`reactivateStudent`, core `reactivateInTransaction`) | Nikhil | Done | 15 tests in `reactivation.test.ts`, the move-out-day rule and the cancelled booking included; the end-to-end flow: the old password is refused, the new one is held at the must-change gate |
+| Move-out and reactivation routes and screens | Claude | Done | 17 route tests; screen tests; moved out and reactivated a fake student in a browser |
+| Migration 008 (`rejoin_requests`, `notifications`) | Claude | Done | 11 database tests in `peopleTables.test.ts` |
+| Access-request service with the same-answer rule (`requestRejoin`) | Nikhil | Done | 13 tests in `rejoin.test.ts`: only a former student gets a request, a bad message gets the same 400 for every email, five requests at once make one |
+| Access-request route, rate limits and Request access page | Claude | Done | 11 route tests on the real database (byte-identical answers, both limits, a known and an unknown email counted alike); 6 screen tests; the endpoint answered correctly on the dev server without cookies |
+| Owner's review: list and reject | Claude | Done | 6 tests in `rejoinReview.test.ts` |
+| Approval (`approveRejoinRequest`) | Nikhil | Done | 7 tests: refusals pass through with nothing changed, two approvals, an approval racing a rejection, an approval racing a profile reactivation |
+| Review routes and Rejoin requests page | Claude | Done | 18 route tests; 8 screen tests; approved one and rejected one fake student's request in a browser |
+| `notify()` | Nikhil | Done | 8 tests in `notify.test.ts`: active users only, a dedup key reaches each person once, part of the caller's transaction |
+| Notification routes and the bell | Claude | Done | 6 service and 9 route tests; 11 screen tests, polling with a fake clock included; checked in a browser with 3 local sample notifications, desktop and phone width |
+| Dashboard: students and rejoin requests cards | Claude | Done | 6 service, 2 route and 6 screen tests; the page's numbers matched a direct count in the local database |
+
+Checks at the end of the day: server 450 tests (273 on day 4), client 111 (58), typecheck and
+builds clean.
+
+Found in review and fixed on the day:
+
+- **Approval deadlock.** Approval locked the rejoin request and then the student; a profile
+  reactivation locks the student and then the request. Forced together, they deadlocked in 29
+  of 30 tries (Postgres 40P01, which would have been a 500). Approval now locks the student
+  first, like every other path; a race test covers it.
+- **Message leak on the request form.** The database checks a message's length only when it
+  inserts a row, that is only for a real former student, so a bad message would have answered
+  differently for them. The route and the service now both refuse it first, the same way for
+  every email.
+- **Test isolation.** A test broadcasting to all active students committed its rows, and a test
+  file running in parallel received them. Broadcast tests now run in a rolled-back transaction,
+  and the bell's tests use owners, whom a student broadcast cannot reach.
+- **Bell on a phone.** The panel ran off the left edge of the screen; it now spans the screen
+  on small widths.
+
+### Decisions made on day 5
+
+- **Transfers.** A move to the same building, room and bed is refused (409 `same_place`). A
+  same-day transfer is allowed, so a wrong bed chosen at admission can be fixed.
+- **A stay that has not started** (a future joining date) is moved in place, with no history
+  row; once it has started, a move is a transfer. Migration 007 lets the app role change a
+  stay's building, room and bed, and its trigger allows that only before the stay starts, by
+  India's date. A stay starting today counts as started.
+- **Moving out a booking that has not started** ends its stay on its own start date, since an
+  end date may not come before the start.
+- **Reactivation** takes a new joining date no earlier than the day the student moved out
+  (`deactivated_at` in India's time, else the latest end date) and at most 30 days ahead. Both
+  ways back, from the profile and by approving a request, close the student's pending request
+  as approved.
+- **Locking order:** the student's `users` row first, then the rejoin request, on every path.
+- **Access requests** always answer 202 and the same sentence. Limits: 10 per IP per hour and 3
+  per email per day, kept in memory like the login limit (they reset when the server sleeps).
+- **Notifications** reach active users only; a dedup key reaches each person once. The bell
+  shows the latest 20 and checks every minute, only while the tab is visible.
+- **Dashboard.** It is the owner's home page. Students who have not arrived yet are counted,
+  and their beds count as occupied.
+- **Student password reset** stays out of day 5: it is part of v1 (sections 2, 5 and 6) but no
+  day in section 12 assigns it. To be scheduled.
+
+### Notes for later days
+
+- Announcements (day 7) and return polls (day 9) notify with `notify(c, "active_students", …)`
+  inside their own transaction. Notification text must never contain a phone number.
+- Tests share one database and files run in parallel: a test that notifies all active students
+  must run in a rolled-back transaction, and tests that count a person's notifications should
+  use people no broadcast can reach.
+- The day 8 job prunes notifications older than 60 days; the owner's daily digest (day 10)
+  includes pending rejoin requests.
+- Local development data now includes 3 sample notifications for the owner and transfer, move-out
+  and rejoin history for fake seed students (Aarav Gupta, Sana Kapoor, Siddharth Pillai).
+
+### Deployment
+
+Not done yet. Before `day-5` is merged: a manual "Backup database", then "Migrate production
+database" on `day-5` (007 and 008), then CI, the merge and a production check.
 
 ### Known issue: occasional test-worker crash on Windows (left as is)
 
