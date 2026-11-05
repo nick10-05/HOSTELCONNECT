@@ -394,7 +394,7 @@ reset the production owner's password; that belongs in the recovery guide on day
 Done when: the owner filters and sorts, sets priority, changes status and adds notes, the
 student sees the timeline and a notification, and announcements publish, edit, pin, mark urgent
 and delete. Core v1 is live. Met on the local database and checked in a browser as the owner and
-as a student; not yet live (see "Deployment" below).
+as a student; live in production since 2026-11-05 (see "Deployment" below).
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -487,7 +487,19 @@ Found while building and fixed on the day:
   progress, high priority, with two notes; Complaint Tester has two unread notifications; there
   are no announcements.
 
-### Deployment
+### Deployment (2026-11-05, UTC)
 
-To be filled in during the deploy: backup on `main`, migration 010 on `day-7` before the merge,
-CI, the review of `main..day-7`, the fast-forward, Render, and the live checks.
+| Step | Evidence |
+|---|---|
+| Day 7 pushed on `day-7` | `35e1250` (code) and `7f90171` (this record), author nick10-05, no co-author line; 2 commits ahead of `main` |
+| CI on `day-7` | Run #23 at 10:05 on `7f90171`: server and client green, every step (migrations 001–010 on an empty database, a second run changing nothing, tests, builds, dependency audit) |
+| Backup before the migration | "Backup database" run #7 (id 42009212278) at 10:15 on `main` (`6c6b453`): `hostelconnect-2026-11-05T1015Z.dump.age`, 41,104 bytes, kept until 2027-02-03. Larger than run #6 (31,838 bytes) because #6 was taken before migration 009 |
+| Migration 010 on production, before the merge | "Migrate production database" run #7 (id 42010331703) at 10:23 on `day-7` (`7f90171`), success, every step; per the run's log, as reported by Nikhil, 001–009 skipped and 010 applied. Checked beforehand: `main..day-7` adds only `010_notes_and_announcements.sql`, 001–009 unchanged. Afterwards the live site, still on day 6 code, answered `/api/health` 200 `ok`, `/api/dashboard` 401 and `/api/announcements` 404 |
+| Review of `main..day-7` before the merge | 40 files, all under `server/src`, `server/tests`, `server/migrations`, `client/src` and `docs/progress.md`; no workflow, Dockerfile, package, lockfile, `.env.example` or `.nvmrc` changes; no new environment variables, so Render needs no new setting; no secrets or phone-like numbers in added lines |
+| `day-7` merged into `main` | Fast-forward `6c6b453..7f90171` (`--ff-only`), pushed at 10:26:36 |
+| CI on `main` | Run #24 on `7f90171`: server and client green (as reported by Nikhil from the Actions tab; the anonymous GitHub API limit was used up at the time) |
+| Render deploy | Serving day 7 by 10:28:49: the served bundle is `index-Bh0e-DQ6.js`, the same build as locally, and contains the new screens. `/api/health` 200 `ok`; `/api/announcements` 401 without a login (404 before); `/api/dashboard`, `/api/complaints` and `/api/complaints/1` 401; the five new writes (status, priority, note, post and delete a notice) 401 without a login, and posting a notice or changing a status from another site 403 `cross_origin`; an unknown `/api` path still 404; `/`, `/complaints`, `/complaints/1`, `/announcements` and `/notices` serve the app |
+| Owner check | Signed in on production (Nikhil signed in): the Dashboard's complaints card has the "Open complaints" link; the menu includes Complaints and Announcements; Complaints shows the filters (both buildings listed) and "No complaints yet."; Announcements shows the form and "No notices yet."; no console errors; nothing was submitted |
+
+Day 7 is complete and live: core v1. Production still has no students, so nothing was posted or
+changed there; the student side and the announcement fan-out were checked on the local database.
