@@ -12,7 +12,7 @@ import {
   type RaiseStatus,
 } from "../api/complaints";
 import { inputClass, primaryButton } from "../owner/styles";
-import { categoryLabel } from "./complaintText";
+import { categoryLabel } from "../components/complaintText";
 
 // The complaint form (design doc, sections 2 and 9): a category and a short description,
 // text only until photos arrive on day 8. It checks the server's rules as the student

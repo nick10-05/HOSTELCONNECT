@@ -6,6 +6,7 @@ import type { Db } from "./db";
 import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
+import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
@@ -68,6 +69,7 @@ export function createApp({
   app.use("/api", notificationsRouter({ db, jwtSecret }));
   app.use("/api", dashboardRouter({ db, jwtSecret }));
   app.use("/api", complaintsRouter({ db, jwtSecret, limits: complaintLimits }));
+  app.use("/api", announcementsRouter({ db, jwtSecret }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

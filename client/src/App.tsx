@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { logout, me, type User } from "./api/auth";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { NotificationBell } from "./components/NotificationBell";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
+import { AnnouncementsPage } from "./owner/AnnouncementsPage";
+import { ComplaintPage } from "./owner/ComplaintPage";
+import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
@@ -14,6 +17,7 @@ import { StudentsPage } from "./owner/StudentsPage";
 import { ComplaintDetailPage } from "./student/ComplaintDetailPage";
 import { MyComplaintsPage } from "./student/MyComplaintsPage";
 import { NewComplaintPage } from "./student/NewComplaintPage";
+import { ImportantNotices, NoticesPage } from "./student/NoticesPage";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
 
@@ -57,14 +61,14 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // The owner's pages, or the student's (their complaints for now; notices, the return
-  // poll and fees arrive on later days).
+  // The owner's pages, or the student's (complaints and notices; the return poll and
+  // fees arrive on later days).
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <span className="font-semibold text-slate-900">HostelConnect</span>
-          {user.role === "owner" && <OwnerNav />}
+          {user.role === "owner" ? <OwnerNav /> : <StudentNav />}
           <div className="flex items-center gap-3">
             <NotificationBell />
             <button
@@ -86,15 +90,28 @@ export function App() {
             <Route path="/students/new" element={<AdmitStudentPage />} />
             <Route path="/students/:id" element={<StudentProfilePage />} />
             <Route path="/rejoin-requests" element={<RejoinRequestsPage />} />
+            <Route path="/complaints" element={<ComplaintsPage />} />
+            <Route path="/complaints/:id" element={<ComplaintPage />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
             {/* The owner starts on the dashboard; unknown addresses go there too
                 instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         ) : (
           <Routes>
-            <Route path="/" element={<MyComplaintsPage />} />
+            {/* Section 9: urgent and pinned notices first, then the complaints. */}
+            <Route
+              path="/"
+              element={
+                <div className="space-y-8">
+                  <ImportantNotices />
+                  <MyComplaintsPage />
+                </div>
+              }
+            />
             <Route path="/complaints/new" element={<NewComplaintPage />} />
             <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
+            <Route path="/notices" element={<NoticesPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
@@ -128,6 +145,31 @@ function OwnerNav() {
       </NavLink>
       <NavLink to="/rejoin-requests" className={navLinkClass}>
         Rejoin requests
+      </NavLink>
+      <NavLink to="/complaints" className={navLinkClass}>
+        Complaints
+      </NavLink>
+      <NavLink to="/announcements" className={navLinkClass}>
+        Announcements
+      </NavLink>
+    </nav>
+  );
+}
+
+// The student's few pages. "My complaints" stays highlighted on a complaint's own page.
+function StudentNav() {
+  const { pathname } = useLocation();
+  return (
+    <nav aria-label="Student pages" className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-auto">
+      <NavLink
+        to="/"
+        className={({ isActive }) => navLinkClass({ isActive: isActive || pathname.startsWith("/complaints") })}
+        end
+      >
+        My complaints
+      </NavLink>
+      <NavLink to="/notices" className={navLinkClass}>
+        Notices
       </NavLink>
     </nav>
   );

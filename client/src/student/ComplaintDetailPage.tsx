@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { getComplaint, type ComplaintDetail, type ComplaintEvent } from "../api/complaints";
-import { categoryLabel, formatTime, StatusBadge, statusLabel } from "./complaintText";
+import { getComplaint, type ComplaintDetail } from "../api/complaints";
+import { ComplaintTimeline } from "../components/ComplaintTimeline";
+import { categoryLabel, formatTime, StatusBadge } from "../components/complaintText";
 
 // One of the student's complaints with its timeline (design doc, sections 4 and 9).
 // Students only read: no replies, updates or reopening. A complaint that does not exist
@@ -10,12 +11,6 @@ import { categoryLabel, formatTime, StatusBadge, statusLabel } from "./complaint
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
-
-function eventText(e: ComplaintEvent): string {
-  if (e.kind === "created") return "You raised this complaint";
-  if (e.kind === "status_change" && e.toStatus) return `Status changed to ${statusLabel[e.toStatus]}`;
-  return "Note from the owner";
-}
 
 export function ComplaintDetailPage() {
   const { id } = useParams();
@@ -71,24 +66,7 @@ export function ComplaintDetailPage() {
             </p>
           </section>
 
-          <section aria-labelledby="timeline-heading" className="space-y-3">
-            <h2 id="timeline-heading" className="text-sm font-semibold text-slate-700">
-              Timeline
-            </h2>
-            {complaint.events.length === 0 ? (
-              <p className="text-sm text-slate-500">Nothing yet.</p>
-            ) : (
-              <ol className="space-y-3 border-l-2 border-slate-200 pl-4">
-                {complaint.events.map((e, i) => (
-                  <li key={i} className="space-y-1">
-                    <p className="text-sm font-medium text-slate-800">{eventText(e)}</p>
-                    {e.note && <p className="whitespace-pre-line break-words text-sm text-slate-700">{e.note}</p>}
-                    <p className="text-xs text-slate-500">{formatTime(e.createdAt)}</p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
+          <ComplaintTimeline events={complaint.events} viewer="student" />
         </>
       )}
     </div>

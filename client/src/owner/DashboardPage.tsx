@@ -109,7 +109,7 @@ export function ageText(iso: string, now = Date.now()): string {
 }
 
 // Section 9: active complaints, how many are high priority, and how long the oldest has
-// waited. The owner's complaint list arrives on day 7; the card will link to it then.
+// waited; opens the owner's list (day 7), which starts with the active ones.
 function ComplaintsCard({ complaints }: { complaints: Dashboard["complaints"] }) {
   return (
     <Card id="card-complaints" title="Complaints">
@@ -125,6 +125,9 @@ function ComplaintsCard({ complaints }: { complaints: Dashboard["complaints"] })
           </span>
         </p>
       )}
+      <Link to="/complaints" className="inline-block text-sm font-medium text-indigo-700 hover:underline">
+        Open complaints
+      </Link>
     </Card>
   );
 }

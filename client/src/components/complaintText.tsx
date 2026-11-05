@@ -1,6 +1,6 @@
-import type { ComplaintCategory, ComplaintStatus } from "../api/complaints";
+import type { ComplaintCategory, ComplaintPriority, ComplaintStatus } from "../api/complaints";
 
-// Display helpers shared by the student's complaint screens.
+// Display helpers shared by the student's and the owner's complaint screens.
 
 export const categoryLabel: Record<ComplaintCategory, string> = {
   plumbing: "Plumbing",
@@ -31,6 +31,27 @@ export function StatusBadge({ status }: { status: ComplaintStatus }) {
   return (
     <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColour[status]}`}>
       {statusLabel[status]}
+    </span>
+  );
+}
+
+// The owner's only (section 4: students never see the priority).
+export const priorityLabel: Record<ComplaintPriority, string> = {
+  high: "High priority",
+  normal: "Normal priority",
+  low: "Low priority",
+};
+
+const priorityColour: Record<ComplaintPriority, string> = {
+  high: "bg-red-50 text-red-700",
+  normal: "bg-slate-100 text-slate-700",
+  low: "bg-slate-50 text-slate-500",
+};
+
+export function PriorityBadge({ priority }: { priority: ComplaintPriority }) {
+  return (
+    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityColour[priority]}`}>
+      {priorityLabel[priority]}
     </span>
   );
 }

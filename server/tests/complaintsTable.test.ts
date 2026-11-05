@@ -281,6 +281,49 @@ describe("complaint events", () => {
       }));
     }));
 
+  // Migration 010 (day 7): the owner's notes, as the services store them.
+  it("keeps a note at most 500 characters, counted as characters, and stored trimmed", () =>
+    inRollback(db, async (c) => {
+      const owner = await insertOwner(c);
+      const id = await complain(c, await insertStudent(c));
+      for (const [label, note, constraint] of [
+        ["501 characters", "x".repeat(501), "complaint_events_note_length"],
+        ["501 emoji", "🚿".repeat(501), "complaint_events_note_length"],
+        ["leading space", " Plumber booked.", "complaint_events_note_trimmed"],
+        ["trailing line break", "Plumber booked.\n", "complaint_events_note_trimmed"],
+        ["trailing tab", "Plumber booked.\t", "complaint_events_note_trimmed"],
+      ] as const) {
+        const err = await pgError(c, EVENT, eventParams(id, owner, { kind: "note", note }));
+        expect(err, label).toMatchObject({ code: CHECK_VIOLATION, constraint });
+      }
+      // 500 characters (an emoji is one), and line breaks inside the note, are fine.
+      for (const note of ["x".repeat(500), "🚿".repeat(500), "Plumber booked.\n\nComes on Friday."]) {
+        await one(c, EVENT, eventParams(id, owner, { kind: "note", note }));
+      }
+      // The same rules hold for a note that comes with a status change.
+      const err = await pgError(
+        c,
+        EVENT,
+        eventParams(id, owner, { kind: "status_change", from: "open", to: "rejected", note: "x".repeat(501) }),
+      );
+      expect(err).toMatchObject({ code: CHECK_VIOLATION, constraint: "complaint_events_note_length" });
+    }));
+
+  it("needs a note to reopen a resolved complaint (section 4)", () =>
+    inRollback(db, async (c) => {
+      const owner = await insertOwner(c);
+      const id = await complain(c, await insertStudent(c));
+      const reopen = (note: string | null) =>
+        eventParams(id, owner, { kind: "status_change", from: "resolved", to: "open", note });
+
+      const err = await pgError(c, EVENT, reopen(null));
+      expect(err).toMatchObject({ code: CHECK_VIOLATION, constraint: "complaint_events_reopen_has_note" });
+      await one(c, EVENT, reopen("Still leaking."));
+      // Other moves still take no note.
+      await one(c, EVENT, eventParams(id, owner, { kind: "status_change", from: "open", to: "in_progress" }));
+      await one(c, EVENT, eventParams(id, owner, { kind: "status_change", from: "in_progress", to: "resolved" }));
+    }));
+
   it("is history: the app cannot change or delete an event", () =>
     inRollback(db, async (c) => {
       const student = await insertStudent(c);

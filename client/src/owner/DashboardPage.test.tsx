@@ -74,8 +74,8 @@ describe("DashboardPage", () => {
     renderPage(() => jsonResponse(200, full));
     const complaints = await screen.findByRole("region", { name: "Complaints" });
     expect(complaints).toHaveTextContent("3 active, 1 high priority, the oldest waiting 3 days");
-    // The owner's complaint list arrives on day 7.
-    expect(within(complaints).queryByRole("link")).not.toBeInTheDocument();
+    // The owner's complaint list (day 7).
+    expect(within(complaints).getByRole("link", { name: "Open complaints" })).toHaveAttribute("href", "/complaints");
   });
 
   it("puts the cards in the design's order: students, complaints, rejoin requests", async () => {
@@ -103,6 +103,11 @@ describe("DashboardPage", () => {
     expect(region("Rejoin requests")).toHaveTextContent("None waiting.");
     expect(within(region("Rejoin requests")).queryByRole("link")).not.toBeInTheDocument();
     expect(region("Complaints")).toHaveTextContent("None open.");
+    // Past complaints are still there to look at.
+    expect(within(region("Complaints")).getByRole("link", { name: "Open complaints" })).toHaveAttribute(
+      "href",
+      "/complaints",
+    );
   });
 
   it("says one request and one student in the singular", async () => {

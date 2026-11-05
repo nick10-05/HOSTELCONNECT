@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { listMyComplaints, type ComplaintList } from "../api/complaints";
 import { primaryButton } from "../owner/styles";
-import { categoryLabel, formatTime, StatusBadge } from "./complaintText";
+import { categoryLabel, formatTime, StatusBadge } from "../components/complaintText";
 
 // The student's complaints (design doc, section 9): newest first, each opening its
 // timeline, and a "New complaint" button that is disabled with the reason shown when the
