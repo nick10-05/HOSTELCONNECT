@@ -264,8 +264,8 @@ started four hours after its slot), so check the Actions tab later today.
 ## Day 6 — student complaints (2026-11-05)
 
 Done when: a student files a text complaint within the limits and sees their list, and each
-limit has a test. Met on the local database and checked in a browser. Not in production yet
-(see "Deployment" below).
+limit has a test. Met on the local database and checked in a browser; the code is live in
+production (see "Deployment" below).
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -370,8 +370,21 @@ Found while building and fixed on the day:
 | Migration 009 on production, before the merge | "Migrate production database" run #6 at 04:36 on `day-6` (`3b02f19`), success; 009 applied (per the run's log, as reported by Nikhil). Afterwards the live site, still on day 5 code, answered `/api/health` `ok` and `/api/dashboard` 401: 009 only adds tables |
 | Review of `main..day-6` before the merge | 29 files, all under `server/`, `client/`, `docs/progress.md` and `.env.example`; no workflow, Dockerfile, package or lockfile changes; migrations 001–008 untouched; no secrets in added lines. Render needs no new setting (the limits default to 3 and 2) |
 
+| Evidence above committed on `day-6` | `614a7f5`; CI run #20 green |
+| `day-6` merged into `main` | Fast-forward `f258603..614a7f5`, pushed |
+| CI on `main` | Run #21 green: server and client, every step |
+| Render deploy | Serving day 6 from 04:45:57: `/api/health` answers `ok`; `GET /api/complaints`, `/api/complaints/1` and `/api/dashboard` answer 401 without a login (`/api/complaints` was 404 before); `POST /api/complaints` answers 401 without a login and 403 `cross_origin` from another site; an unknown `/api` path still 404; `/`, `/complaints/new` and `/complaints/1` serve the app; the served bundle contains the student screens and the dashboard card |
+| Owner check | Signed in on production: the Dashboard shows Students (0 current students), Complaints ("None open.") and Rejoin requests ("None waiting."), in that order; `/api/dashboard` answered `complaints: { active: 0, highPriority: 0, oldestActiveAt: null }`; no console errors; nothing was submitted |
+
+Day 6 is complete and live. Production still has no students, so the student screens cannot be
+tried there; they were checked on the local database.
+
 Not checked: the read-only schema query in the Supabase SQL Editor (tables, indexes, and that
 `anon` and `authenticated` have no rights on `complaints`, `complaint_events`,
-`rejoin_requests` and `notifications`). The query is ready; running it is optional.
+`rejoin_requests` and `notifications`). The live dashboard reading the `complaints` table
+without an error shows migration 009 is in place; the rights check remains optional.
 
-Still to do: merge into `main`, CI on `main`, and check the Render deploy.
+Signing in to production took several tries: production and the local database have separate
+owner accounts with separate passwords (the production owner was created on day 3, see
+`docs/deploy.md`, section 5), and the local password was tried first. There is still no tool to
+reset the production owner's password; that belongs in the recovery guide on day 10.
