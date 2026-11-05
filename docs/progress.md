@@ -260,3 +260,107 @@ started four hours after its slot), so check the Actions tab later today.
 - **Decided:** no config change, since none could be shown to help. `pool: "threads"` works
   here at the same speed, but a native crash there would end the whole run instead of one
   file. Revisit if it shows up in your own terminal or in CI.
+
+## Day 6 — student complaints (2026-11-05)
+
+Done when: a student files a text complaint within the limits and sees their list, and each
+limit has a test. Met on the local database and checked in a browser. Not in production yet
+(see "Deployment" below).
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Migration 009 (`complaints`, `complaint_events`; the photo columns created now, unused until day 8) | Claude | Done | 13 database tests in `complaintsTable.test.ts`, run as `hostel_app`: every CHECK, the one-active-per-category index, and that the app cannot delete complaints or rewrite them or their events |
+| Configurable limits (`COMPLAINT_MAX_ACTIVE`, `COMPLAINT_MAX_NEW_PER_DAY`, defaults 3 and 2) | Claude | Done | 2 tests in `config.test.ts` |
+| The three limit checks and create (`createComplaint`) | Claude, at Nikhil's request (section 12 lists it under "You write"); stub, contract and tests first | Done | 19 tests in `complaints.test.ts`, three races of 5 rounds each included. The tests were checked against a throwaway reference: without the `FOR UPDATE` lock the two count races failed in 3 of 3 runs |
+| List and detail with the ownership filter (`listMyComplaints`, `getMyComplaint`) | Claude, at Nikhil's request (also "You write"); stub, contract and tests first | Done | 11 tests in `myComplaints.test.ts`; with the `student_id` filter removed, both ownership tests failed |
+| Can the student raise a complaint now (`getRaiseStatus`, `canRaise` on the list) | Claude (Nikhil's decision to add it) | Done | 7 service tests, one checking it agrees with `createComplaint` word for word; 3 route tests |
+| Complaint routes and the per-IP limit | Claude | Done | 20 route tests in `complaintsRoutes.test.ts` on the real database: 401/403 for everyone but an active student, another student's complaint answered byte for byte like a missing one, each limit's 429, the per-IP limit. Two deliberate bugs (counting accepted requests; JavaScript string length) each failed a test |
+| Student screens: My complaints, New complaint, complaint detail | Claude | Done | 19 screen tests and 3 `App` tests; checked in a browser as a student, desktop and phone width (below) |
+| Dashboard complaints card | Claude | Done | 2 service tests, the route test, 3 screen tests; the card matched a direct count in the local database |
+
+Checks at the end of the day: server 527 tests (450 on day 5), client 136 (111), typecheck and
+builds clean.
+
+Browser check (local dev servers and database, signed in as a fake student admitted for it):
+filed a complaint (stored trimmed, `open`, `normal`, one `created` event by the student); the
+form then showed Plumbing as already active, and a direct request for it got 429
+`category_active`; after a second complaint the New complaint button was disabled with the
+24-hour reason, and the form showed the reason instead; `/complaints/999` showed "That
+complaint does not exist."; a student opening `/students` was sent home and the API answered
+403. At 375 px wide nothing scrolls sideways. As the owner, the dashboard card read "2 active,
+the oldest waiting under an hour", and the other owner pages loaded.
+
+Found while building and fixed on the day:
+
+- **Emoji and the 10-character minimum.** JavaScript counts an emoji as 2 characters and the
+  database as 1, so five emoji would have passed the form and zod, then been refused by the
+  database (a 500). The route, the form and its counter now count characters as the database
+  does; a route test sends five emoji and expects 400.
+- **The per-IP limit and shared Wi-Fi.** Students reach the server from the hostel's one
+  public IP, so a plain per-IP limit would block real complaints, for example after a power
+  cut. The limit now counts refused requests only (below).
+
+### Decisions made on day 6
+
+- **Photo columns now.** Migration 009 creates all five photo columns and their index, so day 8
+  needs no migration; nothing writes them before day 8. A CHECK keeps a photo's path, size and
+  expiry together, and only an existing photo can be marked deleted.
+- **Description.** Trimmed first, then 10 to 500 characters, in zod, in the form and in the
+  database. The database also requires the stored text to be trimmed (spaces, tabs and line
+  breaks).
+- **24 hours is a rolling window,** counting every complaint created in it whatever its status
+  now, so a rejected one still counts.
+- **Refusals.** All three limits answer 429 (section 5), checked in this order: one per
+  category, then 3 active, then 2 in 24 hours. The messages name the limit and come from the
+  configured numbers. A moved-out or unknown id is refused too (409 `student_inactive`, 404
+  `student_not_found`), as in `transferStudent`.
+- **Locking:** `createComplaint` locks the student's `users` row first, as every path that
+  changes a student does, so two complaints sent at once cannot pass a limit together.
+- **Per-IP limit:** 20 refused complaint requests per IP per 15 minutes (approved by Nikhil).
+  Accepted complaints never count, so many students on one Wi-Fi are never blocked. Kept in
+  memory like the other limits.
+- **The student's list is newest first.** Section 5's order (active, high priority, oldest
+  first) is the owner's list.
+- **Day 6 routes are for students only;** the owner gets 403 until the owner's list and detail
+  arrive on day 7.
+- **`canRaise`** comes with `GET /api/complaints`: `allowed`, `reason` (the refusal
+  `createComplaint` would give) and `activeCategories`. The button is disabled only for the
+  two count limits; categories with an active complaint are shown as unavailable on the form,
+  since the category is chosen there.
+- **`POST /api/complaints` takes JSON on day 6;** it becomes multipart with the photo on day 8.
+- **Dashboard card:** active complaints, high priority among them, and how long the oldest has
+  waited. It counts moved-out students' complaints, since they still need an answer, and has
+  no link until the owner's list exists (day 7).
+
+### Notes for later days
+
+- **Day 7, decide first:**
+  - The design's diagram of the five legal status moves was not in the pasted text, so
+    "reopen" is not defined yet. Section 4 says reopening needs a note, and migration 009 only
+    enforces that rejecting needs one.
+  - Revision 5 gives no maximum length for an owner's note. The database refuses only a blank
+    note.
+- **Day 7, build:**
+  - `GET /api/complaints` and `/:id` choose the student or owner version by role.
+  - The dashboard card links to the owner's list.
+  - The service sets `updated_at` (there is no trigger) and `resolved_at` on every change.
+  - Each status change or note notifies the student who raised it (`complaint_update`); never
+    a phone number in the text.
+- **Day 8:** the app role may already update `photo_deleted_at` and `photo_delete_attempts`.
+  The create route switches to multipart.
+- **Tests:**
+  - Complaint tests that count across students use a snapshot (as in `dashboard.test.ts`).
+  - Route tests build their own app, because all requests come from one IP and the per-IP
+    limit would carry over between tests.
+- **Local development data:**
+  - The seeded students cannot log in: `SEED_STUDENT_PASSWORD` was not set when they were
+    seeded, so they share a random password nobody knows.
+  - For browser checks use "Complaint Tester" (`complaint.tester@example.com`, admitted on
+    day 6; Nikhil chose the password and keeps it). They have two open complaints, #1 Plumbing
+    and #2 Electrical, useful for day 7's owner screens.
+
+### Deployment
+
+Not done yet. Planned, as on day 5: commit on `day-6`; CI green; "Backup database"; "Migrate
+production database" on `day-6` for migration 009, before the merge; then merge into `main`,
+CI on `main`, and check the Render deploy.
