@@ -2,7 +2,7 @@ import type { Queryable } from "../db";
 
 // The owner's dashboard (design doc, section 9): every card in one answer, so the home
 // page is one request even on a server that has just woken up. Day 5 adds the students
-// and rejoin requests cards; later days add theirs as new keys.
+// and rejoin requests cards, day 6 the complaints card; later days add theirs as new keys.
 // tests/dashboard.test.ts describes it.
 
 export type BuildingCard = {
@@ -20,6 +20,10 @@ export type BuildingCard = {
 export type Dashboard = {
   students: { total: number; joiningLater: number; buildings: BuildingCard[] };
   rejoinRequests: { pending: number; oldestRequestedOn: string | null }; // India's date
+  // Active means open or in progress, as for the complaint limits. Every student's count,
+  // moved out or not: their complaints still need an answer. High priority is set by the
+  // owner (day 7). oldestActiveAt is when the longest-waiting active complaint was raised.
+  complaints: { active: number; highPriority: number; oldestActiveAt: Date | null };
 };
 
 // `today` is India's date ('YYYY-MM-DD'); the route passes hostelToday().
@@ -56,6 +60,13 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
      FROM rejoin_requests WHERE status = 'pending'`,
   );
 
+  const { rows: complaints } = await db.query<Dashboard["complaints"]>(
+    `SELECT count(*)::int AS active,
+            count(*) FILTER (WHERE priority = 'high')::int AS "highPriority",
+            min(created_at) AS "oldestActiveAt"
+     FROM complaints WHERE status IN ('open', 'in_progress')`,
+  );
+
   const cards: BuildingCard[] = buildings.map((b) => {
     const bed = bedsOf.get(b.id);
     return {
@@ -71,5 +82,6 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
       buildings: cards,
     },
     rejoinRequests: requests[0],
+    complaints: complaints[0],
   };
 }

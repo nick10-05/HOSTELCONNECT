@@ -5,8 +5,8 @@ import { getDashboard, type Dashboard } from "../api/dashboard";
 import { formatDate } from "./format";
 
 // The owner's home page (design doc, section 9): the cards looked at first, all from one
-// GET /api/dashboard. Day 5: students per building and rejoin requests; later days add
-// their cards here.
+// GET /api/dashboard. Day 5: students per building and rejoin requests; day 6: complaints;
+// later days add their cards here.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -41,6 +41,7 @@ export function DashboardPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <StudentsCard students={data.students} />
+          <ComplaintsCard complaints={data.complaints} />
           <RequestsCard requests={data.rejoinRequests} />
         </div>
       )}
@@ -95,6 +96,35 @@ function StudentsCard({ students }: { students: Dashboard["students"] }) {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+// How long ago, roughly: "under an hour", "5 hours", "3 days".
+export function ageText(iso: string, now = Date.now()): string {
+  const hours = Math.floor((now - new Date(iso).getTime()) / 3_600_000);
+  if (hours < 1) return "under an hour";
+  if (hours < 24) return count(hours, "hour");
+  return count(Math.floor(hours / 24), "day");
+}
+
+// Section 9: active complaints, how many are high priority, and how long the oldest has
+// waited. The owner's complaint list arrives on day 7; the card will link to it then.
+function ComplaintsCard({ complaints }: { complaints: Dashboard["complaints"] }) {
+  return (
+    <Card id="card-complaints" title="Complaints">
+      {complaints.active === 0 ? (
+        <p className="text-sm text-slate-600">None open.</p>
+      ) : (
+        <p className="text-slate-900">
+          <span className="text-2xl font-semibold">{complaints.active}</span> active
+          <span className="text-sm text-slate-500">
+            {complaints.highPriority > 0 && `, ${complaints.highPriority} high priority`}
+            {complaints.oldestActiveAt &&
+              `, ${complaints.active === 1 ? "waiting" : "the oldest waiting"} ${ageText(complaints.oldestActiveAt)}`}
+          </span>
+        </p>
+      )}
     </Card>
   );
 }

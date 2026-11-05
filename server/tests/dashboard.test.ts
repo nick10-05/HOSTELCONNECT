@@ -165,3 +165,49 @@ describe("getDashboard: the rejoin requests card", () => {
       expect(after.rejoinRequests.oldestRequestedOn).toBe("2000-01-01");
     }));
 });
+
+describe("getDashboard: the complaints card", () => {
+  const complain = async (
+    c: PoolClient,
+    student: number,
+    category: string,
+    opts: { status?: string; priority?: string; createdAt?: string } = {},
+  ) => {
+    await c.query(
+      `INSERT INTO complaints (student_id, category, description, status, priority, resolved_at, created_at)
+       VALUES ($1, $2, 'The tap in room 101 keeps dripping.', $3, $4,
+               CASE WHEN $3 = 'resolved' THEN now() END, coalesce($5::timestamptz, now()))`,
+      [student, category, opts.status ?? "open", opts.priority ?? "normal", opts.createdAt ?? null],
+    );
+  };
+
+  it("counts active complaints and the high-priority ones among them, not resolved or rejected", () =>
+    inSnapshot(async (c) => {
+      const before = await getDashboard(c, TODAY);
+      const a = await insertStudent(c);
+      const b = await insertStudent(c, { isActive: false }); // moved out: still counted
+      await complain(c, a, "plumbing");
+      await complain(c, a, "electrical", { status: "in_progress", priority: "high" });
+      await complain(c, b, "food", { priority: "high" });
+      await complain(c, a, "internet", { status: "resolved", priority: "high" });
+      await complain(c, b, "security", { status: "rejected" });
+
+      const after = await getDashboard(c, TODAY);
+
+      expect(after.complaints.active).toBe(before.complaints.active + 3);
+      expect(after.complaints.highPriority).toBe(before.complaints.highPriority + 2);
+    }));
+
+  it("gives when the oldest active complaint was raised, ignoring closed ones", () =>
+    inSnapshot(async (c) => {
+      const a = await insertStudent(c);
+      // Older than anything another test file writes.
+      await complain(c, a, "furniture", { status: "resolved", createdAt: "1989-01-01T00:00:00Z" });
+      await complain(c, a, "plumbing", { createdAt: "1990-03-01T04:30:00Z" });
+      await complain(c, a, "food", { createdAt: "2026-11-01T04:30:00Z" });
+
+      const d = await getDashboard(c, TODAY);
+
+      expect(d.complaints.oldestActiveAt).toEqual(new Date("1990-03-01T04:30:00Z"));
+    }));
+});

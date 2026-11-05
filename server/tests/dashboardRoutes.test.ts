@@ -22,7 +22,7 @@ describe("GET /api/dashboard", () => {
     expect((await request(app).get("/api/dashboard").set("Cookie", cookieFor(student, "student"))).status).toBe(403);
   });
 
-  it("answers the students and rejoin requests cards, never cached", async () => {
+  it("answers the students, rejoin requests and complaints cards, never cached", async () => {
     const owner = await insertOwner(db);
     const res = await request(app).get("/api/dashboard").set("Cookie", cookieFor(owner, "owner"));
 
@@ -31,6 +31,11 @@ describe("GET /api/dashboard", () => {
     expect(res.body).toEqual({
       students: { total: expect.any(Number), joiningLater: expect.any(Number), buildings: expect.any(Array) },
       rejoinRequests: { pending: expect.any(Number), oldestRequestedOn: expect.toBeOneOf([null, expect.any(String)]) },
+      complaints: {
+        active: expect.any(Number),
+        highPriority: expect.any(Number),
+        oldestActiveAt: expect.toBeOneOf([null, expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)]),
+      },
     });
   });
 });

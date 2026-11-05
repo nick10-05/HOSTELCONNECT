@@ -11,6 +11,9 @@ import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
 import { StudentsPage } from "./owner/StudentsPage";
+import { ComplaintDetailPage } from "./student/ComplaintDetailPage";
+import { MyComplaintsPage } from "./student/MyComplaintsPage";
+import { NewComplaintPage } from "./student/NewComplaintPage";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
 
@@ -54,7 +57,8 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // Students get a placeholder until their pages exist.
+  // The owner's pages, or the student's (their complaints for now; notices, the return
+  // poll and fees arrive on later days).
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -87,9 +91,12 @@ export function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         ) : (
-          <p className="text-slate-700">
-            Signed in as <strong>{user.name}</strong> ({user.role}).
-          </p>
+          <Routes>
+            <Route path="/" element={<MyComplaintsPage />} />
+            <Route path="/complaints/new" element={<NewComplaintPage />} />
+            <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         )}
       </main>
     </div>

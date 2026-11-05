@@ -12,6 +12,11 @@ const schema = z.object({
     if (problem) ctx.addIssue({ code: "custom", message: problem });
   }),
   JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
+  // Complaint limits (design doc, sections 2 and 9): active complaints per student, and
+  // new complaints per student in any 24 hours. The third limit, one active complaint
+  // per category, is a database index and has no setting.
+  COMPLAINT_MAX_ACTIVE: z.coerce.number().int().min(1).max(50).default(3),
+  COMPLAINT_MAX_NEW_PER_DAY: z.coerce.number().int().min(1).max(50).default(2),
 });
 
 export type Config = z.infer<typeof schema>;

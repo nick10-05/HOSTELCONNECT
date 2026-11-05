@@ -7,11 +7,13 @@ import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { authRouter } from "./routes/auth";
+import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
 import { notificationsRouter } from "./routes/notifications";
 import { rejoinRouter } from "./routes/rejoin";
 import { structureRouter } from "./routes/structure";
 import { studentsRouter } from "./routes/students";
+import type { ComplaintLimits } from "./services/complaints";
 
 export type AppDeps = {
   db: Db;
@@ -21,11 +23,22 @@ export type AppDeps = {
   // Folder of the built React app (client/dist). Given in production only; in
   // development Vite serves the pages and forwards /api here.
   clientDir?: string;
+  // From config (COMPLAINT_MAX_ACTIVE, COMPLAINT_MAX_NEW_PER_DAY); the design's 3 and 2
+  // when not given.
+  complaintLimits?: ComplaintLimits;
 };
+
+const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
 
 // Builds the Express app but does NOT start listening.
 // Tests import this and call it directly, so they need no open port.
-export function createApp({ db, jwtSecret, production = false, clientDir }: AppDeps) {
+export function createApp({
+  db,
+  jwtSecret,
+  production = false,
+  clientDir,
+  complaintLimits = DEFAULT_COMPLAINT_LIMITS,
+}: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
   // Render puts one proxy in front of the app. Trusting exactly that one hop lets the
@@ -54,6 +67,7 @@ export function createApp({ db, jwtSecret, production = false, clientDir }: AppD
   app.use("/api", rejoinRouter({ db, jwtSecret }));
   app.use("/api", notificationsRouter({ db, jwtSecret }));
   app.use("/api", dashboardRouter({ db, jwtSecret }));
+  app.use("/api", complaintsRouter({ db, jwtSecret, limits: complaintLimits }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

@@ -13,6 +13,10 @@ const app = createApp({
   db,
   jwtSecret: config.JWT_SECRET,
   production,
+  complaintLimits: {
+    maxActive: config.COMPLAINT_MAX_ACTIVE,
+    maxNewPer24h: config.COMPLAINT_MAX_NEW_PER_DAY,
+  },
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

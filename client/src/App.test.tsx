@@ -17,6 +17,7 @@ function renderAt(path: string) {
       return jsonResponse(200, {
         students: { total: 0, joiningLater: 0, buildings: [] },
         rejoinRequests: { pending: 0, oldestRequestedOn: null },
+        complaints: { active: 0, highPriority: 0, oldestActiveAt: null },
       });
     }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
@@ -73,5 +74,47 @@ describe("owner pages", () => {
   it("sends an unknown address to the dashboard", async () => {
     renderAt("/no-such-page");
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+});
+
+describe("student pages", () => {
+  const student = { id: 7, name: "Asha Rao", role: "student", mustChangePassword: false };
+
+  function renderStudentAt(path: string) {
+    mockFetch(async (url) => {
+      if (url === "/api/auth/me") return jsonResponse(200, { user: student });
+      if (url === "/api/notifications") return jsonResponse(200, { items: [], total: 0, unread: 0 });
+      if (url === "/api/complaints?page=1") {
+        return jsonResponse(200, { items: [], total: 0, canRaise: { allowed: true, reason: null, activeCategories: [] } });
+      }
+      return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
+    });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+    return user;
+  }
+
+  it("start on My complaints, with the bell and no owner menu", async () => {
+    renderStudentAt("/");
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Owner pages" })).not.toBeInTheDocument();
+  });
+
+  it("open the complaint form from the list and come back", async () => {
+    const user = renderStudentAt("/");
+    await user.click(await screen.findByRole("link", { name: "New complaint" }));
+    expect(await screen.findByRole("heading", { name: "New complaint" })).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "← My complaints" }));
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
+  });
+
+  it("send an owner page's address, or an unknown one, to My complaints", async () => {
+    renderStudentAt("/students");
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
   });
 });

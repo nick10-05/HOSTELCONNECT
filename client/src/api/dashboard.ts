@@ -13,6 +13,8 @@ export type BuildingCard = {
 export type Dashboard = {
   students: { total: number; joiningLater: number; buildings: BuildingCard[] };
   rejoinRequests: { pending: number; oldestRequestedOn: string | null }; // 'YYYY-MM-DD'
+  // Active = open or in progress; oldestActiveAt is an ISO timestamp.
+  complaints: { active: number; highPriority: number; oldestActiveAt: string | null };
 };
 
 // GET /api/dashboard: every card in one answer.
