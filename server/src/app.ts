@@ -7,6 +7,7 @@ import { sendError } from "./lib/http";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { authRouter } from "./routes/auth";
+import { notificationsRouter } from "./routes/notifications";
 import { rejoinRouter } from "./routes/rejoin";
 import { structureRouter } from "./routes/structure";
 import { studentsRouter } from "./routes/students";
@@ -50,6 +51,7 @@ export function createApp({ db, jwtSecret, production = false, clientDir }: AppD
   app.use("/api", structureRouter({ db, jwtSecret }));
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
+  app.use("/api", notificationsRouter({ db, jwtSecret }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

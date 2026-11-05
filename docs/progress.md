@@ -137,3 +137,26 @@ go-live, a separate step.
 - The directory does not search phone numbers, because the search is part of the page
   address and phone numbers never go in URLs.
 - Watch the first unattended nightly backup (03:00 IST on 2026-11-05), carried over from day 3.
+
+## Day 5 — transfers, reactivation, rejoin requests, notifications (in progress)
+
+The full record of day 5 is written when the day ends. Known so far:
+
+### Known issue: occasional test-worker crash on Windows (left as is)
+
+- **What:** now and then a local `npx vitest run` in `server/` ends with "Vitest caught 1
+  unhandled error" and one test file does not run. The cause is `Worker exited
+  unexpectedly with exit code 3221226505` (0xC0000409, a native fast-fail crash of the
+  Node.js child process). Every test that does run passes; a re-run is enough.
+- **Seen:** 4 times in about 30 full runs on 2026-11-04/05, always soon after new test
+  files were written, each time in a different file (`rejoinReview.test.ts` among them).
+  Node v24.15.0, Vitest 5.1.0, default `forks` pool.
+- **Checked (2026-11-05):** 15 unchanged runs and 15 runs with `--pool=threads` all passed
+  (442/442) with no crash; the Windows Application log has no `node.exe` crash entry. Not
+  a database clash, not one test, not a native addon (there are none).
+- **Best-supported explanation (not proven):** it happens to Node child processes started
+  from inside the Claude desktop app on Windows, which is how Claude's test runs start;
+  others report the same exit code only in that setup. CI runs on Linux.
+- **Decided:** no config change, since none could be shown to help. `pool: "threads"` works
+  here at the same speed, but a native crash there would end the whole run instead of one
+  file. Revisit if it shows up in your own terminal or in CI.

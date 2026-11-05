@@ -4,6 +4,7 @@ import { logout, me, type User } from "./api/auth";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
+import { NotificationBell } from "./components/NotificationBell";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
@@ -59,13 +60,16 @@ export function App() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <span className="font-semibold text-slate-900">HostelConnect</span>
           {user.role === "owner" && <OwnerNav />}
-          <button
-            type="button"
-            onClick={signOut}
-            className="text-sm text-slate-600 hover:text-slate-900"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <button
+              type="button"
+              onClick={signOut}
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
