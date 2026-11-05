@@ -225,7 +225,14 @@ Found in review and fixed on the day:
 | Day 5 pushed on `day-5` | `20df3f9`, author nick10-05; 8 commits ahead of `main` |
 | CI on `day-5` | Run #15 at 00:27: server and client green, every step (migrations 001–008 on an empty database, a second run changing nothing, tests, builds, dependency audit) |
 | Migrations 007 and 008 on production, before the merge | "Migrate production database" run #5 at 00:33 on `day-5` (`20df3f9`), success; 001–006 skipped, 007 and 008 applied (per the run's log, as reported by Nikhil) |
-| Merge into `main`, CI on `main`, Render deploy, production check | Not done yet |
+| Evidence above committed on `day-5` | `d46cd86`; CI run #16 green |
+| `day-5` merged into `main` | Fast-forward `629ef73..d46cd86`, pushed |
+| CI on `main` | Run #17 green: server and client, every step |
+| Render deploy | `/api/health` answers `ok`; `/api/dashboard`, `/api/notifications` and `/api/rejoin-requests` answer 401 without a login (404 before); an unknown `/api` path still 404; a cross-site POST is refused with 403; `/`, `/rejoin-requests` and `/request-access` serve the app; the served bundle contains the new screens |
+| Owner check | Signed in on production: the Dashboard is the home page (buildings with 0 students, no requests waiting), the bell shows no notifications, Rejoin requests shows none; nothing was submitted |
+
+Day 5 is complete and live. Production still has no students: the real register is imported at
+go-live, a separate step.
 
 Not checked: the optional read-only query in the Supabase SQL Editor confirming that `anon` and
 `authenticated` have no rights on `rejoin_requests` and `notifications` (migration 004 should
