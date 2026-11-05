@@ -6,6 +6,7 @@ import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { NotificationBell } from "./components/NotificationBell";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
+import { DashboardPage } from "./owner/DashboardPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
@@ -75,14 +76,15 @@ export function App() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         {user.role === "owner" ? (
           <Routes>
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/structure" element={<StructurePage />} />
             <Route path="/students" element={<StudentsPage />} />
             <Route path="/students/new" element={<AdmitStudentPage />} />
             <Route path="/students/:id" element={<StudentProfilePage />} />
             <Route path="/rejoin-requests" element={<RejoinRequestsPage />} />
-            {/* No dashboard yet: the owner starts on the structure page. Unknown
-                addresses go there too instead of showing a blank page. */}
-            <Route path="*" element={<Navigate to="/structure" replace />} />
+            {/* The owner starts on the dashboard; unknown addresses go there too
+                instead of showing a blank page. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         ) : (
           <p className="text-slate-700">
@@ -102,7 +104,11 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 // One entry per owner page; later days add theirs here.
 function OwnerNav() {
   return (
-    <nav aria-label="Owner pages" className="order-last flex w-full gap-1 sm:order-none sm:w-auto">
+    <nav aria-label="Owner pages" className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-auto">
+      {/* end: highlighted on the home page only, not on every page below it */}
+      <NavLink to="/" end className={navLinkClass}>
+        Dashboard
+      </NavLink>
       <NavLink to="/structure" className={navLinkClass}>
         Buildings
       </NavLink>

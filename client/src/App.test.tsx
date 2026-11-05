@@ -13,6 +13,12 @@ function renderAt(path: string) {
     if (url === "/api/structure") return jsonResponse(200, { buildings: [] });
     if (url.startsWith("/api/rejoin-requests?")) return jsonResponse(200, { items: [], total: 0 });
     if (url === "/api/notifications") return jsonResponse(200, { items: [], total: 0, unread: 0 });
+    if (url === "/api/dashboard") {
+      return jsonResponse(200, {
+        students: { total: 0, joiningLater: 0, buildings: [] },
+        rejoinRequests: { pending: 0, oldestRequestedOn: null },
+      });
+    }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
   });
   const user = userEvent.setup();
@@ -25,13 +31,19 @@ function renderAt(path: string) {
 }
 
 describe("owner pages", () => {
-  it("starts on the buildings page and moves between pages with the menu", async () => {
+  it("starts on the dashboard and moves between pages with the menu", async () => {
     const user = renderAt("/");
-    expect(await screen.findByRole("heading", { name: "Buildings and rooms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
 
     await user.click(screen.getByRole("link", { name: "Admit student" }));
     expect(await screen.findByRole("heading", { name: "Admit a student" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Admit student" })).toHaveAttribute("aria-current", "page");
+    // Only the home page highlights Dashboard.
+    expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current");
+
+    await user.click(screen.getByRole("link", { name: "Dashboard" }));
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
   });
 
   it("has a Students page in the menu", async () => {
@@ -58,8 +70,8 @@ describe("owner pages", () => {
     expect(await screen.findByRole("heading", { name: "Admit a student" })).toBeInTheDocument();
   });
 
-  it("sends an unknown address to the buildings page", async () => {
+  it("sends an unknown address to the dashboard", async () => {
     renderAt("/no-such-page");
-    expect(await screen.findByRole("heading", { name: "Buildings and rooms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
   });
 });
