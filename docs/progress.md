@@ -359,8 +359,19 @@ Found while building and fixed on the day:
     day 6; Nikhil chose the password and keeps it). They have two open complaints, #1 Plumbing
     and #2 Electrical, useful for day 7's owner screens.
 
-### Deployment
+### Deployment (2026-11-05, UTC)
 
-Not done yet. Planned, as on day 5: commit on `day-6`; CI green; "Backup database"; "Migrate
-production database" on `day-6` for migration 009, before the merge; then merge into `main`,
-CI on `main`, and check the Render deploy.
+| Step | Evidence |
+|---|---|
+| First unattended nightly backup | "Backup database" run #5 (schedule) at 01:43 on `main`: success, `hostelconnect-2026-11-05T0143Z.dump.age`, 31,838 bytes. Closes the open item from days 3 and 5 |
+| Day 6 pushed on `day-6` | `3b02f19`, author nick10-05; 2 commits ahead of `main` |
+| CI on `day-6` | Run #19 at 04:27: server and client green, every step (migrations 001–009 on an empty database, a second run changing nothing, tests, builds, dependency audit) |
+| Backup before the migration | "Backup database" run #6 at 04:31 on `main`: `hostelconnect-2026-11-05T0432Z.dump.age`, 31,838 bytes (the same as run #5: production unchanged since), kept until 2027-02-03 |
+| Migration 009 on production, before the merge | "Migrate production database" run #6 at 04:36 on `day-6` (`3b02f19`), success; 009 applied (per the run's log, as reported by Nikhil). Afterwards the live site, still on day 5 code, answered `/api/health` `ok` and `/api/dashboard` 401: 009 only adds tables |
+| Review of `main..day-6` before the merge | 29 files, all under `server/`, `client/`, `docs/progress.md` and `.env.example`; no workflow, Dockerfile, package or lockfile changes; migrations 001–008 untouched; no secrets in added lines. Render needs no new setting (the limits default to 3 and 2) |
+
+Not checked: the read-only schema query in the Supabase SQL Editor (tables, indexes, and that
+`anon` and `authenticated` have no rights on `complaints`, `complaint_events`,
+`rejoin_requests` and `notifications`). The query is ready; running it is optional.
+
+Still to do: merge into `main`, CI on `main`, and check the Render deploy.
