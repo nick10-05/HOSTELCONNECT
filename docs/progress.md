@@ -217,10 +217,23 @@ Found in review and fixed on the day:
 - Local development data now includes 3 sample notifications for the owner and transfer, move-out
   and rejoin history for fake seed students (Aarav Gupta, Sana Kapoor, Siddharth Pillai).
 
-### Deployment
+### Deployment (2026-11-05, UTC)
 
-Not done yet. Before `day-5` is merged: a manual "Backup database", then "Migrate production
-database" on `day-5` (007 and 008), then CI, the merge and a production check.
+| Step | Evidence |
+|---|---|
+| Backup before the migrations | "Backup database" run #4 at 00:23 on `main`: `hostelconnect-2026-11-05T0023Z.dump.age`, 23,364 bytes (the same as run #3: production unchanged since), kept until 2027-02-03 |
+| Day 5 pushed on `day-5` | `20df3f9`, author nick10-05; 8 commits ahead of `main` |
+| CI on `day-5` | Run #15 at 00:27: server and client green, every step (migrations 001–008 on an empty database, a second run changing nothing, tests, builds, dependency audit) |
+| Migrations 007 and 008 on production, before the merge | "Migrate production database" run #5 at 00:33 on `day-5` (`20df3f9`), success; 001–006 skipped, 007 and 008 applied (per the run's log, as reported by Nikhil) |
+| Merge into `main`, CI on `main`, Render deploy, production check | Not done yet |
+
+Not checked: the optional read-only query in the Supabase SQL Editor confirming that `anon` and
+`authenticated` have no rights on `rejoin_requests` and `notifications` (migration 004 should
+keep them out, as it did for the tables checked on day 3).
+
+The first unattended nightly backup (due 03:00 IST on 2026-11-05, 21:30 UTC on 2026-11-04) had
+not run by 00:33 UTC; the workflow is active. GitHub can start scheduled runs hours late (run #1
+started four hours after its slot), so check the Actions tab later today.
 
 ### Known issue: occasional test-worker crash on Windows (left as is)
 
