@@ -29,15 +29,15 @@ const ALLOWED: RaiseStatus = { allowed: true, reason: null, activeCategories: ["
 const FULL = "You already have 3 active complaints. You can raise a new one when one of them is resolved or rejected.";
 
 // A fake server: GET /api/complaints?page=N answers with lists[N - 1] (or the last one),
-// or with `failure` when given.
-function fakeServer(lists: ComplaintList[], { failure }: { failure?: Response } = {}) {
+// or with `failure` when given. photoUploadsAllowed (day 8) is not used by this page.
+function fakeServer(lists: Omit<ComplaintList, "photoUploadsAllowed">[], { failure }: { failure?: Response } = {}) {
   const gets: string[] = [];
   mockFetch(async (url) => {
     const page = url.match(/^\/api\/complaints\?page=(\d+)$/)?.[1];
     if (page) {
       gets.push(url);
       if (failure) return failure;
-      return jsonResponse(200, lists[Math.min(Number(page), lists.length) - 1]);
+      return jsonResponse(200, { ...lists[Math.min(Number(page), lists.length) - 1], photoUploadsAllowed: true });
     }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
   });

@@ -25,6 +25,43 @@ export async function inRollback(db: Db, fn: (c: PoolClient) => Promise<void>): 
   }
 }
 
+const SERIALIZATION_FAILURE = "40001";
+const SNAPSHOT_ATTEMPTS = 3;
+
+// Runs fn inside a transaction that is always rolled back, with one snapshot of the
+// database (REPEATABLE READ), for tests that count "every active student" while other
+// test files add students. tests/inSnapshot.test.ts describes it.
+//
+// In such a snapshot Postgres refuses (40001, serialization failure) to write a row that
+// refers to a student another test file locked FOR UPDATE and then changed after the
+// snapshot began; an announcement's fan-out writes one for every active student, so it
+// meets this now and then (found on day 8). The app runs at READ COMMITTED and never
+// does. The body then runs again in a new snapshot, at most SNAPSHOT_ATTEMPTS times in
+// all. A refusal the body caught itself (the app answers 500 inside rollbackDb) counts
+// too: any query of the attempt that failed with 40001 makes its failure a retry.
+export async function inSnapshot(db: Db, fn: (c: PoolClient) => Promise<void>): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    let refused = false;
+    try {
+      await inRollback(db, async (client) => {
+        await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        // The same client, except that query() notes a serialization failure.
+        const watched = Object.create(client) as PoolClient;
+        const query = client.query as (...args: unknown[]) => Promise<unknown>;
+        watched.query = ((...args: unknown[]) =>
+          query.apply(client, args).catch((err: { code?: string }) => {
+            if (err?.code === SERIALIZATION_FAILURE) refused = true;
+            throw err;
+          })) as PoolClient["query"];
+        await fn(watched);
+      });
+      return;
+    } catch (err) {
+      if (!refused || attempt >= SNAPSHOT_ATTEMPTS) throw err;
+    }
+  }
+}
+
 // Runs a statement that must fail and returns the Postgres error, so a test can check
 // which constraint refused it. The savepoint keeps the surrounding transaction usable.
 export async function pgError(

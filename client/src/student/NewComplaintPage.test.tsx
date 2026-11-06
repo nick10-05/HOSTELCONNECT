@@ -1,10 +1,25 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComplaintDetail, RaiseStatus } from "../api/complaints";
 import { jsonResponse, mockFetch } from "../test/fetch";
+import { PhotoError } from "./compressPhoto";
 import { NewComplaintPage } from "./NewComplaintPage";
+
+// The real compressor needs a canvas, which jsdom lacks (compressPhoto.test.ts tests it
+// with a fake one). Here it is replaced, keeping the real PhotoError.
+const compress = vi.hoisted(() => ({ fn: vi.fn<(file: File) => Promise<Blob>>() }));
+vi.mock("./compressPhoto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./compressPhoto")>()),
+  compressPhoto: (file: File) => compress.fn(file),
+}));
+const COMPRESSED = new Blob([new Uint8Array(480 * 1024)], { type: "image/jpeg" });
+beforeEach(() => {
+  compress.fn.mockReset();
+  compress.fn.mockResolvedValue(COMPRESSED);
+});
+const cameraPhoto = () => new File([new Uint8Array(3000)], "IMG_1234.jpg", { type: "image/jpeg" });
 
 const created: ComplaintDetail = {
   id: 43,
@@ -25,14 +40,21 @@ function Landed() {
   return <p>Landed on {location.pathname} {JSON.stringify(location.state)}</p>;
 }
 
-// A fake server: GET /api/complaints?page=1 answers canRaise; POST /api/complaints is
-// recorded and answered by `answer`.
-function fakeServer(canRaise: RaiseStatus, answer: () => Response = () => jsonResponse(201, created)) {
+// A fake server: GET /api/complaints?page=1 answers canRaise and photoUploadsAllowed;
+// POST /api/complaints is recorded (JSON parsed; form data as its fields) and answered
+// by `answer`.
+function fakeServer(
+  canRaise: RaiseStatus,
+  answer: () => Response = () => jsonResponse(201, created),
+  photoUploadsAllowed = true,
+) {
   const posts: unknown[] = [];
   mockFetch(async (url, init) => {
-    if (url === "/api/complaints?page=1") return jsonResponse(200, { items: [], total: 0, canRaise });
+    if (url === "/api/complaints?page=1") {
+      return jsonResponse(200, { items: [], total: 0, canRaise, photoUploadsAllowed });
+    }
     if (url === "/api/complaints" && init?.method === "POST") {
-      posts.push(JSON.parse(init.body as string));
+      posts.push(init.body instanceof FormData ? Object.fromEntries(init.body) : JSON.parse(init.body as string));
       return answer();
     }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
@@ -154,5 +176,94 @@ describe("NewComplaintPage", () => {
     expect(screen.queryByLabelText("Category")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send complaint" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "← My complaints" })).toHaveAttribute("href", "/");
+  });
+});
+
+describe("NewComplaintPage: the optional photo (day 8)", () => {
+  const photoInput = () => screen.getByLabelText("Photo (optional)");
+  const fillIn = async (user: ReturnType<typeof userEvent.setup>) => {
+    await screen.findByLabelText("Category");
+    await user.selectOptions(category(), "furniture");
+    await user.type(description(), "The cupboard door in room 204 fell off.");
+  };
+
+  it("shrinks the chosen photo and sends it with the complaint as form data", async () => {
+    const { user, posts } = fakeServer(ALLOWED);
+    await fillIn(user);
+    const original = cameraPhoto();
+    await user.upload(photoInput(), original);
+
+    expect(await screen.findByText("Photo ready (480 KB)")).toBeInTheDocument();
+    expect(compress.fn).toHaveBeenCalledWith(original);
+    await user.click(send());
+
+    expect(await screen.findByText('Landed on /complaints/43 {"created":true}')).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    const sent = posts[0] as Record<string, FormDataEntryValue>;
+    expect(sent.category).toBe("furniture");
+    expect(sent.description).toBe("The cupboard door in room 204 fell off.");
+    // The compressed photo, not the original.
+    expect(sent.photo).toBeInstanceOf(File);
+    expect((sent.photo as File).size).toBe(COMPRESSED.size);
+    expect((sent.photo as File).type).toBe("image/jpeg");
+  });
+
+  it("keeps Send disabled while the photo is being prepared", async () => {
+    let finish: (blob: Blob) => void = () => {};
+    compress.fn.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const { user } = fakeServer(ALLOWED);
+    await fillIn(user);
+    await user.upload(photoInput(), cameraPhoto());
+
+    expect(await screen.findByText("Preparing photo…")).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    finish(COMPRESSED);
+    expect(await screen.findByText("Photo ready (480 KB)")).toBeInTheDocument();
+    expect(send()).toBeEnabled();
+  });
+
+  it("can remove the photo again, and then sends plain JSON", async () => {
+    const { user, posts } = fakeServer(ALLOWED);
+    await fillIn(user);
+    await user.upload(photoInput(), cameraPhoto());
+    await user.click(await screen.findByRole("button", { name: "Remove photo" }));
+    expect(screen.queryByText(/Photo ready/)).not.toBeInTheDocument();
+    await user.click(send());
+
+    await screen.findByText(/Landed on/);
+    expect(posts).toEqual([{ category: "furniture", description: "The cupboard door in room 204 fell off." }]);
+  });
+
+  it("shows why a photo cannot be used, and still lets the student send without it", async () => {
+    compress.fn.mockRejectedValue(new PhotoError("This photo could not be read. Try a JPEG or PNG photo."));
+    const { user, posts } = fakeServer(ALLOWED);
+    await fillIn(user);
+    await user.upload(photoInput(), cameraPhoto());
+
+    expect(await screen.findByText("This photo could not be read. Try a JPEG or PNG photo.")).toBeInTheDocument();
+    expect(send()).toBeEnabled();
+    await user.click(send());
+    await screen.findByText(/Landed on/);
+    expect(posts).toEqual([{ category: "furniture", description: "The cupboard door in room 204 fell off." }]);
+  });
+
+  it("offers no photo while uploads are off, and says so", async () => {
+    fakeServer(ALLOWED, undefined, false);
+    await screen.findByLabelText("Category");
+    expect(screen.queryByLabelText("Photo (optional)")).not.toBeInTheDocument();
+    expect(screen.getByText("Photos are switched off for now. You can still send the complaint as text.")).toBeInTheDocument();
+  });
+
+  it("shows the server's photo refusal word for word, keeping the photo to retry", async () => {
+    const message = "Photo uploads are switched off for now. Please send the complaint without a photo.";
+    const { user } = fakeServer(ALLOWED, () => jsonResponse(409, { error: { code: "photo_uploads_off", message } }));
+    await fillIn(user);
+    await user.upload(photoInput(), cameraPhoto());
+    await screen.findByText("Photo ready (480 KB)");
+    await user.click(send());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button", { name: "Remove photo" })).toBeInTheDocument();
+    expect(send()).toBeEnabled();
   });
 });

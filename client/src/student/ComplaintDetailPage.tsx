@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { ApiError } from "../api/client";
-import { getComplaint, type ComplaintDetail } from "../api/complaints";
+import { getComplaint, type StudentComplaintDetail } from "../api/complaints";
+import { ComplaintPhoto } from "../components/ComplaintPhoto";
 import { ComplaintTimeline } from "../components/ComplaintTimeline";
 import { categoryLabel, formatTime, StatusBadge } from "../components/complaintText";
 
 // One of the student's complaints with its timeline (design doc, sections 4 and 9).
 // Students only read: no replies, updates or reopening. A complaint that does not exist
-// and someone else's get the same answer from the server, shown as it comes.
+// and someone else's get the same answer from the server, shown as it comes. The photo
+// (day 8) shows until it expires, without a countdown.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -17,7 +19,7 @@ export function ComplaintDetailPage() {
   // Set by the form after sending, so the page can confirm it.
   const created = (useLocation().state as { created?: boolean } | null)?.created === true;
 
-  const [complaint, setComplaint] = useState<ComplaintDetail | null>(null);
+  const [complaint, setComplaint] = useState<StudentComplaintDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export function ComplaintDetailPage() {
               Raised {formatTime(complaint.createdAt)}
               {complaint.resolvedAt && ` · resolved ${formatTime(complaint.resolvedAt)}`}
             </p>
+            <ComplaintPhoto photo={complaint.photo} />
           </section>
 
           <ComplaintTimeline events={complaint.events} viewer="student" />

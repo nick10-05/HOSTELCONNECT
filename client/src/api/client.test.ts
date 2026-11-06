@@ -27,6 +27,17 @@ describe("apiFetch", () => {
     });
   });
 
+  it("sends form data as it is, leaving the Content-Type to the browser", async () => {
+    const fetch = mockFetch(async () => jsonResponse(201, { ok: true }));
+    const form = new FormData();
+    form.append("category", "food");
+    await apiFetch("/api/x", { method: "POST", body: form });
+
+    const [, init] = fetch.mock.calls[0];
+    expect(init?.body).toBe(form);
+    expect(init?.headers).toBeUndefined();
+  });
+
   it("turns the server's error envelope into an ApiError", async () => {
     mockFetch(async () =>
       jsonResponse(429, { error: { code: "rate_limited", message: "Too many attempts" } }),

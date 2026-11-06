@@ -2,6 +2,7 @@ import path from "node:path";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { createPool } from "./db";
+import { storageFromConfig } from "./lib/storage";
 import { loadDotEnv } from "./loadEnv";
 
 loadDotEnv();
@@ -17,6 +18,11 @@ const app = createApp({
     maxActive: config.COMPLAINT_MAX_ACTIVE,
     maxNewPer24h: config.COMPLAINT_MAX_NEW_PER_DAY,
   },
+  jobSecret: config.JOB_SECRET,
+  storage: storageFromConfig(config),
+  photoMaxBytes: config.PHOTO_MAX_BYTES,
+  photoLinkSeconds: config.PHOTO_LINK_SECONDS,
+  usageLimits: { storageLimitMb: config.STORAGE_LIMIT_MB, egressLimitMb: config.EGRESS_LIMIT_MB },
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

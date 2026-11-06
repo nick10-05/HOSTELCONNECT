@@ -1,10 +1,33 @@
 import { z } from "zod";
 import { databaseUrlProblem } from "./lib/databaseUrl";
 
+// An empty line in .env (NAME=) means "not set", as if the line were missing.
+const optional = <T extends z.ZodType>(type: T) =>
+  z.preprocess((value) => (value === "" ? undefined : value), type.optional());
+
+// The Supabase project's address, e.g. https://abcd.supabase.co: https, nothing after the
+// host. A trailing slash is dropped so paths can be appended as "/storage/v1/...".
+const supabaseUrl = z
+  .string()
+  .transform((url) => url.replace(/\/$/, ""))
+  .superRefine((url, ctx) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      ctx.addIssue({ code: "custom", message: "is not a valid URL" });
+      return;
+    }
+    if (parsed.protocol !== "https:") ctx.addIssue({ code: "custom", message: "must start with https://" });
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+      ctx.addIssue({ code: "custom", message: "must be the project address only, with no path" });
+    }
+  });
+
 // Every setting the server needs, checked once at startup.
 // If something is missing or wrong, the server refuses to start with a clear message
 // instead of failing later in some random request.
-const schema = z.object({
+const fields = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DATABASE_URL: z.string().superRefine((url, ctx) => {
@@ -17,6 +40,47 @@ const schema = z.object({
   // per category, is a database index and has no setting.
   COMPLAINT_MAX_ACTIVE: z.coerce.number().int().min(1).max(50).default(3),
   COMPLAINT_MAX_NEW_PER_DAY: z.coerce.number().int().min(1).max(50).default(2),
+
+  // The usage guard (section 10), set below Supabase's free limits (decided on day 8):
+  // photo uploads switch off at 85% of either, the dashboard turns amber at 70%.
+  STORAGE_LIMIT_MB: z.coerce.number().int().min(1).default(450),
+  EGRESS_LIMIT_MB: z.coerce.number().int().min(1).default(3000),
+  // The server's cap on one photo (section 8, default 1 MB); the browser sends about 500 KB.
+  PHOTO_MAX_BYTES: z.coerce.number().int().min(1).max(10 * 1024 * 1024).default(1024 * 1024),
+  // How long a signed photo link works (decided on day 8).
+  PHOTO_LINK_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+
+  // Supabase Storage. The secret key (sb_secret_... or the older service_role key) never
+  // reaches the browser. Without these two, local development and tests use fake storage.
+  SUPABASE_URL: optional(supabaseUrl),
+  SUPABASE_SECRET_KEY: optional(z.string().min(20, "must be at least 20 characters")),
+  // A private bucket; Supabase allows lowercase letters, digits and hyphens.
+  STORAGE_BUCKET: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, "must be lowercase letters, digits and hyphens")
+    .default("complaint-photos"),
+
+  // The header POST /api/internal/run-jobs requires (section 8). Unset, the endpoint is off.
+  JOB_SECRET: optional(z.string().min(32, "must be at least 32 characters")),
+});
+
+// Settings that only make sense together, or that production cannot run without: a
+// missing Render setting stops the deploy instead of quietly switching photos off.
+const schema = fields.superRefine((config, ctx) => {
+  const missing = (name: keyof typeof config, message: string) =>
+    ctx.addIssue({ code: "custom", path: [name], message });
+
+  if (config.SUPABASE_URL && !config.SUPABASE_SECRET_KEY) {
+    missing("SUPABASE_SECRET_KEY", "is required when SUPABASE_URL is set");
+  }
+  if (config.SUPABASE_SECRET_KEY && !config.SUPABASE_URL) {
+    missing("SUPABASE_URL", "is required when SUPABASE_SECRET_KEY is set");
+  }
+  if (config.NODE_ENV === "production") {
+    for (const name of ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "JOB_SECRET"] as const) {
+      if (!config[name]) missing(name, "is required in production");
+    }
+  }
 });
 
 export type Config = z.infer<typeof schema>;

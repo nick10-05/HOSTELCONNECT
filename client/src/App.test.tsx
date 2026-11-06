@@ -46,6 +46,15 @@ function renderAt(path: string) {
         students: { total: 0, joiningLater: 0, buildings: [] },
         rejoinRequests: { pending: 0, oldestRequestedOn: null },
         complaints: { active: 0, highPriority: 0, oldestActiveAt: null },
+        // Day 8: the storage and bandwidth card.
+        usage: {
+          storage: { usedBytes: 0, limitBytes: 450 * 1024 * 1024, percent: 0 },
+          egress: { month: "2026-11", usedBytes: 0, limitBytes: 3000 * 1024 * 1024, percent: 0 },
+          level: "ok",
+          uploadsAllowed: true,
+          failingDeletions: 0,
+          photosConfigured: false,
+        },
       });
     }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });

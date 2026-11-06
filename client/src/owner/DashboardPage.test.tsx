@@ -1,12 +1,22 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
-import type { Dashboard } from "../api/dashboard";
+import type { Dashboard, UsageCard } from "../api/dashboard";
 import { jsonResponse, mockFetch } from "../test/fetch";
 import { ageText, DashboardPage } from "./DashboardPage";
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 const NO_COMPLAINTS = { active: 0, highPriority: 0, oldestActiveAt: null };
+const MB = 1024 * 1024;
+// Day 8: the storage and bandwidth card, at rest.
+const QUIET_USAGE: UsageCard = {
+  storage: { usedBytes: Math.round(12.34 * MB), limitBytes: 450 * MB, percent: 2 },
+  egress: { month: "2026-11", usedBytes: Math.round(1.5 * MB), limitBytes: 3000 * MB, percent: 0 },
+  level: "ok",
+  uploadsAllowed: true,
+  failingDeletions: 0,
+  photosConfigured: true,
+};
 
 const full: Dashboard = {
   students: {
@@ -20,6 +30,7 @@ const full: Dashboard = {
   },
   rejoinRequests: { pending: 2, oldestRequestedOn: "2026-11-03" },
   complaints: { active: 3, highPriority: 1, oldestActiveAt: hoursAgo(3 * 24 + 2) },
+  usage: QUIET_USAGE,
 };
 
 function renderPage(answer: () => Response) {
@@ -78,13 +89,14 @@ describe("DashboardPage", () => {
     expect(within(complaints).getByRole("link", { name: "Open complaints" })).toHaveAttribute("href", "/complaints");
   });
 
-  it("puts the cards in the design's order: students, complaints, rejoin requests", async () => {
+  it("puts the cards in the design's order: students, complaints, rejoin requests, then usage", async () => {
     renderPage(() => jsonResponse(200, full));
     await screen.findByRole("region", { name: "Students" });
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-labelledby"))).toEqual([
       "card-students",
       "card-complaints",
       "card-requests",
+      "card-usage",
     ]);
   });
 
@@ -94,6 +106,7 @@ describe("DashboardPage", () => {
         students: { total: 0, joiningLater: 0, buildings: [] },
         rejoinRequests: { pending: 0, oldestRequestedOn: null },
         complaints: NO_COMPLAINTS,
+        usage: QUIET_USAGE,
       }),
     );
 
@@ -120,6 +133,7 @@ describe("DashboardPage", () => {
         },
         rejoinRequests: { pending: 1, oldestRequestedOn: "2026-11-04" },
         complaints: { active: 1, highPriority: 0, oldestActiveAt: hoursAgo(5.5) },
+        usage: QUIET_USAGE,
       }),
     );
 
@@ -129,6 +143,67 @@ describe("DashboardPage", () => {
     expect(region("Rejoin requests")).toHaveTextContent("1 waiting, since 4 Nov 2026");
     expect(region("Complaints")).toHaveTextContent("1 active, waiting 5 hours");
     expect(region("Complaints")).not.toHaveTextContent("high priority");
+  });
+
+  it("shows photo storage and this month's bandwidth against their limits", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(usage).toHaveTextContent("Photos stored12.3 MB of 450 MB (2%)");
+    expect(usage).toHaveTextContent("Bandwidth in November 20261.5 MB of 3,000 MB (0%)");
+    expect(within(usage).queryByRole("alert")).not.toBeInTheDocument();
+    expect(usage).toHaveTextContent("Photo uploads are on.");
+  });
+
+  it("turns amber at 70% and says when uploads will switch off", async () => {
+    renderPage(() =>
+      jsonResponse(200, { ...full, usage: { ...QUIET_USAGE, storage: { ...QUIET_USAGE.storage, percent: 72 }, level: "amber" } }),
+    );
+    const usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(within(usage).getByRole("status")).toHaveTextContent(
+      "Over 70% of a free limit. Photo uploads switch off at 85%.",
+    );
+  });
+
+  it("says photo uploads are off at 85%, and when the bandwidth count starts again", async () => {
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        usage: { ...QUIET_USAGE, egress: { ...QUIET_USAGE.egress, percent: 91 }, level: "uploads_off", uploadsAllowed: false },
+      }),
+    );
+    const usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    const alert = within(usage).getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Photo uploads are off: usage has reached 85% of a free limit. Students can still send complaints as text.",
+    );
+    expect(alert).toHaveTextContent("The bandwidth count starts again on 1 December 2026.");
+  });
+
+  it("does not promise a bandwidth reset when storage is what is full", async () => {
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        usage: { ...QUIET_USAGE, storage: { ...QUIET_USAGE.storage, percent: 86 }, level: "uploads_off", uploadsAllowed: false },
+      }),
+    );
+    const alert = within(await screen.findByRole("region", { name: "Storage and bandwidth" })).getByRole("alert");
+    expect(alert).not.toHaveTextContent("starts again");
+    expect(alert).toHaveTextContent("Space frees up as photos are deleted 48 hours after upload.");
+  });
+
+  it("warns when photos have failed to delete five times", async () => {
+    renderPage(() => jsonResponse(200, { ...full, usage: { ...QUIET_USAGE, failingDeletions: 2 } }));
+    const usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(within(usage).getByRole("alert")).toHaveTextContent(
+      "2 photos could not be deleted after 5 tries. The hourly job keeps trying; check Supabase Storage.",
+    );
+  });
+
+  it("says when photo storage is not set up", async () => {
+    renderPage(() => jsonResponse(200, { ...full, usage: { ...QUIET_USAGE, photosConfigured: false } }));
+    const usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(usage).toHaveTextContent("Photo storage is not set up, so complaints are text only.");
+    expect(usage).not.toHaveTextContent("Photos stored");
   });
 
   it("shows the server's message when the dashboard cannot be loaded", async () => {

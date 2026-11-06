@@ -10,6 +10,7 @@ import { AnnouncementsPage } from "./owner/AnnouncementsPage";
 import { ComplaintPage } from "./owner/ComplaintPage";
 import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
+import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
@@ -93,6 +94,7 @@ export function App() {
             <Route path="/complaints" element={<ComplaintsPage />} />
             <Route path="/complaints/:id" element={<ComplaintPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/food-counts" element={<FoodCountsPage />} />
             {/* The owner starts on the dashboard; unknown addresses go there too
                 instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -151,6 +153,9 @@ function OwnerNav() {
       </NavLink>
       <NavLink to="/announcements" className={navLinkClass}>
         Announcements
+      </NavLink>
+      <NavLink to="/food-counts" className={navLinkClass}>
+        Food counts
       </NavLink>
     </nav>
   );

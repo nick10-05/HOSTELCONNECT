@@ -4,13 +4,15 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app";
 import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
-import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
+import { inSnapshot, insertOwner, insertStudent, testPool } from "./helpers/db";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // The announcement routes through the real app and services. Posting notifies every
 // active student, so each test runs the app on its own connection inside a transaction
 // that is rolled back (tests/helpers/rollbackDb.ts), with one snapshot (REPEATABLE READ)
-// so "every active student" is counted on the same data. Every test builds its own app.
+// so "every active student" is counted on the same data. Every test builds its own app,
+// on every attempt: a test Postgres refuses because another file changed a student
+// meanwhile (the app answers 500) runs again (inSnapshot, tests/helpers/db.ts).
 const SECRET = "test-secret-that-is-at-least-32-characters";
 const db = testPool();
 afterAll(() => db.end());
@@ -28,8 +30,7 @@ const NOT_FOUND = { error: { code: "announcement_not_found", message: "That anno
 type Ctx = { c: PoolClient; app: ReturnType<typeof createApp>; owner: string; student: string; studentId: number };
 
 function withApp(fn: (ctx: Ctx) => Promise<void>) {
-  return inRollback(db, async (c) => {
-    await c.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+  return inSnapshot(db, async (c) => {
     const app = createApp({ db: rollbackDb(c), jwtSecret: SECRET });
     const studentId = await insertStudent(c);
     await fn({ c, app, owner: cookieFor(await insertOwner(c), "owner"), student: cookieFor(studentId, "student"), studentId });

@@ -1,0 +1,60 @@
+name: Run jobs
+
+# Calls the app's scheduled jobs a few minutes past every hour (design doc, section 10):
+# first /api/health, which also wakes the sleeping free Render server, then
+# POST /api/internal/run-jobs with the job secret. On day 8 the only job is deleting
+# complaint photos whose 48 hours are over; days 9 and 10 add fee rows, reminders, the
+# owner's digest and pruning, behind the same call.
+#
+# A failed run (site down, database paused, wrong secret) makes GitHub email the
+# repository owner. Every job only does what is due, so a late, skipped or repeated run
+# does no harm. GitHub turns off scheduled workflows in a public repository after 60
+# days without any commit; it emails a warning first. Re-enable it from the Actions tab.
+on:
+  schedule:
+    - cron: "7 * * * *" # 7 minutes past every hour (UTC; India is 5 h 30 min ahead)
+  workflow_dispatch: # "Run workflow" button, e.g. to try it after a deploy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobs
+  cancel-in-progress: false
+
+jobs:
+  run-jobs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      # The public address of the live app (docs/progress.md); not a secret.
+      APP_URL: https://hostelconnect-o8e6.onrender.com
+      # The same value as JOB_SECRET in Render's settings.
+      JOB_SECRET: ${{ secrets.JOB_SECRET }}
+    steps:
+      - name: Check the secret is set
+        run: |
+          test "${#JOB_SECRET}" -ge 32 || { echo "JOB_SECRET secret is missing or shorter than 32 characters"; exit 1; }
+
+      - name: Health check (wakes the server)
+        run: |
+          # A sleeping free server takes about a minute to start: up to 6 tries, 20 s apart.
+          curl --fail --silent --show-error --max-time 60 \
+            --retry 6 --retry-delay 20 --retry-all-errors \
+            "$APP_URL/api/health"
+          echo
+
+      - name: Run the jobs
+        run: |
+          set -euo pipefail
+          # curl reads the header from standard input (@-), so the secret is never on a
+          # command line. The answer holds counts only, e.g.
+          # {"expirePhotos":{"deleted":2,"failed":0}}.
+          status=$(printf 'X-Job-Secret: %s\n' "$JOB_SECRET" | curl --silent --show-error --max-time 300 \
+            --request POST \
+            --header @- \
+            --output answer.json --write-out '%{http_code}' \
+            "$APP_URL/api/internal/run-jobs")
+          echo "Status $status: $(cat answer.json)"
+          test "$status" = "200"

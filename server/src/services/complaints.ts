@@ -1,9 +1,11 @@
 import type { Db, Queryable } from "../db";
 import { HttpError } from "../lib/http";
+import { newPhotoPath, StorageError, type PhotoStorage, type PhotoType } from "../lib/storage";
 import { notify } from "./notifications";
+import { getUsage, type UsageLimits } from "./usage";
 
-// Student complaints (design doc, sections 3, 4, 8 and 9). Day 6 is text only: photos
-// come on day 8, the owner's status changes, priority and notes on day 7.
+// Student complaints (design doc, sections 3, 4, 8 and 9). Day 6 was text only; the
+// owner's status changes, priority and notes came on day 7, the optional photo on day 8.
 // tests/complaints.test.ts describes what createComplaint must do.
 
 // The categories of migration 009, in the order the form shows them.
@@ -29,10 +31,24 @@ export type ComplaintLimits = {
 
 // `description` arrives trimmed and 10 to 500 characters long, and `category` is one of
 // COMPLAINT_CATEGORIES (the route checks both with zod; the database refuses anything else).
+// `photo` (day 8) arrives already checked by the route: at most PHOTO_MAX_BYTES, and its
+// type read from its first bytes (detectPhotoType), never from what the browser claims.
 export type NewComplaint = {
   category: ComplaintCategory;
   description: string;
+  photo?: { bytes: Uint8Array; type: PhotoType } | null;
 };
+
+// What a photo needs (day 8): the storage (null when it is not configured: uploads are
+// off), the usage guard's limits, and the time the guard reads its month from.
+export type PhotoUploads = {
+  storage: PhotoStorage | null;
+  usageLimits: UsageLimits;
+  now: Date;
+};
+
+// How long a photo is kept (section 4); the expiry job deletes it after that.
+export const PHOTO_KEEP_HOURS = 48;
 
 // Creates a complaint for a student, within the three limits (sections 2, 8 and 9), or
 // refuses it with nothing created. In one transaction it inserts the complaint (status
@@ -68,16 +84,35 @@ export type NewComplaint = {
 // FOR UPDATE), as every other path that changes a student does, then count and insert.
 // The lock also stops a move-out happening between the check and the insert.
 //
-// Never log the description.
+// The photo (day 8, written by Claude): only after the student lock and the three limits,
+// so a refused complaint never uploads anything. Then, still in the same transaction:
+//   - uploads off (no storage, or the usage guard at UPLOADS_OFF_PERCENT): the whole
+//     request is refused, never silently saved without its photo (decided on day 8);
+//   - upload under a new random name (newPhotoPath); storage failing is a 503;
+//   - insert with photo_path, photo_size_bytes and photo_expires_at = created_at +
+//     PHOTO_KEEP_HOURS (now() in SQL, the transaction's start, as created_at).
+// If anything fails after the upload, the object is removed again (best effort; an
+// object left behind is a leak only, never a photo shown without its complaint).
+//   409 photo_uploads_off    "Photo uploads are switched off for now. Please send the
+//                            complaint without a photo."
+//   503 photo_upload_failed  "The photo could not be saved. Try again, or send the
+//                            complaint without it."
+// `uploads` may be left out when there is no photo.
+//
+// Never log the description or the photo's name.
 export async function createComplaint(
   db: Db,
   studentId: number,
   input: NewComplaint,
   limits: ComplaintLimits,
+  uploads?: PhotoUploads,
 ): Promise<{ id: number }> {
   const c = await db.connect();
   let transactionStarted = false;
   let rollbackFailed = false;
+  // Set once the photo is in storage and cleared at the commit; removed again if the
+  // complaint is not saved.
+  let uploadedPath: string | null = null;
 
   try {
     await c.query("BEGIN");
@@ -112,13 +147,44 @@ export async function createComplaint(
     if (counts.active >= limits.maxActive) throw tooManyActive(limits);
     if (counts.recent >= limits.maxNewPer24h) throw tooManyRecent(limits);
 
+    const photo = input.photo ?? null;
+    if (photo) {
+      if (!uploads?.storage) throw photoUploadsOff();
+      const usage = await getUsage(c, uploads.usageLimits, uploads.now);
+      if (!usage.uploadsAllowed) throw photoUploadsOff();
+
+      const path = newPhotoPath(photo.type);
+      try {
+        await uploads.storage.upload(path, photo.bytes, photo.type);
+      } catch (err) {
+        if (err instanceof StorageError) {
+          throw new HttpError(
+            503,
+            "photo_upload_failed",
+            "The photo could not be saved. Try again, or send the complaint without it.",
+          );
+        }
+        throw err;
+      }
+      uploadedPath = path;
+    }
+
     let complaintId: number;
     try {
       const inserted = await c.query<{ id: number }>(
-        `INSERT INTO complaints (student_id, category, description)
-         VALUES ($1, $2, $3)
+        `INSERT INTO complaints (student_id, category, description,
+                                 photo_path, photo_size_bytes, photo_expires_at)
+         VALUES ($1, $2, $3, $4, $5,
+                 CASE WHEN $4::text IS NULL THEN NULL ELSE now() + make_interval(hours => $6) END)
          RETURNING id`,
-        [studentId, input.category, input.description],
+        [
+          studentId,
+          input.category,
+          input.description,
+          uploadedPath,
+          photo ? photo.bytes.length : null,
+          PHOTO_KEEP_HOURS,
+        ],
       );
       complaintId = inserted.rows[0].id;
     } catch (err) {
@@ -137,6 +203,7 @@ export async function createComplaint(
 
     await c.query("COMMIT");
     transactionStarted = false;
+    uploadedPath = null;
 
     return { id: complaintId };
   } catch (err) {
@@ -147,10 +214,22 @@ export async function createComplaint(
         rollbackFailed = true;
       }
     }
+    if (uploadedPath !== null && uploads?.storage) {
+      // Best effort: the student gets the original error either way.
+      await uploads.storage.remove(uploadedPath).catch(() => undefined);
+    }
     throw err;
   } finally {
     c.release(rollbackFailed);
   }
+}
+
+function photoUploadsOff(): HttpError {
+  return new HttpError(
+    409,
+    "photo_uploads_off",
+    "Photo uploads are switched off for now. Please send the complaint without a photo.",
+  );
 }
 
 function categoryActive(category: ComplaintCategory): HttpError {
