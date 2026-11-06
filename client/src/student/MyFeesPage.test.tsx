@@ -30,9 +30,17 @@ const mine: MyFees = {
 };
 const nothingDue: MyFees = { pendingBalance: 0, amountNotSet: 0, overdue: [], upcoming: [], history: [], nextDueDate: "2032-08-05" };
 
-function renderWith(element: React.ReactElement, answer: () => Response) {
+const upi = { upiId: "owner@okaxis", upiPayeeName: "Sri Lakshmi Hostel", qrUrl: null, updatedAt: "2032-11-02T04:30:00.000Z" };
+
+function renderWith(
+  element: React.ReactElement,
+  answer: () => Response,
+  paymentAnswer: () => Response = () => jsonResponse(200, upi),
+) {
   const requested: string[] = [];
   mockFetch(async (url) => {
+    // The hostel's payment details, for "Pay the hostel"; not counted in `requested`.
+    if (url === "/api/settings/payment") return paymentAnswer();
     requested.push(url);
     return answer();
   });
@@ -78,6 +86,20 @@ describe("MyFeesPage", () => {
     expect(balance).not.toHaveTextContent("Nothing to pay right now.");
   });
 
+  it("shows how to pay the hostel, with the amount to pay now", async () => {
+    renderWith(<MyFeesPage />, () => jsonResponse(200, mine));
+    const pay = await screen.findByRole("region", { name: "Pay the hostel" });
+    expect(pay).toHaveTextContent("owner@okaxis");
+    expect(await within(pay).findByRole("img", { name: "QR code to pay Sri Lakshmi Hostel" })).toBeInTheDocument();
+    expect(within(pay).getByRole("link", { name: "Pay with a UPI app" }).getAttribute("href")).toContain("&am=6500.00&");
+  });
+
+  it("leaves the amount out of the UPI link when nothing is due", async () => {
+    renderWith(<MyFeesPage />, () => jsonResponse(200, nothingDue));
+    const pay = await screen.findByRole("region", { name: "Pay the hostel" });
+    expect(within(pay).getByRole("link", { name: "Pay with a UPI app" }).getAttribute("href")).not.toContain("am=");
+  });
+
   it("shows why the fees could not be loaded", async () => {
     renderWith(<MyFeesPage />, () => jsonResponse(500, { error: { code: "internal", message: "Something broke." } }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Something broke.");
@@ -92,6 +114,14 @@ describe("MyFeesCard", () => {
     expect(card).toHaveTextContent("2 fees are overdue.");
     expect(card).toHaveTextContent("Next due date: 5 Aug 2032");
     expect(within(card).getByRole("link", { name: "See my fees" })).toHaveAttribute("href", "/fees");
+    expect(await within(card).findByText("Pay to owner@okaxis (Sri Lakshmi Hostel)")).toBeInTheDocument();
+  });
+
+  it("leaves out the UPI ID when there is none, or it cannot be loaded", async () => {
+    renderWith(<MyFeesCard />, () => jsonResponse(200, mine), () => jsonResponse(200, { ...upi, upiId: null }));
+    const card = await screen.findByRole("region", { name: "My fees" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(card).not.toHaveTextContent("Pay to");
   });
 
   it("says when nothing is due", async () => {

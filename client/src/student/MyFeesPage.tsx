@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
 import { getMyFees, type MyFeeRow, type MyFees } from "../api/fees";
+import { getPaymentSettings, type PaymentSettings } from "../api/settings";
+import { PaymentDetails } from "../components/PaymentQr";
 import { formatDate, formatRupees } from "../owner/format";
 
 // A student's own fees (design doc, sections 3 and 9; day 9): what is to pay now (pending
 // fees due on or before today), what is overdue, the next due date, and every fee with its
 // state. A "payment recorded" notification opens this page. MyFeesCard is the short
-// version on the home page. The hostel's UPI details are added with the payment settings.
+// version on the home page. "Pay the hostel" (PaymentDetails) shows the owner's UPI ID and
+// QR, with the amount to pay now in the drawn QR and the UPI app link.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -66,6 +69,8 @@ export function MyFeesPage() {
             )}
           </section>
 
+          <PaymentDetails amount={fees.pendingBalance} />
+
           {fees.history.length === 0 ? (
             <p className="text-sm text-slate-600">No fees yet.</p>
           ) : (
@@ -116,9 +121,22 @@ function FeeItem({ fee, fees }: { fee: MyFeeRow; fees: MyFees }) {
 }
 
 // The fees part of the student's home (section 9: "My fees (pending balance, next due
-// date...)"). Nothing at all when the fees cannot be loaded; the full page says why.
+// date, the owner's UPI details)"): the UPI ID only; the QR is on the full page. Nothing at
+// all when the fees cannot be loaded (the full page says why); no UPI line when there is
+// no UPI ID or it cannot be loaded.
 export function MyFeesCard() {
   const { fees } = useMyFees();
+  const [payment, setPayment] = useState<PaymentSettings | null>(null);
+  useEffect(() => {
+    let current = true;
+    getPaymentSettings()
+      .then((s) => current && setPayment(s))
+      .catch(() => current && setPayment(null));
+    return () => {
+      current = false;
+    };
+  }, []);
+
   if (!fees) return null;
   return (
     <section
@@ -144,6 +162,12 @@ export function MyFeesCard() {
       {fees.overdue.length > 0 && <p className="text-sm font-medium text-red-700">{overdueText(fees.overdue.length)}</p>}
       {fees.amountNotSet > 0 && <p className="text-sm text-amber-800">{notSetText(fees.amountNotSet)}</p>}
       {fees.nextDueDate && <p className="text-sm text-slate-600">Next due date: {formatDate(fees.nextDueDate)}</p>}
+      {payment?.upiId && (
+        <p className="text-sm break-all text-slate-600">
+          Pay to {payment.upiId}
+          {payment.upiPayeeName && ` (${payment.upiPayeeName})`}
+        </p>
+      )}
     </section>
   );
 }

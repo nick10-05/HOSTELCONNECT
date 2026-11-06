@@ -48,6 +48,9 @@ function renderAt(path: string) {
     if (url === "/api/complaints") return jsonResponse(200, { items: [ownerComplaint], total: 1 });
     if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
     if (url === "/api/return-polls?page=1") return jsonResponse(200, { items: [ownerPoll], total: 1 });
+    if (url === "/api/settings/payment") {
+      return jsonResponse(200, { upiId: "owner@okaxis", upiPayeeName: null, qrUrl: null, updatedAt: "2026-11-02T04:30:00.000Z" });
+    }
     if (url === "/api/fees?page=1") return jsonResponse(200, { items: [], total: 0, totals: { paid: { count: 0, amount: 0 }, pending: { count: 0, amount: 0 }, overdue: { count: 0, amount: 0 }, amountNotSet: 0 } });
     if (url === "/api/return-polls/6") {
       return jsonResponse(200, { poll: ownerPoll, counts: ownerPoll.counts, returned: [], notYet: [], noResponse: [] });
@@ -140,6 +143,14 @@ describe("owner pages", () => {
     await user.click(screen.getByRole("link", { name: "Fees" }));
     expect(await screen.findByRole("heading", { name: "Fees" })).toBeInTheDocument();
     expect(await screen.findByText("No fees match.")).toBeInTheDocument();
+  });
+
+  it("has the payment settings in the menu", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Payment settings" })).toBeInTheDocument();
+    expect(screen.getByLabelText("UPI ID")).toHaveValue("owner@okaxis");
   });
 
   it("has an Announcements page in the menu", async () => {

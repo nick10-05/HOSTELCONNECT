@@ -15,6 +15,7 @@ import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
 import { ReturnPollsPage } from "./owner/ReturnPollsPage";
+import { SettingsPage } from "./owner/SettingsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
 import { StudentsPage } from "./owner/StudentsPage";
@@ -102,6 +103,7 @@ export function App() {
             <Route path="/return-polls/:id" element={<ReturnPollPage />} />
             <Route path="/food-counts" element={<FoodCountsPage />} />
             <Route path="/fees" element={<FeesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             {/* The owner starts on the dashboard; unknown addresses go there too
                 instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -174,6 +176,9 @@ function OwnerNav() {
       </NavLink>
       <NavLink to="/fees" className={navLinkClass}>
         Fees
+      </NavLink>
+      <NavLink to="/settings" className={navLinkClass}>
+        Settings
       </NavLink>
     </nav>
   );
