@@ -10,6 +10,7 @@ import { AnnouncementsPage } from "./owner/AnnouncementsPage";
 import { ComplaintPage } from "./owner/ComplaintPage";
 import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
+import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
@@ -19,6 +20,7 @@ import { StudentProfilePage } from "./owner/StudentProfilePage";
 import { StudentsPage } from "./owner/StudentsPage";
 import { ComplaintDetailPage } from "./student/ComplaintDetailPage";
 import { MyComplaintsPage } from "./student/MyComplaintsPage";
+import { MyFeesCard, MyFeesPage } from "./student/MyFeesPage";
 import { NewComplaintPage } from "./student/NewComplaintPage";
 import { ImportantNotices, NoticesPage } from "./student/NoticesPage";
 import { ReturnPollTile } from "./student/ReturnPollTile";
@@ -65,8 +67,7 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // The owner's pages, or the student's (complaints, notices and the return poll; fees
-  // arrive next).
+  // The owner's pages, or the student's (complaints, notices, the return poll and fees).
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -100,6 +101,7 @@ export function App() {
             <Route path="/return-polls" element={<ReturnPollsPage />} />
             <Route path="/return-polls/:id" element={<ReturnPollPage />} />
             <Route path="/food-counts" element={<FoodCountsPage />} />
+            <Route path="/fees" element={<FeesPage />} />
             {/* The owner starts on the dashboard; unknown addresses go there too
                 instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -107,7 +109,7 @@ export function App() {
         ) : (
           <Routes>
             {/* Section 9: urgent and pinned notices first, then an open return poll,
-                then the complaints. */}
+                the complaints, and the fees. */}
             <Route
               path="/"
               element={
@@ -115,12 +117,14 @@ export function App() {
                   <ImportantNotices />
                   <ReturnPollTile />
                   <MyComplaintsPage />
+                  <MyFeesCard />
                 </div>
               }
             />
             <Route path="/complaints/new" element={<NewComplaintPage />} />
             <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
             <Route path="/notices" element={<NoticesPage />} />
+            <Route path="/fees" element={<MyFeesPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
@@ -168,6 +172,9 @@ function OwnerNav() {
       <NavLink to="/food-counts" className={navLinkClass}>
         Food counts
       </NavLink>
+      <NavLink to="/fees" className={navLinkClass}>
+        Fees
+      </NavLink>
     </nav>
   );
 }
@@ -186,6 +193,9 @@ function StudentNav() {
       </NavLink>
       <NavLink to="/notices" className={navLinkClass}>
         Notices
+      </NavLink>
+      <NavLink to="/fees" className={navLinkClass}>
+        My fees
       </NavLink>
     </nav>
   );

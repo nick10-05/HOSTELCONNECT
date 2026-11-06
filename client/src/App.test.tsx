@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -48,6 +48,7 @@ function renderAt(path: string) {
     if (url === "/api/complaints") return jsonResponse(200, { items: [ownerComplaint], total: 1 });
     if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
     if (url === "/api/return-polls?page=1") return jsonResponse(200, { items: [ownerPoll], total: 1 });
+    if (url === "/api/fees?page=1") return jsonResponse(200, { items: [], total: 0, totals: { paid: { count: 0, amount: 0 }, pending: { count: 0, amount: 0 }, overdue: { count: 0, amount: 0 }, amountNotSet: 0 } });
     if (url === "/api/return-polls/6") {
       return jsonResponse(200, { poll: ownerPoll, counts: ownerPoll.counts, returned: [], notYet: [], noResponse: [] });
     }
@@ -133,6 +134,14 @@ describe("owner pages", () => {
     expect(screen.getByRole("link", { name: "Return polls" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("has a Fees page in the menu", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Fees" }));
+    expect(await screen.findByRole("heading", { name: "Fees" })).toBeInTheDocument();
+    expect(await screen.findByText("No fees match.")).toBeInTheDocument();
+  });
+
   it("has an Announcements page in the menu", async () => {
     const user = renderAt("/structure");
     await screen.findByRole("heading", { name: "Buildings and rooms" });
@@ -173,6 +182,7 @@ describe("student pages", () => {
         return jsonResponse(200, { items: [], total: 0, canRaise: { allowed: true, reason: null, activeCategories: [] } });
       }
       if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
+      if (url === "/api/fees/mine") return jsonResponse(200, { pendingBalance: 6500, amountNotSet: 0, overdue: [], upcoming: [], history: [], nextDueDate: "2026-12-14" });
       if (url === "/api/return-polls") {
         const poll = { id: 6, title: "Back after Diwali?", createdAt: "2026-11-02T04:30:00.000Z", myResponse: null, respondedAt: null };
         return jsonResponse(200, { items: [poll], total: 1 });
@@ -228,6 +238,20 @@ describe("student pages", () => {
     expect(notices.compareDocumentPosition(poll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(poll.compareDocumentPosition(complaints) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "I'm back" })).toBeInTheDocument();
+  });
+
+  it("see their fees at the end of their home, and open My fees from the card and the menu", async () => {
+    const user = renderStudentAt("/");
+    const card = await screen.findByRole("region", { name: "My fees" });
+    const complaints = await screen.findByRole("heading", { name: "My complaints" });
+    expect(complaints.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card).toHaveTextContent("₹6,500");
+
+    await user.click(screen.getByRole("link", { name: "See my fees" }));
+    expect(await screen.findByRole("heading", { name: "My fees", level: 1 })).toBeInTheDocument();
+    const menu = screen.getByRole("navigation", { name: "Student pages" });
+    expect(within(menu).getByRole("link", { name: "My fees" })).toHaveAttribute("aria-current", "page");
+    expect(within(menu).getByRole("link", { name: "My complaints" })).not.toHaveAttribute("aria-current");
   });
 
   it("never see the owner's Return polls page", async () => {
