@@ -510,7 +510,7 @@ Done when: a compressed photo uploads, shows a countdown and is deleted by the j
 uploads switch off at the threshold in a test; food counts match overall and per building. Met
 on the local database against a separate Supabase development project, and checked in a browser
 as the owner and as a student. One part is still open: rotating a real phone-camera photo (see
-"Smoke test" below). Not yet in production (see "Deployment" below).
+"Smoke test" below). Live in production since 2026-11-06 (see "Deployment" below).
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -591,10 +591,10 @@ Not checked live:
 
 ### Notes for later days
 
-- **Production, before the merge:** back up, run migration 011 on the branch, set
-  `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `JOB_SECRET` in Render and `JOB_SECRET` in the GitHub
-  environment, check `EGRESS_LIMIT_MB` against the production usage page. After the deploy, check
-  only the jobs endpoint: 401 without the secret, 200 with nothing due.
+- **Production:** done (see "Deployment" below), except seeing the first "Run jobs" run answer
+  200 with nothing due. A failed run makes GitHub email the repository owner.
+- **Merging:** day 8 went in through a pull request as a merge commit; earlier days were
+  fast-forwards. Agree which to use from day 9.
 - **Rotation:** try one original phone-camera JPEG (copied as the original file, not through a
   chat app) when convenient.
 - **Day 9:** the poll filter on food counts; fee rows and reminders join `run-jobs`.
@@ -604,6 +604,23 @@ Not checked live:
   #3 (photo deleted by the job) and #4 (photo kept until its 48 hours are up, in the development
   bucket). `egress:2026-11` is 978,168 bytes. The seeded students still cannot log in.
 
-### Deployment
+### Deployment (2026-11-06, UTC)
 
-Not yet done.
+| Step | Evidence |
+|---|---|
+| Day 8 pushed on `day-8` | `a95d15c` (code) and `0a20041` (this record), author nick10-05, no co-author line; 2 commits ahead of `main` |
+| CI on `day-8` | Run #27 at 13:10 on `0a20041`: green (as reported by Nikhil from the Actions tab) |
+| Review of `main..day-8` before the migration | The only migration change is the new `011_usage_counters.sql`; 001–010 byte-for-byte unchanged. 011 only creates `usage_counters` (no existing table altered, no data touched), and the runner applies it in one transaction under its lock. `main` was the branch point, so a fast-forward was possible |
+| Backup before the migration | "Backup database" run #9 (id 42224103619) at 13:15 on `main` (`66343f2`): `hostelconnect-2026-11-06T1316Z.dump.age`, 44,477 bytes, kept until 2027-02-04. Larger than run #7 (41,104 bytes), taken before migration 010 |
+| Migration 011 on production, before the merge | "Migrate production database" run #8 (id 42224889175) at 13:21 on `day-8` (`0a20041`), success; per the run's log, as reported by Nikhil, 001–010 skipped and 011 applied |
+| Settings before the merge (Nikhil) | Render: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (the production project's) and `JOB_SECRET`; `STORAGE_BUCKET` left unset, so the default `complaint-photos` applies. GitHub environment "production": the same `JOB_SECRET`. Production Supabase usage at the time: egress 0.001 GB, storage 0 GB |
+| Merge into `main` | Through GitHub pull request #1, as merge commit `c6139b8` (parents `66343f2` and `0a20041`), not the fast-forward used on earlier days. Its file tree is identical to `day-8`'s, and it adds no other change |
+| CI on `main` | Run #29 at 16:32 on `c6139b8`: green |
+| Render deploy | `c6139b8` deployed (as reported by Nikhil). At 16:42: `/api/health` 200 `ok`; `POST /api/internal/run-jobs` without the secret 401 `invalid_job_secret`; `/api/food-counts` 401 without a login |
+| Owner check | Signed in on production (Nikhil signed in): the dashboard's "Storage and bandwidth" card shows photo uploads on; nothing was submitted |
+| "Run jobs" with the secret | Not yet seen: the workflow reached `main` with this merge and had no runs at 16:42; its first scheduled run is at 17:07 |
+
+Day 8 is live. Production still has no students, so no photo was uploaded there; uploads,
+links, expiry and the usage guard were checked against the development project (see "Smoke
+test" above). Still open: the first "Run jobs" run answering 200, and rotation with a real
+phone-camera photo.
