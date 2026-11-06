@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
-import { getDashboard, type Dashboard } from "../api/dashboard";
+import { getDashboard, type Dashboard, type UsageCard } from "../api/dashboard";
 import { formatDate } from "./format";
 
 // The owner's home page (design doc, section 9): the cards looked at first, all from one
 // GET /api/dashboard. Day 5: students per building and rejoin requests; day 6: complaints;
-// later days add their cards here.
+// day 8: storage and bandwidth; later days add their cards here.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -43,6 +43,7 @@ export function DashboardPage() {
           <StudentsCard students={data.students} />
           <ComplaintsCard complaints={data.complaints} />
           <RequestsCard requests={data.rejoinRequests} />
+          <UsageCardView usage={data.usage} />
         </div>
       )}
     </div>
@@ -129,6 +130,93 @@ function ComplaintsCard({ complaints }: { complaints: Dashboard["complaints"] })
         Open complaints
       </Link>
     </Card>
+  );
+}
+
+// The usage guard's thresholds (server/src/services/usage.ts), for the card's wording only:
+// the server decides the level.
+const AMBER_PERCENT = 70;
+const UPLOADS_OFF_PERCENT = 85;
+const DELETE_WARNING_ATTEMPTS = 5;
+
+const MB = 1024 * 1024;
+// 12936274 → "12.3 MB", 3145728000 → "3,000 MB".
+const mbText = (bytes: number) => `${(bytes / MB).toLocaleString("en-IN", { maximumFractionDigits: 1 })} MB`;
+// '2026-11' → "November 2026"; and the first day of the month after: "1 December 2026".
+const monthText = (month: string) =>
+  new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(`${month}-01T00:00:00Z`),
+  );
+function nextMonthStart(month: string): string {
+  const [year, m] = month.split("-").map(Number);
+  // Months count from 0 in Date.UTC, so `m` (1 to 12) is already the month after.
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, m, 1)),
+  );
+}
+
+// Section 10: how much of Supabase's free storage and monthly bandwidth the photos use.
+// Amber from AMBER_PERCENT of either limit; photo uploads switch off at
+// UPLOADS_OFF_PERCENT; a warning when photos keep failing to delete.
+function UsageCardView({ usage }: { usage: UsageCard }) {
+  if (!usage.photosConfigured) {
+    return (
+      <Card id="card-usage" title="Storage and bandwidth">
+        <p className="text-sm text-slate-600">Photo storage is not set up, so complaints are text only.</p>
+      </Card>
+    );
+  }
+  const reasons = [];
+  if (usage.egress.percent >= UPLOADS_OFF_PERCENT) {
+    reasons.push(`The bandwidth count starts again on ${nextMonthStart(usage.egress.month)}.`);
+  }
+  if (usage.storage.percent >= UPLOADS_OFF_PERCENT) {
+    reasons.push("Space frees up as photos are deleted 48 hours after upload.");
+  }
+  return (
+    <Card id="card-usage" title="Storage and bandwidth">
+      <dl className="space-y-3">
+        <UsageLine label="Photos stored" used={usage.storage} />
+        <UsageLine label={`Bandwidth in ${monthText(usage.egress.month)}`} used={usage.egress} />
+      </dl>
+      {usage.level === "uploads_off" ? (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          Photo uploads are off: usage has reached {UPLOADS_OFF_PERCENT}% of a free limit. Students can still send
+          complaints as text. {reasons.join(" ")}
+        </p>
+      ) : usage.level === "amber" ? (
+        <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Over {AMBER_PERCENT}% of a free limit. Photo uploads switch off at {UPLOADS_OFF_PERCENT}%.
+        </p>
+      ) : (
+        <p className="text-sm text-slate-600">Photo uploads are on.</p>
+      )}
+      {usage.failingDeletions > 0 && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {count(usage.failingDeletions, "photo")} could not be deleted after {DELETE_WARNING_ATTEMPTS} tries. The
+          hourly job keeps trying; check Supabase Storage.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function UsageLine({ label, used }: { label: string; used: { usedBytes: number; limitBytes: number; percent: number } }) {
+  const bar =
+    used.percent >= UPLOADS_OFF_PERCENT ? "bg-red-500" : used.percent >= AMBER_PERCENT ? "bg-amber-500" : "bg-indigo-500";
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
+        <dt className="text-slate-700">{label}</dt>
+        <dd className="text-slate-900">
+          {mbText(used.usedBytes)} of {mbText(used.limitBytes)} ({used.percent}%)
+        </dd>
+      </div>
+      {/* The numbers above say it all; the bar is for the eye. */}
+      <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full ${bar}`} style={{ width: `${Math.min(100, used.percent)}%` }} />
+      </div>
+    </div>
   );
 }
 

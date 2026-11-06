@@ -13,6 +13,7 @@ import {
   type ComplaintStatus,
   type OwnerComplaintDetail,
 } from "../api/complaints";
+import { ComplaintPhoto } from "../components/ComplaintPhoto";
 import { ComplaintTimeline } from "../components/ComplaintTimeline";
 import {
   categoryLabel,
@@ -27,7 +28,8 @@ import { inputClass, primaryButton, secondaryButton } from "./styles";
 // One complaint, as the owner works on it (design doc, sections 4 and 9): set the
 // priority, move the status, add a one-way note. The moves offered are exactly the
 // server's `allowedMoves`; the page keeps no copy of the rules. Every change answers with
-// the complaint as it is now, and the page redraws from that.
+// the complaint as it is now, and the page redraws from that. The photo (day 8) shows with
+// a countdown to its deletion.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -139,6 +141,7 @@ export function ComplaintPage() {
                 .join(" · ")
             : "Moved out"}
         </p>
+        <ComplaintPhoto photo={complaint.photo} countdown />
       </section>
 
       {notice && (

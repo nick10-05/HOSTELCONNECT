@@ -4,17 +4,21 @@ import cookieParser from "cookie-parser";
 import express, { type Express } from "express";
 import type { Db } from "./db";
 import { sendError } from "./lib/http";
+import type { PhotoStorage } from "./lib/storage";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
+import { foodRouter } from "./routes/food";
+import { internalRouter } from "./routes/internal";
 import { notificationsRouter } from "./routes/notifications";
 import { rejoinRouter } from "./routes/rejoin";
 import { structureRouter } from "./routes/structure";
 import { studentsRouter } from "./routes/students";
 import type { ComplaintLimits } from "./services/complaints";
+import type { UsageLimits } from "./services/usage";
 
 export type AppDeps = {
   db: Db;
@@ -27,9 +31,24 @@ export type AppDeps = {
   // From config (COMPLAINT_MAX_ACTIVE, COMPLAINT_MAX_NEW_PER_DAY); the design's 3 and 2
   // when not given.
   complaintLimits?: ComplaintLimits;
+  // JOB_SECRET; without it POST /api/internal/run-jobs does not exist.
+  jobSecret?: string;
+  // Supabase Storage for complaint photos (storageFromConfig); null or missing: photo
+  // uploads are off.
+  storage?: PhotoStorage | null;
+  // PHOTO_MAX_BYTES; 1 MB when not given.
+  photoMaxBytes?: number;
+  // PHOTO_LINK_SECONDS, how long a photo link works; 60 when not given.
+  photoLinkSeconds?: number;
+  // STORAGE_LIMIT_MB and EGRESS_LIMIT_MB for the usage guard; 450 and 3000 when not given.
+  usageLimits?: UsageLimits;
+  // The time the jobs run at, the usage guard reads its month from and the food counts
+  // take India's today from; tests pass a fixed one.
+  clock?: () => Date;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
+const DEFAULT_USAGE_LIMITS: UsageLimits = { storageLimitMb: 450, egressLimitMb: 3000 };
 
 // Builds the Express app but does NOT start listening.
 // Tests import this and call it directly, so they need no open port.
@@ -39,6 +58,12 @@ export function createApp({
   production = false,
   clientDir,
   complaintLimits = DEFAULT_COMPLAINT_LIMITS,
+  jobSecret,
+  storage = null,
+  photoMaxBytes = 1024 * 1024,
+  photoLinkSeconds = 60,
+  usageLimits = DEFAULT_USAGE_LIMITS,
+  clock = () => new Date(),
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -67,9 +92,23 @@ export function createApp({
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
   app.use("/api", notificationsRouter({ db, jwtSecret }));
-  app.use("/api", dashboardRouter({ db, jwtSecret }));
-  app.use("/api", complaintsRouter({ db, jwtSecret, limits: complaintLimits }));
+  app.use("/api", dashboardRouter({ db, jwtSecret, storage, usageLimits, clock }));
+  app.use(
+    "/api",
+    complaintsRouter({
+      db,
+      jwtSecret,
+      limits: complaintLimits,
+      storage,
+      photoMaxBytes,
+      photoLinkSeconds,
+      usageLimits,
+      clock,
+    }),
+  );
   app.use("/api", announcementsRouter({ db, jwtSecret }));
+  app.use("/api", foodRouter({ db, jwtSecret, clock }));
+  app.use("/api", internalRouter({ db, jobSecret, storage, clock }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

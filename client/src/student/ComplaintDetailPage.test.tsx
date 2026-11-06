@@ -1,13 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
-import type { ComplaintDetail } from "../api/complaints";
+import type { StudentComplaintDetail } from "../api/complaints";
 import { jsonResponse, mockFetch } from "../test/fetch";
 import { ComplaintDetailPage } from "./ComplaintDetailPage";
 
 const NOT_FOUND = { error: { code: "complaint_not_found", message: "That complaint does not exist." } };
 
-const tap: ComplaintDetail = {
+const tap: StudentComplaintDetail = {
   id: 42,
   category: "plumbing",
   description: "The tap in room 101 keeps dripping.\nIt wakes me up at night.",
@@ -21,14 +21,15 @@ const tap: ComplaintDetail = {
     { kind: "note", note: "Plumber booked for Friday.", fromStatus: null, toStatus: null, createdAt: "2026-11-04T05:30:00.000Z" },
     { kind: "status_change", note: null, fromStatus: "in_progress", toStatus: "resolved", createdAt: "2026-11-05T06:30:00.000Z" },
   ],
+  photo: null,
 };
 
-// A fake server: GET /api/complaints/42 answers `tap`, any other id 404.
-function renderAt(path: string, state?: unknown) {
+// A fake server: GET /api/complaints/42 answers `tap` (or `answer`), any other id 404.
+function renderAt(path: string, state?: unknown, answer: StudentComplaintDetail = tap) {
   const gets: string[] = [];
   mockFetch(async (url) => {
     gets.push(url);
-    if (url === "/api/complaints/42") return jsonResponse(200, tap);
+    if (url === "/api/complaints/42") return jsonResponse(200, answer);
     return jsonResponse(404, NOT_FOUND);
   });
   render(
@@ -91,5 +92,18 @@ describe("ComplaintDetailPage", () => {
     renderAt("/complaints/7");
     expect(await screen.findByRole("alert")).toHaveTextContent("That complaint does not exist.");
     expect(screen.queryByRole("heading")).not.toBeInTheDocument();
+  });
+
+  it("shows the student's own photo, with no countdown (day 8)", async () => {
+    const url = "https://storage.test/object/sign/complaints/a.jpg?token=x";
+    renderAt("/complaints/42", undefined, { ...tap, photo: { status: "available", url } });
+    const photo = await screen.findByRole("region", { name: "Photo" });
+    expect(within(photo).getByRole("img", { name: "Photo sent with the complaint" })).toHaveAttribute("src", url);
+    expect(photo).not.toHaveTextContent(/Deleted in/);
+  });
+
+  it("says when the photo has been deleted", async () => {
+    renderAt("/complaints/42", undefined, { ...tap, photo: { status: "expired" } });
+    expect(await screen.findByText("The photo has been deleted. Photos are kept for 48 hours.")).toBeInTheDocument();
   });
 });

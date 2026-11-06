@@ -16,15 +16,18 @@ export class ApiError extends Error {
 
 type Options = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
+// `body` is sent as JSON, or as it is when it is FormData (a file upload, day 8): the
+// browser then writes the multipart Content-Type with its boundary itself.
 export async function apiFetch<T>(path: string, { method = "GET", body }: Options = {}): Promise<T> {
+  const isForm = body instanceof FormData;
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       // Same origin as the API, so the httpOnly session cookie goes along by itself.
       credentials: "same-origin",
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || isForm ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, "network", "Cannot reach the server. Check your connection and try again.");

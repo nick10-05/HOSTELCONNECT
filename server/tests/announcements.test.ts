@@ -11,12 +11,13 @@ import {
   updateAnnouncement,
   type NewAnnouncement,
 } from "../src/services/announcements";
-import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
+import { inSnapshot as inSharedSnapshot, insertOwner, insertStudent, testPool } from "./helpers/db";
 
 // The announcement service. Posting notifies EVERY active student, including other test
 // files' students, so every test that posts runs inside a transaction that is rolled
 // back (lesson from day 6), with one snapshot of the database (REPEATABLE READ): counts
-// of "every active student" are taken in that same snapshot.
+// of "every active student" are taken in that same snapshot. A body Postgres refuses
+// because another file changed a student meanwhile runs again (tests/helpers/db.ts).
 const db = testPool();
 afterAll(() => db.end());
 
@@ -29,12 +30,7 @@ const NOTICE: NewAnnouncement = {
 };
 const FIELDS = ["body", "createdAt", "id", "isPinned", "isUrgent", "title", "updatedAt"];
 
-function inSnapshot(fn: (c: PoolClient) => Promise<void>) {
-  return inRollback(db, async (c) => {
-    await c.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
-    await fn(c);
-  });
-}
+const inSnapshot = (fn: (c: PoolClient) => Promise<void>) => inSharedSnapshot(db, fn);
 
 const count = async (c: PoolClient, sql: string, params: unknown[] = []) =>
   (await c.query<{ n: number }>(sql, params)).rows[0].n;

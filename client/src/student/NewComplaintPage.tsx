@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { ApiError } from "../api/client";
 import {
@@ -13,32 +13,52 @@ import {
 } from "../api/complaints";
 import { inputClass, primaryButton } from "../owner/styles";
 import { categoryLabel } from "../components/complaintText";
+import { compressPhoto, PhotoError } from "./compressPhoto";
 
-// The complaint form (design doc, sections 2 and 9): a category and a short description,
-// text only until photos arrive on day 8. It checks the server's rules as the student
-// types (trimmed, 10 to 500 characters) and offers categories that already have an active
-// complaint as unavailable. The server checks everything again; its refusal, such as a
-// limit reached since the page loaded, is shown word for word.
+// The complaint form (design doc, sections 2 and 9): a category, a short description and,
+// since day 8, an optional photo. It checks the server's rules as the student types
+// (trimmed, 10 to 500 characters) and offers categories that already have an active
+// complaint as unavailable. The photo is shrunk in the browser as soon as it is chosen
+// (compressPhoto), and offered only while the server allows uploads. The server checks
+// everything again; its refusal, such as a limit reached since the page loaded, is shown
+// word for word.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
+type Photo =
+  | { state: "none" }
+  | { state: "preparing" }
+  | { state: "ready"; blob: Blob }
+  | { state: "failed"; message: string };
+
 export function NewComplaintPage() {
   const navigate = useNavigate();
   const [canRaise, setCanRaise] = useState<RaiseStatus | null>(null);
+  const [photoAllowed, setPhotoAllowed] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [category, setCategory] = useState<ComplaintCategory | "">("");
   const [description, setDescription] = useState("");
+  const [photo, setPhoto] = useState<Photo>({ state: "none" });
+  // Changing the key empties the file field, so the same photo can be chosen again.
+  const [photoInputKey, setPhotoInputKey] = useState(0);
+  // Only the latest choice may set the photo, if the student picks again while one is
+  // still being prepared.
+  const latestChoice = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  // Only the first page's answer is needed here: whether a complaint is possible now, and
-  // which categories are taken.
+  // Only the first page's answer is needed here: whether a complaint is possible now,
+  // which categories are taken, and whether a photo may be added.
   useEffect(() => {
     let current = true;
     listMyComplaints()
-      .then((r) => current && setCanRaise(r.canRaise))
+      .then((r) => {
+        if (!current) return;
+        setCanRaise(r.canRaise);
+        setPhotoAllowed(r.photoUploadsAllowed);
+      })
       .catch((err: unknown) => current && setLoadError(errorText(err)));
     return () => {
       current = false;
@@ -49,14 +69,43 @@ export function NewComplaintPage() {
   const tooShort = length < DESCRIPTION_MIN;
   const tooLong = length > DESCRIPTION_MAX;
   const taken = new Set(canRaise?.activeCategories ?? []);
+  const preparing = photo.state === "preparing";
+
+  const choosePhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const choice = ++latestChoice.current;
+    setPhoto({ state: "preparing" });
+    try {
+      const blob = await compressPhoto(file);
+      if (choice === latestChoice.current) setPhoto({ state: "ready", blob });
+    } catch (err) {
+      if (choice !== latestChoice.current) return;
+      setPhoto({
+        state: "failed",
+        message: err instanceof PhotoError ? err.message : "This photo could not be prepared. Try another photo.",
+      });
+      setPhotoInputKey((k) => k + 1);
+    }
+  };
+
+  const removePhoto = () => {
+    latestChoice.current += 1;
+    setPhoto({ state: "none" });
+    setPhotoInputKey((k) => k + 1);
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (category === "" || tooShort || tooLong) return;
+    if (category === "" || tooShort || tooLong || preparing) return;
     setError(null);
     setSending(true);
     try {
-      const created = await createComplaint({ category, description: description.trim() });
+      const created = await createComplaint({
+        category,
+        description: description.trim(),
+        photo: photo.state === "ready" ? photo.blob : null,
+      });
       navigate(`/complaints/${created.id}`, { state: { created: true } });
     } catch (err) {
       setError(errorText(err));
@@ -144,9 +193,44 @@ export function NewComplaintPage() {
             </p>
           </div>
 
+          {photoAllowed ? (
+            <div>
+              <label htmlFor="complaint-photo" className="block text-sm font-medium text-slate-700">
+                Photo (optional)
+              </label>
+              <input
+                key={photoInputKey}
+                id="complaint-photo"
+                type="file"
+                // Any picture, so phones offer the camera; compressPhoto decides what it can read.
+                accept="image/*"
+                onChange={choosePhoto}
+                aria-describedby="complaint-photo-status"
+                className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+              <div id="complaint-photo-status" className="mt-1 flex items-center gap-3 text-sm">
+                {photo.state === "preparing" && <span className="text-slate-500">Preparing photo…</span>}
+                {photo.state === "ready" && (
+                  <>
+                    <span className="text-slate-700">Photo ready ({Math.round(photo.blob.size / 1024)} KB)</span>
+                    <button type="button" onClick={removePhoto} className="font-medium text-indigo-700 hover:underline">
+                      Remove photo
+                    </button>
+                  </>
+                )}
+                {photo.state === "failed" && <span className="text-red-700">{photo.message}</span>}
+                {photo.state === "none" && (
+                  <span className="text-slate-500">Photos are kept for 48 hours, then deleted.</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Photos are switched off for now. You can still send the complaint as text.</p>
+          )}
+
           <button
             type="submit"
-            disabled={sending || category === "" || tooShort || tooLong}
+            disabled={sending || preparing || category === "" || tooShort || tooLong}
             className={`${primaryButton} w-full sm:w-auto`}
           >
             {sending ? "Sending…" : "Send complaint"}

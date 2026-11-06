@@ -52,9 +52,17 @@ export type RaiseStatus = {
   activeCategories: ComplaintCategory[];
 };
 
-export type ComplaintList = { items: ComplaintItem[]; total: number; canRaise: RaiseStatus };
+// photoUploadsAllowed (day 8): whether the form may offer a photo now (storage set up and
+// the usage guard under its limit). A hint only: the server checks again.
+export type ComplaintList = {
+  items: ComplaintItem[];
+  total: number;
+  canRaise: RaiseStatus;
+  photoUploadsAllowed: boolean;
+};
 
-export type NewComplaint = { category: ComplaintCategory; description: string };
+// `photo` (day 8) is the already compressed JPEG (compressPhoto).
+export type NewComplaint = { category: ComplaintCategory; description: string; photo?: Blob | null };
 
 // The description's rules, the same as the server's: trimmed, then 10 to 500 characters
 // counted as the database counts them (an emoji is one character, not two).
@@ -68,16 +76,35 @@ export async function listMyComplaints(page = 1): Promise<ComplaintList> {
   return apiFetch<ComplaintList>(`/api/complaints?page=${page}`);
 }
 
-// POST /api/complaints. Refusals arrive as ApiError with the server's message, shown
-// as-is: 400 "invalid_input"; 429 "category_active", "too_many_active",
-// "too_many_recent" or "rate_limited".
-export async function createComplaint(complaint: NewComplaint): Promise<ComplaintDetail> {
-  return apiFetch<ComplaintDetail>("/api/complaints", { method: "POST", body: complaint });
+// POST /api/complaints: JSON without a photo, multipart form data with one (the file
+// field is named "photo"). Refusals arrive as ApiError with the server's message, shown
+// as-is: 400 "invalid_input" or "photo_type"; 409 "photo_uploads_off"; 413
+// "photo_too_large"; 429 "category_active", "too_many_active", "too_many_recent" or
+// "rate_limited"; 503 "photo_upload_failed".
+export async function createComplaint({ photo, ...text }: NewComplaint): Promise<ComplaintDetail> {
+  if (!photo) return apiFetch<ComplaintDetail>("/api/complaints", { method: "POST", body: text });
+  const form = new FormData();
+  form.append("category", text.category);
+  form.append("description", text.description);
+  form.append("photo", photo, "photo.jpg");
+  return apiFetch<ComplaintDetail>("/api/complaints", { method: "POST", body: form });
 }
 
+// The photo on a detail page (day 8), shapes of server/src/services/photos.ts. `url` is a
+// signed link that works for about a minute: shown at once, never stored. null when the
+// complaint has no photo. The owner also gets expiresAt (an ISO timestamp) for the
+// countdown; the student does not.
+export type StudentPhoto = { status: "available"; url: string } | { status: "unavailable" | "expired" };
+export type OwnerPhoto =
+  | { status: "available"; url: string; expiresAt: string }
+  | { status: "unavailable" | "expired"; expiresAt: string };
+
+// The student's detail page: the create answer plus the photo.
+export type StudentComplaintDetail = ComplaintDetail & { photo: StudentPhoto | null };
+
 // GET /api/complaints/:id. 404 "complaint_not_found" if it does not exist or is not yours.
-export async function getComplaint(id: string | number): Promise<ComplaintDetail> {
-  return apiFetch<ComplaintDetail>(`/api/complaints/${id}`);
+export async function getComplaint(id: string | number): Promise<StudentComplaintDetail> {
+  return apiFetch<StudentComplaintDetail>(`/api/complaints/${id}`);
 }
 
 // ---- The owner's side (day 7) ----
@@ -90,11 +117,13 @@ export type OwnerComplaintItem = ComplaintItem & {
   place: { buildingName: string; roomNumber: string | null } | null;
 };
 
-// The owner's detail: the row, the timeline, and the moves allowed from the current
-// status. The server decides the moves; the page only offers what it is given.
+// The owner's detail: the row, the timeline, the moves allowed from the current status,
+// and the photo with its expiry time (day 8). The server decides the moves; the page only
+// offers what it is given.
 export type OwnerComplaintDetail = OwnerComplaintItem & {
   events: ComplaintEvent[];
   allowedMoves: ComplaintStatus[];
+  photo: OwnerPhoto | null;
 };
 
 // The list's filters, as they appear in the page address and the request. All optional;

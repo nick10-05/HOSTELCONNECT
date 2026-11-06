@@ -348,7 +348,8 @@ describe("GET /api/complaints/:id", () => {
 
     const res = await request(app).get(`/api/complaints/${created.body.id}`).set("Cookie", cookieFor(student, "student"));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(created.body);
+    // Plus the photo since day 8 (none here); the create answer leaves it out.
+    expect(res.body).toEqual({ ...created.body, photo: null });
   });
 
   it("answers another student's complaint with exactly the same 404 as one that does not exist", async () => {
@@ -479,7 +480,9 @@ describe("GET /api/complaints as the owner", () => {
       .set("Cookie", cookieFor(student, "student"));
 
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(["canRaise", "items", "total"]);
+    // photoUploadsAllowed since day 8 (false here: this app has no storage).
+    expect(Object.keys(res.body).sort()).toEqual(["canRaise", "items", "photoUploadsAllowed", "total"]);
+    expect(res.body.photoUploadsAllowed).toBe(false);
     expect(res.body.items.map((i: { id: number }) => i.id)).toEqual([resolved, open]);
     for (const item of res.body.items) expect(Object.keys(item).sort()).toEqual(ITEM_FIELDS);
   });
@@ -499,7 +502,8 @@ describe("GET /api/complaints/:id as the owner", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(Object.keys(res.body).sort()).toEqual([...OWNER_ITEM_FIELDS, "allowedMoves", "events"].sort());
+    // photo since day 8 (tests/complaintPhotoDetail.test.ts).
+    expect(Object.keys(res.body).sort()).toEqual([...OWNER_ITEM_FIELDS, "allowedMoves", "events", "photo"].sort());
     expect(res.body).toMatchObject({
       id: created.body.id,
       status: "open",
@@ -629,7 +633,7 @@ describe("POST /api/complaints/:id/status", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(Object.keys(res.body).sort()).toEqual([...OWNER_ITEM_FIELDS, "allowedMoves", "events"].sort());
+    expect(Object.keys(res.body).sort()).toEqual([...OWNER_ITEM_FIELDS, "allowedMoves", "events", "photo"].sort());
     expect(res.body).toMatchObject({ id, status: "rejected", allowedMoves: [] });
     const written = await writtenFor(id, student);
     expect(written.events).toEqual([{ kind: "status_change", from: "open", to: "rejected", note: "Duplicate of #41." }]);

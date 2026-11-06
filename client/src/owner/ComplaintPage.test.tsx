@@ -26,6 +26,7 @@ const tap: OwnerComplaintDetail = {
   place: { buildingName: "Block A", roomNumber: "101" },
   events: [{ kind: "created", note: null, fromStatus: null, toStatus: null, createdAt: "2026-11-04T03:30:00.000Z" }],
   allowedMoves: MOVES.open,
+  photo: null,
 };
 
 const at = "2026-11-05T04:30:00.000Z"; // 10:00 am in India
@@ -101,6 +102,25 @@ describe("ComplaintPage", () => {
     expect(within(card).getByRole("link", { name: "Asha Rao" })).toHaveAttribute("href", "/students/7");
     expect(screen.getByRole("link", { name: "← Complaints" })).toHaveAttribute("href", "/complaints");
     expect(timelineEntries()).toEqual(["Raised by the student4 Nov 2026, 9:00 am"]);
+    // No photo: no photo section.
+    expect(screen.queryByRole("region", { name: "Photo" })).not.toBeInTheDocument();
+  });
+
+  it("shows the photo with the countdown to its deletion, and keeps it after a change (day 8)", async () => {
+    const url = "https://storage.test/object/sign/complaints/a.jpg?token=x";
+    const expiresAt = new Date(Date.now() + 5 * 3_600_000 + 30_000).toISOString();
+    fakeServer({ photo: { status: "available", url, expiresAt } });
+    const user = renderAt();
+
+    const photo = await screen.findByRole("region", { name: "Photo" });
+    expect(within(photo).getByRole("img", { name: "Photo sent with the complaint" })).toHaveAttribute("src", url);
+    expect(photo).toHaveTextContent("Deleted in 5 h 0 min");
+
+    await user.click(screen.getByRole("button", { name: "Start work" }));
+    // The form's own button is the last "Start work".
+    await user.click(screen.getAllByRole("button", { name: "Start work" }).at(-1)!);
+    await screen.findByRole("status");
+    expect(within(screen.getByRole("region", { name: "Photo" })).getByRole("img")).toHaveAttribute("src", url);
   });
 
   it("says when the student has moved out", async () => {
