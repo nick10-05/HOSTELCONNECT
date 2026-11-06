@@ -30,6 +30,15 @@ const ownerComplaint = {
   place: { buildingName: "Block A", roomNumber: "101" },
 };
 
+const ownerPoll = {
+  id: 6,
+  title: "Back after Diwali?",
+  status: "open",
+  createdAt: "2026-11-02T04:30:00.000Z",
+  closedAt: null,
+  counts: { returned: 0, notYet: 0, noResponse: 3 },
+};
+
 function renderAt(path: string) {
   mockFetch(async (url) => {
     if (url === "/api/auth/me") return jsonResponse(200, { user: owner });
@@ -38,6 +47,10 @@ function renderAt(path: string) {
     if (url === "/api/notifications") return jsonResponse(200, { items: [], total: 0, unread: 0 });
     if (url === "/api/complaints") return jsonResponse(200, { items: [ownerComplaint], total: 1 });
     if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
+    if (url === "/api/return-polls?page=1") return jsonResponse(200, { items: [ownerPoll], total: 1 });
+    if (url === "/api/return-polls/6") {
+      return jsonResponse(200, { poll: ownerPoll, counts: ownerPoll.counts, returned: [], notYet: [], noResponse: [] });
+    }
     if (url === "/api/complaints/1") {
       return jsonResponse(200, { ...ownerComplaint, events: [], allowedMoves: ["in_progress", "resolved", "rejected"] });
     }
@@ -109,6 +122,17 @@ describe("owner pages", () => {
     expect(await screen.findByRole("heading", { name: "Plumbing #1" })).toBeInTheDocument();
   });
 
+  it("has a Return polls page in the menu, which opens a poll's results", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Return polls" }));
+    expect(await screen.findByRole("heading", { name: "Return polls" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("link", { name: "Back after Diwali?" }));
+    expect(await screen.findByRole("heading", { name: "Back after Diwali?" })).toBeInTheDocument();
+    // Still highlighted on a poll's own page.
+    expect(screen.getByRole("link", { name: "Return polls" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("has an Announcements page in the menu", async () => {
     const user = renderAt("/structure");
     await screen.findByRole("heading", { name: "Buildings and rooms" });
@@ -149,6 +173,10 @@ describe("student pages", () => {
         return jsonResponse(200, { items: [], total: 0, canRaise: { allowed: true, reason: null, activeCategories: [] } });
       }
       if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
+      if (url === "/api/return-polls") {
+        const poll = { id: 6, title: "Back after Diwali?", createdAt: "2026-11-02T04:30:00.000Z", myResponse: null, respondedAt: null };
+        return jsonResponse(200, { items: [poll], total: 1 });
+      }
       return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
     });
     const user = userEvent.setup();
@@ -190,6 +218,22 @@ describe("student pages", () => {
     await user.click(screen.getByRole("link", { name: "Notices" }));
     expect(await screen.findByRole("heading", { name: "Notices" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Notices" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("see an open return poll on their home, after the important notices and before their complaints", async () => {
+    renderStudentAt("/");
+    const poll = await screen.findByRole("region", { name: "Back after Diwali?" });
+    const notices = await screen.findByRole("region", { name: "Important notices" });
+    const complaints = await screen.findByRole("heading", { name: "My complaints" });
+    expect(notices.compareDocumentPosition(poll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(poll.compareDocumentPosition(complaints) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "I'm back" })).toBeInTheDocument();
+  });
+
+  it("never see the owner's Return polls page", async () => {
+    renderStudentAt("/return-polls");
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Return polls" })).not.toBeInTheDocument();
   });
 
   it("never see the owner's Announcements page", async () => {
