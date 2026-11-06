@@ -10,15 +10,21 @@ import { AnnouncementsPage } from "./owner/AnnouncementsPage";
 import { ComplaintPage } from "./owner/ComplaintPage";
 import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
+import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
+import { ReturnPollPage } from "./owner/ReturnPollPage";
+import { ReturnPollsPage } from "./owner/ReturnPollsPage";
+import { SettingsPage } from "./owner/SettingsPage";
 import { StructurePage } from "./owner/StructurePage";
 import { StudentProfilePage } from "./owner/StudentProfilePage";
 import { StudentsPage } from "./owner/StudentsPage";
 import { ComplaintDetailPage } from "./student/ComplaintDetailPage";
 import { MyComplaintsPage } from "./student/MyComplaintsPage";
+import { MyFeesCard, MyFeesPage } from "./student/MyFeesPage";
 import { NewComplaintPage } from "./student/NewComplaintPage";
 import { ImportantNotices, NoticesPage } from "./student/NoticesPage";
+import { ReturnPollTile } from "./student/ReturnPollTile";
 
 type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
 
@@ -62,8 +68,7 @@ export function App() {
     return <ChangePasswordPage user={user} onChanged={signIn} onSignOut={signOut} />;
   }
 
-  // The owner's pages, or the student's (complaints and notices; the return poll and
-  // fees arrive on later days).
+  // The owner's pages, or the student's (complaints, notices, the return poll and fees).
   return (
     <div className="min-h-dvh bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -94,26 +99,34 @@ export function App() {
             <Route path="/complaints" element={<ComplaintsPage />} />
             <Route path="/complaints/:id" element={<ComplaintPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/return-polls" element={<ReturnPollsPage />} />
+            <Route path="/return-polls/:id" element={<ReturnPollPage />} />
             <Route path="/food-counts" element={<FoodCountsPage />} />
+            <Route path="/fees" element={<FeesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             {/* The owner starts on the dashboard; unknown addresses go there too
                 instead of showing a blank page. */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         ) : (
           <Routes>
-            {/* Section 9: urgent and pinned notices first, then the complaints. */}
+            {/* Section 9: urgent and pinned notices first, then an open return poll,
+                the complaints, and the fees. */}
             <Route
               path="/"
               element={
                 <div className="space-y-8">
                   <ImportantNotices />
+                  <ReturnPollTile />
                   <MyComplaintsPage />
+                  <MyFeesCard />
                 </div>
               }
             />
             <Route path="/complaints/new" element={<NewComplaintPage />} />
             <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
             <Route path="/notices" element={<NoticesPage />} />
+            <Route path="/fees" element={<MyFeesPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
@@ -154,8 +167,18 @@ function OwnerNav() {
       <NavLink to="/announcements" className={navLinkClass}>
         Announcements
       </NavLink>
+      {/* Highlighted on a poll's own page too. */}
+      <NavLink to="/return-polls" className={navLinkClass}>
+        Return polls
+      </NavLink>
       <NavLink to="/food-counts" className={navLinkClass}>
         Food counts
+      </NavLink>
+      <NavLink to="/fees" className={navLinkClass}>
+        Fees
+      </NavLink>
+      <NavLink to="/settings" className={navLinkClass}>
+        Settings
       </NavLink>
     </nav>
   );
@@ -175,6 +198,9 @@ function StudentNav() {
       </NavLink>
       <NavLink to="/notices" className={navLinkClass}>
         Notices
+      </NavLink>
+      <NavLink to="/fees" className={navLinkClass}>
+        My fees
       </NavLink>
     </nav>
   );

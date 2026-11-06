@@ -19,6 +19,7 @@ const app = createApp({
     maxNewPer24h: config.COMPLAINT_MAX_NEW_PER_DAY,
   },
   jobSecret: config.JOB_SECRET,
+  feesStartDate: config.FEES_START_DATE,
   storage: storageFromConfig(config),
   photoMaxBytes: config.PHOTO_MAX_BYTES,
   photoLinkSeconds: config.PHOTO_LINK_SECONDS,

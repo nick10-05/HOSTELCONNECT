@@ -28,7 +28,7 @@ describe("GET /api/dashboard", () => {
     expect((await request(app).get("/api/dashboard").set("Cookie", cookieFor(student, "student"))).status).toBe(403);
   });
 
-  it("answers the students, rejoin requests, complaints and usage cards, never cached", async () => {
+  it("answers every card, never cached", async () => {
     const owner = await insertOwner(db);
     const res = await request(app).get("/api/dashboard").set("Cookie", cookieFor(owner, "owner"));
 
@@ -41,6 +41,21 @@ describe("GET /api/dashboard", () => {
         active: expect.any(Number),
         highPriority: expect.any(Number),
         oldestActiveAt: expect.toBeOneOf([null, expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)]),
+      },
+      // Day 9: the return poll (null while none is open) and fees cards.
+      returnPoll: expect.toBeOneOf([
+        null,
+        {
+          id: expect.any(Number),
+          title: expect.any(String),
+          createdAt: expect.any(String),
+          counts: { returned: expect.any(Number), notYet: expect.any(Number), noResponse: expect.any(Number) },
+        },
+      ]),
+      fees: {
+        dueSoon: { count: expect.any(Number), amount: expect.any(Number) },
+        overdue: { count: expect.any(Number), amount: expect.any(Number) },
+        pendingThisMonth: { count: expect.any(Number), amount: expect.any(Number) },
       },
       // Day 8: the storage and bandwidth card.
       usage: {

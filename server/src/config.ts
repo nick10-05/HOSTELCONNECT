@@ -62,6 +62,12 @@ const fields = z.object({
 
   // The header POST /api/internal/run-jobs requires (section 8). Unset, the endpoint is off.
   JOB_SECRET: optional(z.string().min(32, "must be at least 32 characters")),
+
+  // The go-live date for fees (section 9; decided on day 9): no fee row is created for a
+  // due date before it, so earlier payments stay in the owner's record book. Unset, the
+  // fee-rows job creates nothing; production runs without it until the real register is
+  // imported.
+  FEES_START_DATE: optional(z.iso.date("must be a date written as YYYY-MM-DD")),
 });
 
 // Settings that only make sense together, or that production cannot run without: a

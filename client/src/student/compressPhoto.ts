@@ -41,7 +41,16 @@ export function fitWithin(width: number, height: number, maxSide: number): { wid
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
-export async function compressPhoto(file: File, codec: PhotoCodec = canvasCodec): Promise<Blob> {
+// The sizes aimed at and accepted; a complaint photo's by default. The owner's QR image
+// (day 9) passes 200 KB for both.
+export type PhotoLimits = { targetBytes: number; uploadMaxBytes: number };
+const PHOTO_LIMITS: PhotoLimits = { targetBytes: TARGET_BYTES, uploadMaxBytes: UPLOAD_MAX_BYTES };
+
+export async function compressPhoto(
+  file: File,
+  codec: PhotoCodec = canvasCodec,
+  { targetBytes, uploadMaxBytes }: PhotoLimits = PHOTO_LIMITS,
+): Promise<Blob> {
   // Some phones give no type at all; decoding then decides.
   if (file.type !== "" && !file.type.startsWith("image/")) {
     throw new PhotoError("Choose a photo (JPEG, PNG or WebP).");
@@ -64,7 +73,7 @@ export async function compressPhoto(file: File, codec: PhotoCodec = canvasCodec)
       const { width, height } = fitWithin(image.width, image.height, side);
       for (const quality of QUALITIES) {
         const blob = await codec.encode(image, width, height, quality);
-        if (blob.size <= TARGET_BYTES) return blob;
+        if (blob.size <= targetBytes) return blob;
         if (!smallest || blob.size < smallest.size) smallest = blob;
       }
       // The next size down, measured from what was just tried (a small photo starts below MAX_SIDE).
@@ -72,7 +81,7 @@ export async function compressPhoto(file: File, codec: PhotoCodec = canvasCodec)
       if (next < MIN_SIDE) break;
       side = next;
     }
-    if (smallest && smallest.size <= UPLOAD_MAX_BYTES) return smallest;
+    if (smallest && smallest.size <= uploadMaxBytes) return smallest;
     throw new PhotoError("This photo is too large even after shrinking. Try another photo.");
   } finally {
     image.close();

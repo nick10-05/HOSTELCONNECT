@@ -2,11 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../api/client";
 import { getDashboard, type Dashboard, type UsageCard } from "../api/dashboard";
-import { formatDate } from "./format";
+import { formatDate, formatRupees } from "./format";
+import { countsText } from "./ReturnPollsPage";
 
 // The owner's home page (design doc, section 9): the cards looked at first, all from one
 // GET /api/dashboard. Day 5: students per building and rejoin requests; day 6: complaints;
-// day 8: storage and bandwidth; later days add their cards here.
+// day 8: storage and bandwidth; day 9: the return poll and fees; later days add their
+// cards here.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -41,8 +43,10 @@ export function DashboardPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <StudentsCard students={data.students} />
+          <ReturnPollCard poll={data.returnPoll} />
           <ComplaintsCard complaints={data.complaints} />
           <RequestsCard requests={data.rejoinRequests} />
+          <FeesCard fees={data.fees} />
           <UsageCardView usage={data.usage} />
         </div>
       )}
@@ -97,6 +101,64 @@ function StudentsCard({ students }: { students: Dashboard["students"] }) {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+// Section 9: the open return poll's counts, the same as on its results page; or a way to
+// start one.
+function ReturnPollCard({ poll }: { poll: Dashboard["returnPoll"] }) {
+  return (
+    <Card id="card-return-poll" title="Return poll">
+      {poll ? (
+        <>
+          <p className="font-medium text-slate-900">{poll.title}</p>
+          <p className="text-sm text-slate-700">{countsText(poll.counts)}</p>
+          <Link to={`/return-polls/${poll.id}`} className="inline-block text-sm font-medium text-indigo-700 hover:underline">
+            See who is back
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-slate-600">No poll open.</p>
+          <Link to="/return-polls" className="inline-block text-sm font-medium text-indigo-700 hover:underline">
+            Start a return poll
+          </Link>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Section 9: pending fees. The server's FEE_ROW_DAYS_AHEAD, for the wording only.
+const FEE_DAYS_AHEAD = 7;
+
+function FeesCard({ fees }: { fees: Dashboard["fees"] }) {
+  const lines = [
+    { label: `Due in the next ${FEE_DAYS_AHEAD} days`, total: fees.dueSoon },
+    { label: "Overdue", total: fees.overdue },
+    { label: "Pending this month", total: fees.pendingThisMonth },
+  ];
+  const nothing = lines.every((l) => l.total.count === 0);
+  return (
+    <Card id="card-fees" title="Fees">
+      {nothing ? (
+        <p className="text-sm text-slate-600">No fees pending.</p>
+      ) : (
+        <dl className="space-y-1 text-sm">
+          {lines.map(({ label, total }) => (
+            <div key={label} className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <dt className="text-slate-700">{label}</dt>
+              <dd className={label === "Overdue" && total.count > 0 ? "font-medium text-red-700" : "text-slate-900"}>
+                {count(total.count, "fee")} · {formatRupees(total.amount)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <Link to="/fees" className="inline-block text-sm font-medium text-indigo-700 hover:underline">
+        Open fees
+      </Link>
     </Card>
   );
 }

@@ -150,10 +150,78 @@ describe("getFoodCounts", () => {
   it("answers with exactly these fields, counts only", () =>
     inSnapshot(db, async (c) => {
       const counts = await getFoodCounts(c, TUESDAY);
-      expect(Object.keys(counts).sort()).toEqual(["buildings", "date", "overall", "weekday"]);
+      expect(Object.keys(counts).sort()).toEqual(["buildings", "date", "overall", "pollId", "weekday"]);
+      expect(counts.pollId).toBeNull();
       expect(Object.keys(counts.overall).sort()).toEqual(["nonVeg", "total", "veg"]);
       for (const b of counts.buildings) {
         expect(Object.keys(b).sort()).toEqual(["buildingId", "buildingName", "nonVeg", "total", "veg"]);
       }
+    }));
+});
+
+// The return-poll filter (day 9): only students who answered 'returned' to the chosen poll.
+// A poll made inside the test has no answers but the test's own, so its overall numbers are
+// exact, not a change from a baseline.
+describe("getFoodCounts with a return poll", () => {
+  async function closedPoll(c: PoolClient): Promise<number> {
+    const owner = await insertOwner(c);
+    const { rows } = await c.query<{ id: number }>(
+      `INSERT INTO return_polls (title, created_by, status, closed_at) VALUES ('Back?', $1, 'closed', now()) RETURNING id`,
+      [owner],
+    );
+    return rows[0].id;
+  }
+  const answer = (c: PoolClient, poll: number, s: number, response: "returned" | "not_yet") =>
+    c.query(`INSERT INTO return_poll_responses (poll_id, student_id, response) VALUES ($1, $2, $3)`, [poll, s, response]);
+
+  it("counts only students who answered 'returned' to that poll", () =>
+    inSnapshot(db, async (c) => {
+      const a = await newBuilding(c);
+      const since = { building: a, from: "2031-01-01" };
+      const poll = await closedPoll(c);
+      const other = await closedPoll(c);
+      await answer(c, poll, await student(c, { food: "veg" }, since), "returned");
+      await answer(c, poll, await student(c, { food: "non_veg" }, since), "returned");
+      await answer(c, poll, await student(c, { food: "veg" }, since), "not_yet");
+      await student(c, { food: "veg" }, since); // no answer
+      await answer(c, other, await student(c, { food: "veg" }, since), "returned"); // another poll
+
+      const counts = await getFoodCounts(c, MONDAY, poll);
+      expect(counts).toMatchObject({ date: MONDAY, pollId: poll });
+      expect(countIn(counts, a)).toEqual({ veg: 1, nonVeg: 1, total: 2 });
+      expect(counts.overall).toEqual({ veg: 1, nonVeg: 1, total: 2 });
+      // Without the poll, all five count.
+      expect(countIn(await getFoodCounts(c, MONDAY), a)).toEqual({ veg: 4, nonVeg: 1, total: 5 });
+    }));
+
+  it("still needs a stay covering the date, and still applies veg days", () =>
+    inSnapshot(db, async (c) => {
+      const a = await newBuilding(c);
+      const poll = await closedPoll(c);
+      await answer(c, poll, await student(c, { food: "non_veg", vegDays: [2] }, { building: a, from: "2031-01-01" }), "returned");
+      await answer(c, poll, await student(c, { food: "veg" }, { building: a, from: "2031-01-01", until: TUESDAY }), "returned");
+      await answer(c, poll, await student(c, { food: "veg" }, { building: a, from: "2031-03-05" }), "returned");
+      await student(c, { food: "veg" }, { building: a, from: "2031-01-01" }); // lives there, no answer: not counted
+
+      const tuesday = await getFoodCounts(c, TUESDAY, poll);
+      expect(countIn(tuesday, a)).toEqual({ veg: 1, nonVeg: 0, total: 1 });
+      expect(countIn(await getFoodCounts(c, MONDAY, poll), a)).toEqual({ veg: 1, nonVeg: 1, total: 2 });
+    }));
+
+  it("keeps every building, with zeros where nobody returned", () =>
+    inSnapshot(db, async (c) => {
+      const [a, b] = [await newBuilding(c), await newBuilding(c)];
+      const poll = await closedPoll(c);
+      await answer(c, poll, await student(c, { food: "veg" }, { building: a, from: "2031-01-01" }), "returned");
+      await student(c, { food: "veg" }, { building: b, from: "2031-01-01" });
+
+      const counts = await getFoodCounts(c, TUESDAY, poll);
+      expect(countIn(counts, a)).toEqual({ veg: 1, nonVeg: 0, total: 1 });
+      expect(countIn(counts, b)).toEqual({ veg: 0, nonVeg: 0, total: 0 });
+    }));
+
+  it("refuses an unknown poll with 404", () =>
+    inSnapshot(db, async (c) => {
+      await expect(getFoodCounts(c, TUESDAY, 999_999_999)).rejects.toMatchObject({ status: 404, code: "poll_not_found" });
     }));
 });

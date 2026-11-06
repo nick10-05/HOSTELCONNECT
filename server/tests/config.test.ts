@@ -182,3 +182,38 @@ describe("loadConfig: photos, usage guard and jobs", () => {
     expect(message).not.toContain(jobSecret);
   });
 });
+
+// FEES_START_DATE (day 9): the go-live date for fees. No fee row is created for a due date
+// before it, and none at all while it is unset (production runs without it until the real
+// register is imported).
+describe("loadConfig: FEES_START_DATE", () => {
+  const problemsWith = (value: string) => {
+    try {
+      loadConfig({ ...valid, FEES_START_DATE: value });
+    } catch (err) {
+      return (err as Error).message;
+    }
+    return "";
+  };
+
+  it("is unset by default, also in production, and empty means unset", () => {
+    expect(loadConfig(valid).FEES_START_DATE).toBeUndefined();
+    expect(loadConfig({ ...valid, FEES_START_DATE: "" }).FEES_START_DATE).toBeUndefined();
+    const production = {
+      ...valid,
+      NODE_ENV: "production",
+      SUPABASE_URL: "https://abcd.supabase.co",
+      SUPABASE_SECRET_KEY: "s".repeat(40),
+      JOB_SECRET: "j".repeat(32),
+    };
+    expect(loadConfig(production).FEES_START_DATE).toBeUndefined();
+  });
+
+  it("takes a real date written as YYYY-MM-DD", () => {
+    expect(loadConfig({ ...valid, FEES_START_DATE: "2026-12-01" }).FEES_START_DATE).toBe("2026-12-01");
+    for (const value of ["2026-02-30", "01-12-2026", "2026-12", "today", "2026-12-01T00:00:00Z"]) {
+      expect(problemsWith(value), value).toMatch(/FEES_START_DATE/);
+    }
+  });
+});
+

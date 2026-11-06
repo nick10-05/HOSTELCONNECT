@@ -624,3 +624,93 @@ Day 8 is live. Production still has no students, so no photo was uploaded there;
 links, expiry and the usage guard were checked against the development project (see "Smoke
 test" above). Still open: the first "Run jobs" run answering 200, and rotation with a real
 phone-camera photo.
+
+## Day 9 — return poll and fees part 1 (2026-11-06 to 2026-11-07)
+
+Done when: the owner runs a return poll and sees returned, not yet and no response; fee rows
+follow each student's joining date; the owner can set UPI details and mark fees paid; students
+see their balance and the UPI ID and QR. Met in tests on the local database; not yet checked in
+a browser (see "Notes for later days"). Not yet in production (see "Deployment" below).
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Migration 012: `return_polls`, `return_poll_responses`, `fees`, `hostel_settings` | Claude | Done | Run as `hostel_app`: 12 tests in `returnPollsTable.test.ts` (at most one open poll, the title rules, no delete, only the status and closing time may change), 10 in `feesTable.test.ts` (one row per student and due date, paid means a date and who recorded it, no delete), 8 in `hostelSettingsTable.test.ts` (one row, the UPI check, a QR image of at most 200 KB). Applied to the local database |
+| Return polls (`services/returnPolls.ts`): start, close, answer, the owner's list, the student's open poll | Claude | Done | 17 tests in `returnPolls.test.ts`: starting notifies every active student, a second open poll is a 409, also when the database's one-open index is what refuses it (as with two starts at once), closing is final, an answer can change only while the poll is open (the poll row read `FOR SHARE`) |
+| Poll results queries (`getPollCounts`, `getPollResults`) | Claude, at Nikhil's request (section 12 lists them under "You write"); stub, contract and tests first | Done | 13 tests in `returnPollResults.test.ts`: returned, not yet and no response among the students active now, by building, with each student's current building and room; a moved-out student drops off; the owner never appears |
+| Return poll routes | Claude | Done | 18 tests in `returnPollsRoutes.test.ts` |
+| Food counts by poll (`pollId`) | Claude | Done | 4 new tests in `foodCounts.test.ts` and 3 in `foodCountsRoutes.test.ts`: only the students who answered "returned" count; an unknown poll is a 404 |
+| Fee row creation (`jobs/feeRows.ts`, in `POST /api/internal/run-jobs`) | Claude, at Nikhil's request (also "You write"); stub, contract and tests first | Done | 12 tests in `feeRows.test.ts`: one row per monthly due date counted from the joining date (clamped to the month's end), from `FEES_START_DATE` to 7 days ahead, every missed date caught up, the amount copied once, existing rows untouched, inactive students skipped; 4 new in `jobsRoutes.test.ts` (`feeRows: null` while the start date is unset); 2 new in `config.test.ts` |
+| Balance calculation (`getMyFees`) and the owner's fees (`listFees`, mark paid or not paid) | Claude, at Nikhil's request (also "You write") | Done | 6 tests in `myFees.test.ts` (pending balance, overdue, "amount not set", next due date); 13 in `ownerFees.test.ts` (India's month, states, totals, filters, a payment date not after today, 409 when already in that state, the student notified on paid only); 14 route tests in `feesRoutes.test.ts` |
+| Payment settings (`services/paymentSettings.ts`, `routes/settings.ts`) | Claude | Done | 9 tests in `paymentSettings.test.ts` (a UPI ID or a QR image must remain, a real change notifies every active student, saving the same details notifies nobody); 15 in `paymentSettingsRoutes.test.ts` (a QR over 200 KB is a 413, the type decided from the bytes, the image cached privately under an address that changes with each update). The complaint photo and the QR now share `middleware/fileUpload.ts` |
+| Dashboard: the return poll and fees cards (`returnPoll`, `fees` on `GET /api/dashboard`) | Claude | Done | 4 new tests in `dashboard.test.ts`: no poll while none is open; due soon from today to 7 days ahead; overdue in any month; this month in India's calendar |
+| Screens: Return polls and a poll's results, the student's poll tile, food counts by poll, Fees, My fees, Payment settings with the QR upload, the UPI QR for students, the two dashboard cards | Claude | Done | Client: `ReturnPollsPage` 7, `ReturnPollPage` 9, `ReturnPollTile` 5, `FeesPage` 14, `MyFeesPage` 10, `SettingsPage` 10, `prepareQr` 5, `PaymentQr` 8, `upiLink` 4, and new tests in `FoodCountsPage`, `DashboardPage` and `App` |
+
+New tests were checked to fail against planted bugs, then the code was restored and compared by
+file hash. One planted bug was not caught, and cannot be: which open poll the dashboard picks
+when several are open, which the database never allows (`return_polls_one_open`).
+
+Checks at the end of the day: server 950 tests (786 on day 8), client 317 (231), typecheck and
+builds clean (client bundle 430 KB, 123 KB gzipped). Full server runs hit the known Windows
+worker crash (see day 5); the file it stopped on passed when run alone.
+
+### Decisions made on day 9
+
+- **"You write" items:** Nikhil asked Claude to write all three (poll results queries, fee row
+  creation, balance calculation), with the stub, contract and failing tests first.
+- **Return polls:** at most one open at a time (a unique index; a second start is a 409), and
+  closing is final. A poll covers every student active now, read live: "no response" is an
+  active student with no answer, and a student who moves out drops off every poll, closed ones
+  included. Answers can change while the poll is open. Starting one notifies every active
+  student.
+- **Fee rows:** one per monthly due date counted from the joining date (clamped to the month's
+  end), created once due within 7 days, with every missed date caught up. The amount is the
+  student's monthly fee at that moment and never changes afterwards; with no fee set it shows
+  as "amount not set" and adds nothing to a total.
+- **Go-live date:** `FEES_START_DATE`. No row is created for a due date before it, and none at
+  all while it is unset. Production stays unset until the real register is imported, so earlier
+  payments stay in the owner's record book.
+- **Paid and not paid:** the payment date defaults to India's today and may not be after it, with
+  an optional note of up to 200 characters. Marking paid notifies the student; marking it not
+  paid again notifies nobody.
+- **Payment details:** one row of settings, and a UPI ID or a QR image must remain. The QR image
+  is at most 200 KB, its type decided from the bytes; the browser sends a small JPEG, PNG or
+  WebP as it is and shrinks anything else. Without an image, students see a QR drawn in the
+  browser from the UPI ID, including the amount to pay. A real change notifies every active
+  student.
+- **Jobs:** any failure in `run-jobs` answers 500, so GitHub emails about the failed run.
+
+### Notes for later days
+
+- **Browser check:** none yet for day 9's screens; to do with Nikhil signed in, locally and on
+  production after the deployment.
+- **Monthly fee:** there is no way yet to change a student's monthly fee after admission. Since
+  amounts are fixed when a row is created, a student admitted without a fee gets "amount not
+  set" rows. To decide.
+- **A test race (fixed, tests only):** `jobsRoutes.test.ts` runs the photo expiry over the whole
+  table with a 1999 clock, and `expirePhotos.test.ts`'s overlap test commits photos due in 1998.
+  When the two files ran at the same moment, the jobs test claimed those photos inside its
+  rolled-back transaction: the overlap test's runs skipped them (`FOR UPDATE SKIP LOCKED`), and
+  after the rollback they stayed due, so later jobs tests counted them too (3 failures, as in CI
+  run #32 on the pull request). A test advisory lock now keeps them apart (exclusive while the
+  overlap test has committed photos, shared while a test runs the job; `tests/helpers/db.ts`),
+  and the overlap test marks its own photos deleted if a round fails. Production code is
+  unchanged.
+- **"Run jobs":** still to be seen answering 200; it had no runs by 18:39 UTC on 2026-11-06, so
+  a manual run is needed.
+- **Day 10:** reminders, the digest and pruning join `run-jobs`.
+- **Still open, unchanged:** student password reset, the production owner-password tool, Aadhaar,
+  helmet/CSP, backup retention, the Supabase certificate, the "Recent notices" card, rotation of
+  a real phone-camera photo.
+
+### Deployment
+
+| Step | Evidence |
+|---|---|
+| Day 9 pushed on `day-9` | `070b593` to `f1f9511` (7 commits: code and this record), author nick10-05, no co-author line |
+| CI on `day-9` | Run #31 at 18:55 on `f1f9511`: green |
+| Review of `main..day-9` before the migration | The only migration change is the new `012_polls_fees_settings.sql`; 001–011 byte-for-byte unchanged. 012 only creates four tables and narrows `hostel_app`'s rights on them: no existing table altered, no data touched. The notification kinds it needs (`return_poll`, `payment_update`) were already allowed by 008. `main` is the branch point |
+| Backup before the migration | "Backup database" run #10 (id 42275362757) at 18:57 on `main` (`37cb769`): `hostelconnect-2026-11-06T1858Z.dump.age`, 45,851 bytes, kept until 2027-02-04. Larger than run #9 (44,477 bytes), taken before migration 011 |
+| Migration 012 on production, before the merge | "Migrate production database" run #9 (id 42275730978) at 19:00 on `day-9` (`f1f9511`), success; per the run's log, as reported by Nikhil, 001–011 skipped and 012 applied |
+| Settings before the merge | None needed: `FEES_START_DATE` stays unset in production for now |
+| Merge into `main` | To do (pull request, merge commit) |
+| CI on `main`, Render deploy, owner check | To do |

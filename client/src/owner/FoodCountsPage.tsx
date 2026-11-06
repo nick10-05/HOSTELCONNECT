@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { getFoodCounts, type FoodCount, type FoodCounts } from "../api/food";
+import { listPolls, type PollWithCounts } from "../api/returnPolls";
 import { formatDate } from "./format";
 import { inputClass, secondaryButton } from "./styles";
 
@@ -9,7 +10,8 @@ import { inputClass, secondaryButton } from "./styles";
 // a date, for all buildings and for each one. Today (India's) unless a date is picked;
 // the picked date stays in the address (?date=), so a reload or a shared link shows the
 // same day. The server decides who counts and moves non-veg students to veg on their
-// veg days.
+// veg days. Day 9: the owner may count only the students who answered "I'm back" to a
+// return poll (the 20 newest polls are offered), kept in the address as ?pollId=.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -20,23 +22,44 @@ const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
 export function FoodCountsPage() {
   const [params, setParams] = useSearchParams();
   const date = params.get("date") ?? undefined;
+  const pollParam = params.get("pollId") ?? "";
   const [data, setData] = useState<FoodCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [polls, setPolls] = useState<PollWithCounts[]>([]);
   const dateId = useId();
+  const countId = useId();
 
   useEffect(() => {
     let current = true;
     setError(null);
-    getFoodCounts(date)
+    getFoodCounts(date, pollParam ? Number(pollParam) : undefined)
       .then((d) => current && setData(d))
       .catch((err: unknown) => current && setError(errorText(err)));
-    // A slower answer for a date no longer chosen is dropped.
+    // A slower answer for a date or poll no longer chosen is dropped.
     return () => {
       current = false;
     };
-  }, [date]);
+  }, [date, pollParam]);
 
-  const pick = (value: string) => setParams(value ? { date: value } : {});
+  // Only for the "Count" choice; without it the counts are for everyone, as before.
+  useEffect(() => {
+    let current = true;
+    listPolls(1)
+      .then((r) => current && setPolls(r.items))
+      .catch(() => current && setPolls([]));
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  // Changes one of the two choices and keeps the other.
+  const choose = (day: string | undefined, pollId: string) => {
+    const next: Record<string, string> = {};
+    if (day) next.date = day;
+    if (pollId) next.pollId = pollId;
+    setParams(next);
+  };
+  const pick = (value: string) => choose(value || undefined, pollParam);
 
   return (
     <div className="space-y-6">
@@ -58,6 +81,27 @@ export function FoodCountsPage() {
         <button type="button" onClick={() => pick("")} className={secondaryButton}>
           Today
         </button>
+        {polls.length > 0 && (
+          <div className="space-y-1">
+            <label htmlFor={countId} className="block text-sm font-medium text-slate-700">
+              Count
+            </label>
+            <select
+              id={countId}
+              value={pollParam}
+              onChange={(e) => choose(date, e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Every current student</option>
+              {polls.map((p) => (
+                <option key={p.id} value={p.id}>
+                  Returned in: {p.title}
+                  {p.status === "open" ? " (open)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -67,13 +111,13 @@ export function FoodCountsPage() {
       ) : !data ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : (
-        <Counts data={data} />
+        <Counts data={data} pollTitle={polls.find((p) => p.id === data.pollId)?.title} />
       )}
     </div>
   );
 }
 
-function Counts({ data }: { data: FoodCounts }) {
+function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
   const weekday = WEEKDAY_NAMES[data.weekday - 1];
   return (
     <div className="space-y-4">
@@ -82,6 +126,11 @@ function Counts({ data }: { data: FoodCounts }) {
           {weekday}, {formatDate(data.date)}
         </p>
         <p className="text-sm text-slate-500">Non-veg students who eat veg on {weekday}s are counted as veg.</p>
+        {data.pollId !== null && (
+          <p className="text-sm font-medium text-indigo-700">
+            Only students who answered "I'm back" to {pollTitle ?? "the chosen poll"}.
+          </p>
+        )}
       </div>
 
       <section

@@ -1,8 +1,12 @@
 import type { Queryable } from "../db";
+import { FEE_ROW_DAYS_AHEAD } from "../jobs/feeRows";
+import type { FeeTotal } from "./fees";
+import { getPollCounts, type PollCounts, type ReturnPoll } from "./returnPolls";
 
 // The owner's dashboard (design doc, section 9): every card in one answer, so the home
 // page is one request even on a server that has just woken up. Day 5 adds the students
-// and rejoin requests cards, day 6 the complaints card; later days add theirs as new keys.
+// and rejoin requests cards, day 6 the complaints card, day 9 the return poll and fees
+// cards; later days add theirs as new keys.
 // tests/dashboard.test.ts describes it.
 
 export type BuildingCard = {
@@ -24,6 +28,10 @@ export type Dashboard = {
   // moved out or not: their complaints still need an answer. High priority is set by the
   // owner (day 7). oldestActiveAt is when the longest-waiting active complaint was raised.
   complaints: { active: number; highPriority: number; oldestActiveAt: Date | null };
+  // Day 9: the open return poll with its counts, or null while none is open.
+  returnPoll: (Pick<ReturnPoll, "id" | "title" | "createdAt"> & { counts: PollCounts }) | null;
+  // Day 9: pending fees on `today` (India's date), every student's, moved out or not.
+  fees: { dueSoon: FeeTotal; overdue: FeeTotal; pendingThisMonth: FeeTotal };
 };
 
 // `today` is India's date ('YYYY-MM-DD'); the route passes hostelToday().
@@ -67,6 +75,43 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
      FROM complaints WHERE status IN ('open', 'in_progress')`,
   );
 
+  // At most one poll is open (return_polls_one_open); the newest, should that rule change.
+  // Its counts come from getPollCounts, the same rule as its results page.
+  const { rows: polls } = await db.query<{ id: number; title: string; createdAt: Date }>(
+    `SELECT id, title, created_at AS "createdAt" FROM return_polls
+     WHERE status = 'open' ORDER BY created_at DESC, id DESC LIMIT 1`,
+  );
+  const poll = polls[0] ?? null;
+
+  // Pending fees only, whoever owes them. Due soon: from today to FEE_ROW_DAYS_AHEAD days
+  // ahead, the rows the fee job has already created (today included, so a fee due today
+  // shows somewhere). Overdue: due before today, in any month. This month: due in today's
+  // calendar month, overdue or not. A fee with no amount counts but adds nothing.
+  const { rows: feeRows } = await db.query<{
+    soonCount: number;
+    soonAmount: number;
+    overdueCount: number;
+    overdueAmount: number;
+    monthCount: number;
+    monthAmount: number;
+  }>(
+    `SELECT count(*) FILTER (WHERE soon)::int AS "soonCount",
+            coalesce(sum(amount) FILTER (WHERE soon), 0)::bigint AS "soonAmount",
+            count(*) FILTER (WHERE overdue)::int AS "overdueCount",
+            coalesce(sum(amount) FILTER (WHERE overdue), 0)::bigint AS "overdueAmount",
+            count(*) FILTER (WHERE this_month)::int AS "monthCount",
+            coalesce(sum(amount) FILTER (WHERE this_month), 0)::bigint AS "monthAmount"
+     FROM (
+       SELECT amount,
+              due_date BETWEEN $1::date AND $1::date + $2::int AS soon,
+              due_date < $1::date AS overdue,
+              date_trunc('month', due_date) = date_trunc('month', $1::date) AS this_month
+       FROM fees WHERE status = 'pending'
+     ) f`,
+    [today, FEE_ROW_DAYS_AHEAD],
+  );
+  const f = feeRows[0];
+
   const cards: BuildingCard[] = buildings.map((b) => {
     const bed = bedsOf.get(b.id);
     return {
@@ -83,5 +128,11 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
     },
     rejoinRequests: requests[0],
     complaints: complaints[0],
+    returnPoll: poll ? { ...poll, counts: (await getPollCounts(db, [poll.id])).get(poll.id)! } : null,
+    fees: {
+      dueSoon: { count: f.soonCount, amount: f.soonAmount },
+      overdue: { count: f.overdueCount, amount: f.overdueAmount },
+      pendingThisMonth: { count: f.monthCount, amount: f.monthAmount },
+    },
   };
 }

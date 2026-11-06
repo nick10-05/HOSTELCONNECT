@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Db } from "../src/db";
 import { expirePhotos } from "../src/jobs/expirePhotos";
 import { newPhotoPath, type PhotoStorage } from "../src/lib/storage";
-import { inRollback, insertStudent, testPool } from "./helpers/db";
+import { inRollback, insertStudent, photoJobLockShared, testPool, withPhotoJobLock } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { rollbackDb } from "./helpers/rollbackDb";
 
@@ -11,7 +11,7 @@ import { rollbackDb } from "./helpers/rollbackDb";
 // logic" under "You write"). Fake storage and a fixed clock in 1998: no other test file
 // has photos due then, and every check looks at this test's own photos only. Most tests
 // run the job on rollbackDb (its transactions become savepoints, all rolled back); the
-// race test commits.
+// race test commits, holding the photo-job lock (tests/helpers/db.ts) while it does.
 const db = testPool();
 afterAll(() => db.end());
 
@@ -59,7 +59,10 @@ const removed = (storage: FakeStorage, paths: string[]) =>
   storage.calls.filter((call) => call.operation === "remove" && paths.includes(call.path)).map((call) => call.path);
 
 function inJob(fn: (c: PoolClient, jobDb: Db) => Promise<void>) {
-  return inRollback(db, (c) => fn(c, rollbackDb(c)));
+  return inRollback(db, async (c) => {
+    await photoJobLockShared(c);
+    await fn(c, rollbackDb(c));
+  });
 }
 
 describe("expirePhotos", () => {
@@ -181,32 +184,45 @@ describe("expirePhotos", () => {
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 0 });
     }));
 
-  it("never handles a photo twice when two runs overlap (5 rounds)", async () => {
+  it("never handles a photo twice when two runs overlap (5 rounds)", () =>
     // Committed, two runs at once on the real pool. Storage is slow, so both runs are
-    // busy at the same time.
-    for (let round = 1; round <= 5; round += 1) {
-      const fake = fakeStorage();
-      const slow: PhotoStorage = {
-        upload: fake.upload,
-        signedUrl: fake.signedUrl,
-        remove: async (path) => {
-          await new Promise((resolve) => setTimeout(resolve, 15));
-          return fake.remove(path);
-        },
-      };
-      const now = new Date(`1998-0${4 + round}-10T06:30:00Z`); // a month of its own per round
-      const photos = [];
-      for (let i = 0; i < 6; i += 1) {
-        photos.push(await complaintWithPhoto(db, fake, { expiresAt: new Date(now.getTime() - (i + 1) * 60_000) }));
-      }
-      const paths = photos.map((p) => p.path);
+    // busy at the same time. These photos are due for any job run with a later clock, so
+    // the photo-job lock keeps such tests (jobsRoutes.test.ts) waiting meanwhile.
+    withPhotoJobLock(db, async () => {
+      const ids: number[] = [];
+      try {
+        for (let round = 1; round <= 5; round += 1) {
+          const fake = fakeStorage();
+          const slow: PhotoStorage = {
+            upload: fake.upload,
+            signedUrl: fake.signedUrl,
+            remove: async (path) => {
+              await new Promise((resolve) => setTimeout(resolve, 15));
+              return fake.remove(path);
+            },
+          };
+          const now = new Date(`1998-0${4 + round}-10T06:30:00Z`); // a month of its own per round
+          const photos = [];
+          for (let i = 0; i < 6; i += 1) {
+            photos.push(await complaintWithPhoto(db, fake, { expiresAt: new Date(now.getTime() - (i + 1) * 60_000) }));
+            ids.push(photos[i].id);
+          }
+          const paths = photos.map((p) => p.path);
 
-      const results = await Promise.all([expirePhotos(db, slow, { now }), expirePhotos(db, slow, { now })]);
-      const calls = removed(fake, paths);
-      expect([...calls].sort(), `round ${round}`).toEqual([...paths].sort()); // each exactly once
-      expect(results.reduce((sum, r) => sum + r.deleted, 0), `round ${round}`).toBe(6);
-      expect(results.every((r) => r.failed === 0)).toBe(true);
-      for (const { id } of photos) expect(await photoState(db, id)).toEqual({ deletedAt: now, attempts: 0 });
-    }
-  });
+          const results = await Promise.all([expirePhotos(db, slow, { now }), expirePhotos(db, slow, { now })]);
+          const calls = removed(fake, paths);
+          expect([...calls].sort(), `round ${round}`).toEqual([...paths].sort()); // each exactly once
+          expect(results.reduce((sum, r) => sum + r.deleted, 0), `round ${round}`).toBe(6);
+          expect(results.every((r) => r.failed === 0)).toBe(true);
+          for (const { id } of photos) expect(await photoState(db, id)).toEqual({ deletedAt: now, attempts: 0 });
+        }
+      } finally {
+        // Should a round fail, its photos would stay due for every later job run: mark
+        // them deleted before the lock is released.
+        await db.query("UPDATE complaints SET photo_deleted_at = $2 WHERE id = ANY($1) AND photo_deleted_at IS NULL", [
+          ids,
+          NOW,
+        ]);
+      }
+    }));
 });

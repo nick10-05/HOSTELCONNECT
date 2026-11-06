@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,15 @@ const ownerComplaint = {
   place: { buildingName: "Block A", roomNumber: "101" },
 };
 
+const ownerPoll = {
+  id: 6,
+  title: "Back after Diwali?",
+  status: "open",
+  createdAt: "2026-11-02T04:30:00.000Z",
+  closedAt: null,
+  counts: { returned: 0, notYet: 0, noResponse: 3 },
+};
+
 function renderAt(path: string) {
   mockFetch(async (url) => {
     if (url === "/api/auth/me") return jsonResponse(200, { user: owner });
@@ -38,6 +47,14 @@ function renderAt(path: string) {
     if (url === "/api/notifications") return jsonResponse(200, { items: [], total: 0, unread: 0 });
     if (url === "/api/complaints") return jsonResponse(200, { items: [ownerComplaint], total: 1 });
     if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
+    if (url === "/api/return-polls?page=1") return jsonResponse(200, { items: [ownerPoll], total: 1 });
+    if (url === "/api/settings/payment") {
+      return jsonResponse(200, { upiId: "owner@okaxis", upiPayeeName: null, qrUrl: null, updatedAt: "2026-11-02T04:30:00.000Z" });
+    }
+    if (url === "/api/fees?page=1") return jsonResponse(200, { items: [], total: 0, totals: { paid: { count: 0, amount: 0 }, pending: { count: 0, amount: 0 }, overdue: { count: 0, amount: 0 }, amountNotSet: 0 } });
+    if (url === "/api/return-polls/6") {
+      return jsonResponse(200, { poll: ownerPoll, counts: ownerPoll.counts, returned: [], notYet: [], noResponse: [] });
+    }
     if (url === "/api/complaints/1") {
       return jsonResponse(200, { ...ownerComplaint, events: [], allowedMoves: ["in_progress", "resolved", "rejected"] });
     }
@@ -54,6 +71,13 @@ function renderAt(path: string) {
           uploadsAllowed: true,
           failingDeletions: 0,
           photosConfigured: false,
+        },
+        // Day 9: the return poll and fees cards.
+        returnPoll: null,
+        fees: {
+          dueSoon: { count: 0, amount: 0 },
+          overdue: { count: 0, amount: 0 },
+          pendingThisMonth: { count: 0, amount: 0 },
         },
       });
     }
@@ -109,6 +133,33 @@ describe("owner pages", () => {
     expect(await screen.findByRole("heading", { name: "Plumbing #1" })).toBeInTheDocument();
   });
 
+  it("has a Return polls page in the menu, which opens a poll's results", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Return polls" }));
+    expect(await screen.findByRole("heading", { name: "Return polls" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("link", { name: "Back after Diwali?" }));
+    expect(await screen.findByRole("heading", { name: "Back after Diwali?" })).toBeInTheDocument();
+    // Still highlighted on a poll's own page.
+    expect(screen.getByRole("link", { name: "Return polls" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("has a Fees page in the menu", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Fees" }));
+    expect(await screen.findByRole("heading", { name: "Fees" })).toBeInTheDocument();
+    expect(await screen.findByText("No fees match.")).toBeInTheDocument();
+  });
+
+  it("has the payment settings in the menu", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Payment settings" })).toBeInTheDocument();
+    expect(screen.getByLabelText("UPI ID")).toHaveValue("owner@okaxis");
+  });
+
   it("has an Announcements page in the menu", async () => {
     const user = renderAt("/structure");
     await screen.findByRole("heading", { name: "Buildings and rooms" });
@@ -149,6 +200,11 @@ describe("student pages", () => {
         return jsonResponse(200, { items: [], total: 0, canRaise: { allowed: true, reason: null, activeCategories: [] } });
       }
       if (url === "/api/announcements?page=1") return jsonResponse(200, { items: [urgentNotice], total: 1 });
+      if (url === "/api/fees/mine") return jsonResponse(200, { pendingBalance: 6500, amountNotSet: 0, overdue: [], upcoming: [], history: [], nextDueDate: "2026-12-14" });
+      if (url === "/api/return-polls") {
+        const poll = { id: 6, title: "Back after Diwali?", createdAt: "2026-11-02T04:30:00.000Z", myResponse: null, respondedAt: null };
+        return jsonResponse(200, { items: [poll], total: 1 });
+      }
       return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
     });
     const user = userEvent.setup();
@@ -190,6 +246,36 @@ describe("student pages", () => {
     await user.click(screen.getByRole("link", { name: "Notices" }));
     expect(await screen.findByRole("heading", { name: "Notices" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Notices" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("see an open return poll on their home, after the important notices and before their complaints", async () => {
+    renderStudentAt("/");
+    const poll = await screen.findByRole("region", { name: "Back after Diwali?" });
+    const notices = await screen.findByRole("region", { name: "Important notices" });
+    const complaints = await screen.findByRole("heading", { name: "My complaints" });
+    expect(notices.compareDocumentPosition(poll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(poll.compareDocumentPosition(complaints) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: "I'm back" })).toBeInTheDocument();
+  });
+
+  it("see their fees at the end of their home, and open My fees from the card and the menu", async () => {
+    const user = renderStudentAt("/");
+    const card = await screen.findByRole("region", { name: "My fees" });
+    const complaints = await screen.findByRole("heading", { name: "My complaints" });
+    expect(complaints.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card).toHaveTextContent("₹6,500");
+
+    await user.click(screen.getByRole("link", { name: "See my fees" }));
+    expect(await screen.findByRole("heading", { name: "My fees", level: 1 })).toBeInTheDocument();
+    const menu = screen.getByRole("navigation", { name: "Student pages" });
+    expect(within(menu).getByRole("link", { name: "My fees" })).toHaveAttribute("aria-current", "page");
+    expect(within(menu).getByRole("link", { name: "My complaints" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("never see the owner's Return polls page", async () => {
+    renderStudentAt("/return-polls");
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Return polls" })).not.toBeInTheDocument();
   });
 
   it("never see the owner's Announcements page", async () => {
