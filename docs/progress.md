@@ -686,10 +686,15 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 - **Monthly fee:** there is no way yet to change a student's monthly fee after admission. Since
   amounts are fixed when a row is created, a student admitted without a fee gets "amount not
   set" rows. To decide.
-- **A test race (left as is for now):** `jobsRoutes.test.ts` runs the photo expiry over the whole
-  table, and `expirePhotos.test.ts` commits real photo rows for its overlap test. When the two
-  files run at the same moment, the jobs test counts those rows too ("deleted: 4" instead of 1).
-  Each passes alone, and most full runs pass.
+- **A test race (fixed, tests only):** `jobsRoutes.test.ts` runs the photo expiry over the whole
+  table with a 1999 clock, and `expirePhotos.test.ts`'s overlap test commits photos due in 1998.
+  When the two files ran at the same moment, the jobs test claimed those photos inside its
+  rolled-back transaction: the overlap test's runs skipped them (`FOR UPDATE SKIP LOCKED`), and
+  after the rollback they stayed due, so later jobs tests counted them too (3 failures, as in CI
+  run #32 on the pull request). A test advisory lock now keeps them apart (exclusive while the
+  overlap test has committed photos, shared while a test runs the job; `tests/helpers/db.ts`),
+  and the overlap test marks its own photos deleted if a round fails. Production code is
+  unchanged.
 - **"Run jobs":** still to be seen answering 200; it had no runs by 18:39 UTC on 2026-11-06, so
   a manual run is needed.
 - **Day 10:** reminders, the digest and pruning join `run-jobs`.
@@ -701,11 +706,11 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 
 | Step | Evidence |
 |---|---|
-| Day 9 pushed on `day-9` | To do |
-| CI on `day-9` | To do |
-| Review of `main..day-9` before the migration | To do |
-| Backup before the migration | To do |
-| Migration 012 on production, before the merge | To do |
+| Day 9 pushed on `day-9` | `070b593` to `f1f9511` (7 commits: code and this record), author nick10-05, no co-author line |
+| CI on `day-9` | Run #31 at 18:55 on `f1f9511`: green |
+| Review of `main..day-9` before the migration | The only migration change is the new `012_polls_fees_settings.sql`; 001–011 byte-for-byte unchanged. 012 only creates four tables and narrows `hostel_app`'s rights on them: no existing table altered, no data touched. The notification kinds it needs (`return_poll`, `payment_update`) were already allowed by 008. `main` is the branch point |
+| Backup before the migration | "Backup database" run #10 (id 42275362757) at 18:57 on `main` (`37cb769`): `hostelconnect-2026-11-06T1858Z.dump.age`, 45,851 bytes, kept until 2027-02-04. Larger than run #9 (44,477 bytes), taken before migration 011 |
+| Migration 012 on production, before the merge | "Migrate production database" run #9 (id 42275730978) at 19:00 on `day-9` (`f1f9511`), success; per the run's log, as reported by Nikhil, 001–011 skipped and 012 applied |
 | Settings before the merge | None needed: `FEES_START_DATE` stays unset in production for now |
 | Merge into `main` | To do (pull request, merge commit) |
 | CI on `main`, Render deploy, owner check | To do |

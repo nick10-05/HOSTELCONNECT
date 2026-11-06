@@ -25,6 +25,39 @@ export async function inRollback(db: Db, fn: (c: PoolClient) => Promise<void>): 
   }
 }
 
+// The expire-photos job looks at every complaint in the table, not only a test's own. A
+// test that commits photos the job would find due (expirePhotos.test.ts's race test) and a
+// test that runs the job with a later clock (jobsRoutes.test.ts) must therefore not
+// overlap: the second would claim the first's photos inside its rolled-back transaction,
+// so the first's runs skip them (FOR UPDATE SKIP LOCKED) and, after the rollback, they
+// stay due for every later test (found on day 9). An advisory lock keeps them apart:
+// exclusive while committed due photos exist, shared while the job runs. Any key will
+// do as long as nothing else uses it (scripts/runMigrations.ts uses 727001).
+const PHOTO_JOB_LOCK = 727002;
+
+// Runs fn while holding the photo-job lock exclusively, on a connection of its own, so
+// no test that runs the expire-photos job (photoJobLockShared) is running meanwhile.
+export async function withPhotoJobLock(db: Db, fn: () => Promise<void>): Promise<void> {
+  const client = await db.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [PHOTO_JOB_LOCK]);
+    try {
+      await fn();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [PHOTO_JOB_LOCK]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
+// Takes the photo-job lock shared until c's transaction ends (its rollback), so no test
+// holding it exclusively (withPhotoJobLock) has committed photos about. Call it first in
+// any test transaction that runs the expire-photos job.
+export async function photoJobLockShared(c: Pick<PoolClient, "query">): Promise<void> {
+  await c.query("SELECT pg_advisory_xact_lock_shared($1)", [PHOTO_JOB_LOCK]);
+}
+
 const SERIALIZATION_FAILURE = "40001";
 const SNAPSHOT_ATTEMPTS = 3;
 

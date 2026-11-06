@@ -5,7 +5,7 @@ import { createApp, type AppDeps } from "../src/app";
 import { newPhotoPath } from "../src/lib/storage";
 import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
-import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
+import { inRollback, insertOwner, insertStudent, photoJobLockShared, testPool } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { rollbackDb } from "./helpers/rollbackDb";
 
@@ -14,6 +14,8 @@ import { rollbackDb } from "./helpers/rollbackDb";
 // fee-rows job (day 9, only when FEES_START_DATE is set). Each
 // test builds its own app (the rate limit lives in the app) on rollbackDb, with a clock
 // fixed in 1999, so the job sees this test's photos only and everything is rolled back.
+// Photos another file commits (expirePhotos.test.ts's race test, all due before 1999)
+// are kept out by the photo-job lock (tests/helpers/db.ts).
 const db = testPool();
 afterAll(() => db.end());
 
@@ -26,6 +28,7 @@ type Ctx = { c: PoolClient; storage: FakeStorage; app: ReturnType<typeof createA
 
 function withApp(deps: Partial<AppDeps>, fn: (ctx: Ctx) => Promise<void>) {
   return inRollback(db, async (c) => {
+    await photoJobLockShared(c);
     const storage = fakeStorage();
     const app = createApp({
       db: rollbackDb(c),
