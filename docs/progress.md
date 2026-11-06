@@ -503,3 +503,107 @@ Found while building and fixed on the day:
 
 Day 7 is complete and live: core v1. Production still has no students, so nothing was posted or
 changed there; the student side and the announcement fan-out were checked on the local database.
+
+## Day 8 — photos, cost guard, food counts (2026-11-05 to 2026-11-06)
+
+Done when: a compressed photo uploads, shows a countdown and is deleted by the job with retry;
+uploads switch off at the threshold in a test; food counts match overall and per building. Met
+on the local database against a separate Supabase development project, and checked in a browser
+as the owner and as a student. One part is still open: rotating a real phone-camera photo (see
+"Smoke test" below). Not yet in production (see "Deployment" below).
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Storage client (`lib/storage.ts`): upload, signed link, remove, plain `fetch` to the Storage REST API; a fake for tests (`tests/helpers/fakeStorage.ts`) | Claude | Done | 13 tests in `storage.test.ts`: random object names, only photo names sent to storage, a time limit on every request, remove says whether storage had the object, errors carrying the operation and status but never the key, a link or storage's text; 4 in `fakeStorage.test.ts` |
+| Photo type by magic bytes (`lib/photoType.ts`) | Claude | Done | 2 tests in `photoType.test.ts`: JPEG, PNG and WebP accepted, anything else refused whatever its name or declared type |
+| Settings: Supabase URL and secret key, bucket, the job secret, the limits | Claude | Done | 16 tests in `config.test.ts`: the URL must be https with no path, URL and key only together, all three secrets required in production, no value ever in an error message |
+| Migration 011: `usage_counters` | Claude | Done | 4 tests in `usageCountersTable.test.ts`, run as `hostel_app`: the key format, no negative value, and the app role cannot delete a row or rename a key. Applied to the local database |
+| Usage guard (`services/usage.ts`: `egressKey`, `getUsage`) | Claude, at Nikhil's request (section 12 lists it under "You write"); stub, contract and tests first | Done | 11 tests in `usage.test.ts`: India's calendar month for the counter, percentages rounded down, amber at 70%, uploads off at 85% of either limit, the failed-deletion count |
+| Photo on `POST /api/complaints` (multipart through `photoUpload`, the photo step in `createComplaint`) | Claude | Done | 8 tests in `complaintPhoto.test.ts`: kept 48 hours, refused while uploads are off, the uploaded file removed again when the complaint cannot be saved, a 5-round race leaving no stray photo; 11 route tests in `complaintPhotoRoutes.test.ts`: over 1 MB refused before storing anything, the type decided from the bytes, refused while uploads are off, 503 when storage fails, `photoUploadsAllowed` on the student's list |
+| Signed links (`issuePhotoLink`) and what each side sees (`photoView`, `studentPhotoView`) | Claude, at Nikhil's request (also "You write") | Done | 7 tests in `photoLink.test.ts`: the photo's size added to India's month only once storage issues the link, nothing counted on a storage failure, no link from the expiry time on, every view counted when many happen at once; 6 in `photoView.test.ts`; 7 in `complaintPhotoDetail.test.ts`: the owner gets `expiresAt` for the countdown, the student never does, `no-store` on both |
+| Expiry job (`jobs/expirePhotos.ts`) | Claude, at Nikhil's request (also "You write") | Done | 9 tests in `expirePhotos.test.ts`: oldest first, at most 50, one transaction per photo with `FOR UPDATE SKIP LOCKED`, a failure only adds an attempt, "already gone" counts as deleted, two runs at once never take the same photo |
+| `POST /api/internal/run-jobs` with `X-Job-Secret`; `.github/workflows/jobs.yml` (hourly, 7 minutes past) | Claude | Done | 9 tests in `jobsRoutes.test.ts`: 401 without or with a wrong secret (a login does not count), no endpoint when the secret is unset, a call from another site refused, 10 calls per 15 minutes, the secret never sent back. The workflow has not run yet; it is tried after the deployment |
+| Food counts (`services/food.ts`: `getFoodCounts`) | Claude, at Nikhil's request (also "You write"); stub, contract and tests first | Done | 6 tests in `foodCounts.test.ts`: non-veg students counted as veg on their veg days, only stays covering the date, a mover only in the new building from the move day, a moved-out student on a date they still lived there, every building listed (empty ones with zeros) |
+| `GET /api/food-counts?date=` (owner only, India's today by default) | Claude | Done | 4 tests in `foodCountsRoutes.test.ts`: owner only, India's today when no date is given, never cached, a date that is not a real date refused |
+| Dashboard: the "Storage and bandwidth" card's data (`usage` on `GET /api/dashboard`) | Claude | Done | 4 tests in `dashboardRoutes.test.ts` |
+| Screens: photo on the complaint form (compressed in the browser), the photo on both detail pages with the owner's countdown, the dashboard card, the Food counts page | Claude | Done | Client: `compressPhoto.test.ts` 9, `ComplaintPhoto.test.tsx` 9, `FoodCountsPage.test.tsx` 6, and new tests in the form, both detail pages, the dashboard and `client.test.ts` (FormData sent without a JSON header) |
+| A flaky announcement test (`inSnapshot` in `tests/helpers/db.ts`) | Claude, fix approved by Nikhil | Done | Cause shown: another file's `SELECT ... FOR UPDATE` and UPDATE on a student, committed after a REPEATABLE READ snapshot, made the fan-out insert fail with 40001. `inSnapshot` now retries on 40001 (at most 3 tries); 5 tests in `inSnapshot.test.ts` |
+
+New tests were checked to fail against planted bugs, then the code was restored and compared by
+file hash. One planted bug can hide another, so where that happened each was rerun on its own.
+
+Checks at the end of the day: server 786 tests (670 on day 7), client 231 (191), typecheck and
+builds clean. One full server run stopped early with the known Windows worker crash (see day
+5); the next run passed in full.
+
+Browser check, food counts (local): for 2026-11-06 the page showed 117 veg and 87 non-veg, 204
+in all, and for Tuesday 2026-11-10 123 and 81 (more students have veg days on Tuesday); an independent SQL count gave
+the same numbers, overall and per building.
+
+### Smoke test against the development project (2026-11-06)
+
+Local servers and database, with a separate free Supabase project `hostelconnect-dev` (Data
+API off) holding the private bucket `complaint-photos-dev`. Production was not touched. Scripts
+printed counts and yes/no only, never the URL, the key or a link.
+
+| Part | Result |
+|---|---|
+| Bucket | Upload, download through a signed link (same bytes), public address refused, changed token refused, remove `true`, remove again `false`, the old link refused after removal; the bucket empty afterwards |
+| Upload | A local test student, "Photo Tester" (`photo.tester@example.com`, admitted on day 8 because the seeded students' password is unknown), sent #3 with a photo: stored as an 81,514-byte JPEG, 1600 × 900, no EXIF, `photo_expires_at` 48 hours after the complaint, the size in the database equal to the stored file |
+| Viewing | The student saw the photo with no countdown and no `expiresAt`; the owner saw "Deleted in 47 h 47 min", matching the stored time. Each issued link added exactly 81,514 bytes to `egress:2026-11` (the dev build loads a page twice, so a page view issued two). A link was refused after 60 seconds (`InvalidJWT`, "exp" check failed), and the page then showed "The photo link has run out. Reload the page to see it again." |
+| Dashboard | The card matched the database: 0.1 MB of 450 MB, 0.8 MB of 3,000 MB, "Photo uploads are on." |
+| Expiry and retry | #3's `photo_expires_at` moved to the past on the local database only (Nikhil approved the UPDATE). A run with a wrong key: `{deleted: 0, failed: 1}`, one attempt, the file kept. A run with the right key: `{deleted: 1, failed: 0}`, `photo_deleted_at` set, the bucket empty, status and `updated_at` unchanged. A third run found nothing due. The owner's page then said "The photo has been deleted"; viewing it counted no bandwidth |
+| Uploads off | With `EGRESS_LIMIT_MB=1` the card turned amber at 77% and #4 was still accepted with a photo; viewing it took the count to 93%: the card turned red with "Photo uploads are off … The bandwidth count starts again on 1 December 2026.", and the student's list answered `photoUploadsAllowed: false`. Restored to 3000 afterwards, and the card showed uploads on again |
+
+Not checked live:
+
+- **Rotation of a real phone-camera photo (open).** Both photos used were screenshots (no EXIF
+  orientation), so turning a camera photo upright in the browser was not seen end to end. The
+  canvas path is covered by `compressPhoto.test.ts` and a real-browser canvas check during the
+  build (a 4000 × 3000, 6.8 MB JPEG came out 1600 × 1200, 237 KB).
+- The student form's "Photos are switched off" line and the API's 409 `photo_uploads_off`: Photo
+  Tester had reached two complaints in 24 hours, which hides the form first. Both are covered by
+  tests.
+
+### Decisions made on day 8
+
+- **Storage:** a private bucket `complaint-photos`, created by Nikhil. Plain `fetch` to the
+  Storage REST API, no Supabase library; multer, in memory, on the complaint create route only.
+- **Secrets:** the Supabase secret key lives only in Render; `JOB_SECRET` in Render and in the
+  GitHub environment "production". GitHub never gets the Supabase key. Production refuses to
+  start without `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `JOB_SECRET`.
+- **Development storage:** a separate Supabase project with its own key and bucket, never a key
+  in the production project, because a secret key reaches every bucket of its project.
+- **Limits:** `STORAGE_LIMIT_MB=450`, `EGRESS_LIMIT_MB=3000` (to be checked against Supabase's
+  usage page), at most 1 MB per photo (the browser aims for about 500 KB), links valid 60
+  seconds. Amber at 70%, uploads off at 85%, a warning after 5 failed deletions.
+- **Bandwidth is an estimate:** every issued link adds the photo's size, counted in India's
+  calendar month. The cut-off uses current usage, not counting the incoming photo.
+- **Who sees what:** the student sees their own photo until it expires, without a countdown;
+  the owner gets the countdown.
+- **Expiry:** a photo storage no longer has counts as deleted; a failure only adds an attempt,
+  and the job keeps trying every hour (the dashboard warns at 5). Only `expire-photos` runs on
+  day 8.
+- **Food counts:** for a chosen date, India's today by default; a stay counts on date d when
+  `started_on <= d` and it has not ended by d (`ended_on IS NULL OR ended_on > d`); a non-veg
+  student counts as veg on their veg days; the current food preference is used (there is no
+  history). The route takes `date` only; the poll filter waits for day 9.
+
+### Notes for later days
+
+- **Production, before the merge:** back up, run migration 011 on the branch, set
+  `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `JOB_SECRET` in Render and `JOB_SECRET` in the GitHub
+  environment, check `EGRESS_LIMIT_MB` against the production usage page. After the deploy, check
+  only the jobs endpoint: 401 without the secret, 200 with nothing due.
+- **Rotation:** try one original phone-camera JPEG (copied as the original file, not through a
+  chat app) when convenient.
+- **Day 9:** the poll filter on food counts; fee rows and reminders join `run-jobs`.
+- **Still open, unchanged:** student password reset, the production owner-password tool, Aadhaar,
+  helmet/CSP, backup retention, the Supabase certificate, the "Recent notices" card.
+- **Local development data:** the local database is at migration 011. Photo Tester (id 240) has
+  #3 (photo deleted by the job) and #4 (photo kept until its 48 hours are up, in the development
+  bucket). `egress:2026-11` is 978,168 bytes. The seeded students still cannot log in.
+
+### Deployment
+
+Not yet done.
