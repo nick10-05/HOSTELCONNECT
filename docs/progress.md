@@ -696,10 +696,9 @@ worker crash (see day 5); the file it stopped on passed when run alone.
   overlap test has committed photos, shared while a test runs the job; `tests/helpers/db.ts`),
   and the overlap test marks its own photos deleted if a round fails. Production code is
   unchanged.
-- **"Run jobs":** still to be seen answering 200. It has never run, scheduled or manual (checked
-  last at 19:23 UTC on 2026-11-06); if a manual run from `main` still does not start, check
-  whether the workflow is disabled in the Actions tab. Until it runs, expired complaint photos
-  are not deleted (none exist in production yet).
+- **"Run jobs":** answered 200 on its first run (manual, 19:32 UTC on 2026-11-06). Its hourly
+  schedule had not fired by then (none at 17:07, 18:07 or 19:07); check that scheduled runs
+  appear from now on.
 - **Owner check, rest:** open the Fees and Payment settings pages on production.
 - **Day 10:** reminders, the digest and pruning join `run-jobs`.
 - **Still open, unchanged:** student password reset, the production owner-password tool, Aadhaar,
@@ -721,4 +720,5 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 | CI on `main` | Run #35 at 19:16 on `370c3bb`: green |
 | Render deploy | Serving day 9 by 19:20: the served bundle is `index-WR1bvl9H.js`, the same build as locally. `/api/health` 200 `ok`; `/api/fees`, `/api/fees/mine`, `/api/return-polls`, `/api/return-polls/mine`, `/api/settings/payment`, `/api/settings/payment/qr` and `/api/food-counts?pollId=1` 401 without a login; saving payment settings or a fee's status from another site 403 `cross_origin`; `run-jobs` without the secret 401; an unknown `/api` path 404; `/fees`, `/return-polls`, `/return-polls/1` and `/settings` serve the app |
 | Owner check | Signed in on production (Nikhil signed in; as reported by him): the dashboard loads, the Return poll card says "No poll open." and the Fees card "No fees pending."; the owner menu includes Return polls, Fees and Settings. The Fees and Payment settings pages themselves not opened yet; nothing was submitted |
-| "Run jobs" with the secret | Not yet seen: the workflow had no runs at all at 19:23, neither scheduled (none at 17:07, 18:07 or 19:07) nor manual (a manual run was tried but did not start) |
+| "Run jobs" with the secret | No runs at all by 19:23: none scheduled (17:07, 18:07, 19:07) and a first manual try did not start. Then "Run jobs" run #1 (id 42280462858) at 19:32 on `main` (`bf899b3`), started by hand, success; per the run's log, as reported by Nikhil, `Status 200: {"expirePhotos":{"deleted":0,"failed":0},"feeRows":null}` (`feeRows` is null because `FEES_START_DATE` is unset) |
+| CI on `main` after this record's first part | Run #38 on `bf899b3` (pull request #3, merge commit of `day-9-record`): green |
