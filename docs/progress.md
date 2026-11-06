@@ -629,8 +629,9 @@ phone-camera photo.
 
 Done when: the owner runs a return poll and sees returned, not yet and no response; fee rows
 follow each student's joining date; the owner can set UPI details and mark fees paid; students
-see their balance and the UPI ID and QR. Met in tests on the local database; not yet checked in
-a browser (see "Notes for later days"). Not yet in production (see "Deployment" below).
+see their balance and the UPI ID and QR. Met in tests on the local database. Live in production
+since 2026-11-06 (see "Deployment" below); the screens have been seen there only partly, and
+not at all locally (see "Notes for later days").
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -695,8 +696,11 @@ worker crash (see day 5); the file it stopped on passed when run alone.
   overlap test has committed photos, shared while a test runs the job; `tests/helpers/db.ts`),
   and the overlap test marks its own photos deleted if a round fails. Production code is
   unchanged.
-- **"Run jobs":** still to be seen answering 200; it had no runs by 18:39 UTC on 2026-11-06, so
-  a manual run is needed.
+- **"Run jobs":** still to be seen answering 200. It has never run, scheduled or manual (checked
+  last at 19:23 UTC on 2026-11-06); if a manual run from `main` still does not start, check
+  whether the workflow is disabled in the Actions tab. Until it runs, expired complaint photos
+  are not deleted (none exist in production yet).
+- **Owner check, rest:** open the Fees and Payment settings pages on production.
 - **Day 10:** reminders, the digest and pruning join `run-jobs`.
 - **Still open, unchanged:** student password reset, the production owner-password tool, Aadhaar,
   helmet/CSP, backup retention, the Supabase certificate, the "Recent notices" card, rotation of
@@ -712,5 +716,9 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 | Backup before the migration | "Backup database" run #10 (id 42275362757) at 18:57 on `main` (`37cb769`): `hostelconnect-2026-11-06T1858Z.dump.age`, 45,851 bytes, kept until 2027-02-04. Larger than run #9 (44,477 bytes), taken before migration 011 |
 | Migration 012 on production, before the merge | "Migrate production database" run #9 (id 42275730978) at 19:00 on `day-9` (`f1f9511`), success; per the run's log, as reported by Nikhil, 001–011 skipped and 012 applied |
 | Settings before the merge | None needed: `FEES_START_DATE` stays unset in production for now |
-| Merge into `main` | To do (pull request, merge commit) |
-| CI on `main`, Render deploy, owner check | To do |
+| CI on the pull request | Run #32 on `f1f9511` failed: the photo-expiry test race (see "Notes for later days"). Fixed in `f15100a` (tests only), pushed; runs #33 (push) and #34 (pull request) on `f15100a` green |
+| Merge into `main` | Through GitHub pull request #2, as merge commit `370c3bb` (parents `37cb769` and `f15100a`). Its file tree is identical to `day-9`'s |
+| CI on `main` | Run #35 at 19:16 on `370c3bb`: green |
+| Render deploy | Serving day 9 by 19:20: the served bundle is `index-WR1bvl9H.js`, the same build as locally. `/api/health` 200 `ok`; `/api/fees`, `/api/fees/mine`, `/api/return-polls`, `/api/return-polls/mine`, `/api/settings/payment`, `/api/settings/payment/qr` and `/api/food-counts?pollId=1` 401 without a login; saving payment settings or a fee's status from another site 403 `cross_origin`; `run-jobs` without the secret 401; an unknown `/api` path 404; `/fees`, `/return-polls`, `/return-polls/1` and `/settings` serve the app |
+| Owner check | Signed in on production (Nikhil signed in; as reported by him): the dashboard loads, the Return poll card says "No poll open." and the Fees card "No fees pending."; the owner menu includes Return polls, Fees and Settings. The Fees and Payment settings pages themselves not opened yet; nothing was submitted |
+| "Run jobs" with the secret | Not yet seen: the workflow had no runs at all at 19:23, neither scheduled (none at 17:07, 18:07 or 19:07) nor manual (a manual run was tried but did not start) |
