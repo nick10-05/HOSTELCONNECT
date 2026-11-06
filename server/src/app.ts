@@ -11,11 +11,13 @@ import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
+import { feesRouter } from "./routes/fees";
 import { foodRouter } from "./routes/food";
 import { internalRouter } from "./routes/internal";
 import { notificationsRouter } from "./routes/notifications";
 import { rejoinRouter } from "./routes/rejoin";
 import { returnPollsRouter } from "./routes/returnPolls";
+import { settingsRouter } from "./routes/settings";
 import { structureRouter } from "./routes/structure";
 import { studentsRouter } from "./routes/students";
 import type { ComplaintLimits } from "./services/complaints";
@@ -34,6 +36,8 @@ export type AppDeps = {
   complaintLimits?: ComplaintLimits;
   // JOB_SECRET; without it POST /api/internal/run-jobs does not exist.
   jobSecret?: string;
+  // FEES_START_DATE ('YYYY-MM-DD'); without it the fee-rows job creates nothing.
+  feesStartDate?: string;
   // Supabase Storage for complaint photos (storageFromConfig); null or missing: photo
   // uploads are off.
   storage?: PhotoStorage | null;
@@ -44,7 +48,7 @@ export type AppDeps = {
   // STORAGE_LIMIT_MB and EGRESS_LIMIT_MB for the usage guard; 450 and 3000 when not given.
   usageLimits?: UsageLimits;
   // The time the jobs run at, the usage guard reads its month from and the food counts
-  // take India's today from; tests pass a fixed one.
+  // take India's today from, as do the fee routes; tests pass a fixed one.
   clock?: () => Date;
 };
 
@@ -60,6 +64,7 @@ export function createApp({
   clientDir,
   complaintLimits = DEFAULT_COMPLAINT_LIMITS,
   jobSecret,
+  feesStartDate,
   storage = null,
   photoMaxBytes = 1024 * 1024,
   photoLinkSeconds = 60,
@@ -110,7 +115,9 @@ export function createApp({
   app.use("/api", announcementsRouter({ db, jwtSecret }));
   app.use("/api", returnPollsRouter({ db, jwtSecret }));
   app.use("/api", foodRouter({ db, jwtSecret, clock }));
-  app.use("/api", internalRouter({ db, jobSecret, storage, clock }));
+  app.use("/api", feesRouter({ db, jwtSecret, clock }));
+  app.use("/api", settingsRouter({ db, jwtSecret }));
+  app.use("/api", internalRouter({ db, jobSecret, feesStartDate, storage, clock }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

@@ -10,7 +10,8 @@ import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // POST /api/internal/run-jobs (design doc, sections 5, 8 and 10): called every hour by
-// GitHub Actions with a secret header; on day 8 it runs only the expire-photos job. Each
+// GitHub Actions with a secret header; it runs the expire-photos job (day 8) and the
+// fee-rows job (day 9, only when FEES_START_DATE is set). Each
 // test builds its own app (the rate limit lives in the app) on rollbackDb, with a clock
 // fixed in 1999, so the job sees this test's photos only and everything is rolled back.
 const db = testPool();
@@ -61,7 +62,7 @@ describe("POST /api/internal/run-jobs", () => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 } });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 }, feeRows: null });
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(storage.objects.has(photo.path)).toBe(false);
       expect(await deletedAt(c, photo.id)).toEqual(NOW);
@@ -126,7 +127,7 @@ describe("POST /api/internal/run-jobs", () => {
     withApp({ storage: null }, async ({ app }) => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 } });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: null });
     }));
 
   it("takes at most 10 calls per 15 minutes from all callers together, right secret or not", () =>
@@ -156,3 +157,52 @@ describe("POST /api/internal/run-jobs", () => {
       }
     }));
 });
+
+// The fee-rows job inside run-jobs (day 9). Its rules are in tests/feeRows.test.ts; here:
+// it runs only with a start date, from India's today, and the answer says what it did.
+// Students who joined in 1999 have due dates near the clock; nobody else does.
+describe("POST /api/internal/run-jobs: fee rows", () => {
+  async function joinedOn(c: PoolClient, date: string): Promise<number> {
+    const id = await insertStudent(c);
+    await c.query(`UPDATE users SET joining_date = $2, monthly_fee = 5000 WHERE id = $1`, [id, date]);
+    return id;
+  }
+  const feeDates = async (c: PoolClient, id: number) =>
+    (await c.query<{ d: string }>(`SELECT due_date AS d FROM fees WHERE student_id = $1 ORDER BY due_date`, [id])).rows.map(
+      (r) => r.d,
+    );
+
+  it("creates the fee rows due within 7 days when FEES_START_DATE is set, and says how many", () =>
+    withApp({ feesStartDate: "1999-01-01" }, async ({ c, app }) => {
+      const s = await joinedOn(c, "1999-01-15"); // due 15 February, within 7 days of 10 February
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: { created: 1 } });
+      expect(await feeDates(c, s)).toEqual(["1999-02-15"]);
+    }));
+
+  it("creates nothing and answers feeRows null without FEES_START_DATE", () =>
+    withApp({}, async ({ c, app }) => {
+      const s = await joinedOn(c, "1999-01-15");
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.body.feeRows).toBeNull();
+      expect(await feeDates(c, s)).toEqual([]);
+    }));
+
+  it("counts 7 days from India's today, not UTC's", () =>
+    // 20:00 UTC on 10 February is 01:30 on 11 February in India: the window ends on the 18th.
+    withApp({ feesStartDate: "1999-01-01", clock: () => new Date("1999-02-10T20:00:00Z") }, async ({ c, app }) => {
+      const s = await joinedOn(c, "1999-01-18");
+      await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(await feeDates(c, s)).toEqual(["1999-02-18"]);
+    }));
+
+  it("creates no row before the start date", () =>
+    withApp({ feesStartDate: "1999-02-16" }, async ({ c, app }) => {
+      const s = await joinedOn(c, "1999-01-15");
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.body.feeRows).toEqual({ created: 0 });
+      expect(await feeDates(c, s)).toEqual([]);
+    }));
+});
+
