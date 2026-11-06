@@ -17,6 +17,12 @@ const QUIET_USAGE: UsageCard = {
   failingDeletions: 0,
   photosConfigured: true,
 };
+// Day 9: nothing pending.
+const NO_FEES = {
+  dueSoon: { count: 0, amount: 0 },
+  overdue: { count: 0, amount: 0 },
+  pendingThisMonth: { count: 0, amount: 0 },
+};
 
 const full: Dashboard = {
   students: {
@@ -31,6 +37,17 @@ const full: Dashboard = {
   rejoinRequests: { pending: 2, oldestRequestedOn: "2026-11-03" },
   complaints: { active: 3, highPriority: 1, oldestActiveAt: hoursAgo(3 * 24 + 2) },
   usage: QUIET_USAGE,
+  returnPoll: {
+    id: 7,
+    title: "Back after Diwali?",
+    createdAt: hoursAgo(30),
+    counts: { returned: 41, notYet: 3, noResponse: 12 },
+  },
+  fees: {
+    dueSoon: { count: 5, amount: 32500 },
+    overdue: { count: 2, amount: 13000 },
+    pendingThisMonth: { count: 9, amount: 58500 },
+  },
 };
 
 function renderPage(answer: () => Response) {
@@ -89,13 +106,71 @@ describe("DashboardPage", () => {
     expect(within(complaints).getByRole("link", { name: "Open complaints" })).toHaveAttribute("href", "/complaints");
   });
 
-  it("puts the cards in the design's order: students, complaints, rejoin requests, then usage", async () => {
+  it("shows the open return poll's counts and links to its results", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const poll = await screen.findByRole("region", { name: "Return poll" });
+    expect(poll).toHaveTextContent("Back after Diwali?");
+    expect(poll).toHaveTextContent("41 returned · 3 not yet · 12 no response");
+    expect(within(poll).getByRole("link", { name: "See who is back" })).toHaveAttribute("href", "/return-polls/7");
+    expect(within(poll).queryByRole("link", { name: "Start a return poll" })).not.toBeInTheDocument();
+  });
+
+  it("offers to start a return poll while none is open", async () => {
+    renderPage(() => jsonResponse(200, { ...full, returnPoll: null }));
+    const poll = await screen.findByRole("region", { name: "Return poll" });
+    expect(poll).toHaveTextContent("No poll open.");
+    expect(within(poll).getByRole("link", { name: "Start a return poll" })).toHaveAttribute("href", "/return-polls");
+    expect(within(poll).queryByRole("link", { name: "See who is back" })).not.toBeInTheDocument();
+  });
+
+  it("shows fees due soon, overdue and pending this month, and links to Fees", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const fees = await screen.findByRole("region", { name: "Fees" });
+    expect(within(fees).getAllByRole("term").map((t) => t.textContent)).toEqual([
+      "Due in the next 7 days",
+      "Overdue",
+      "Pending this month",
+    ]);
+    expect(within(fees).getAllByRole("definition").map((d) => d.textContent)).toEqual([
+      "5 fees · ₹32,500",
+      "2 fees · ₹13,000",
+      "9 fees · ₹58,500",
+    ]);
+    expect(within(fees).getByRole("link", { name: "Open fees" })).toHaveAttribute("href", "/fees");
+  });
+
+  it("says when no fees are pending", async () => {
+    renderPage(() => jsonResponse(200, { ...full, fees: NO_FEES }));
+    const fees = await screen.findByRole("region", { name: "Fees" });
+    expect(fees).toHaveTextContent("No fees pending.");
+    expect(within(fees).queryByRole("term")).not.toBeInTheDocument();
+    expect(within(fees).getByRole("link", { name: "Open fees" })).toHaveAttribute("href", "/fees");
+  });
+
+  it("says one fee in the singular, and ₹0 for a fee with no amount set", async () => {
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        fees: { ...NO_FEES, overdue: { count: 1, amount: 0 }, pendingThisMonth: { count: 1, amount: 0 } },
+      }),
+    );
+    const fees = await screen.findByRole("region", { name: "Fees" });
+    expect(within(fees).getAllByRole("definition").map((d) => d.textContent)).toEqual([
+      "0 fees · ₹0",
+      "1 fee · ₹0",
+      "1 fee · ₹0",
+    ]);
+  });
+
+  it("puts the cards in the design's order: students, return poll, complaints, rejoin requests, fees, then usage", async () => {
     renderPage(() => jsonResponse(200, full));
     await screen.findByRole("region", { name: "Students" });
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-labelledby"))).toEqual([
       "card-students",
+      "card-return-poll",
       "card-complaints",
       "card-requests",
+      "card-fees",
       "card-usage",
     ]);
   });
@@ -107,6 +182,8 @@ describe("DashboardPage", () => {
         rejoinRequests: { pending: 0, oldestRequestedOn: null },
         complaints: NO_COMPLAINTS,
         usage: QUIET_USAGE,
+        returnPoll: null,
+        fees: NO_FEES,
       }),
     );
 
@@ -134,6 +211,8 @@ describe("DashboardPage", () => {
         rejoinRequests: { pending: 1, oldestRequestedOn: "2026-11-04" },
         complaints: { active: 1, highPriority: 0, oldestActiveAt: hoursAgo(5.5) },
         usage: QUIET_USAGE,
+        returnPoll: null,
+        fees: NO_FEES,
       }),
     );
 

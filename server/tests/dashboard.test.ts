@@ -211,3 +211,102 @@ describe("getDashboard: the complaints card", () => {
       expect(d.complaints.oldestActiveAt).toEqual(new Date("1990-03-01T04:30:00Z"));
     }));
 });
+
+describe("getDashboard: the return poll card (day 9)", () => {
+  // No test file commits an open poll, so inside this snapshot only the test's own poll
+  // can be open.
+  const openPoll = async (c: PoolClient, title = "Back after Diwali?") => {
+    const owner = await insertOwner(c);
+    return one(c, "INSERT INTO return_polls (title, created_by) VALUES ($1, $2) RETURNING id", [title, owner]);
+  };
+
+  it("is null while no poll is open, closed polls included", () =>
+    inSnapshot(async (c) => {
+      const owner = await insertOwner(c);
+      await c.query(
+        `INSERT INTO return_polls (title, status, created_by, closed_at) VALUES ('Old poll', 'closed', $1, now())`,
+        [owner],
+      );
+      expect((await getDashboard(c, TODAY)).returnPoll).toBeNull();
+    }));
+
+  it("gives the open poll and its counts, by the same rule as its results", () =>
+    inSnapshot(async (c) => {
+      const id = await openPoll(c);
+      const back = await insertStudent(c);
+      const notYet = await insertStudent(c);
+      const gone = await insertStudent(c, { isActive: false });
+      for (const [student, response] of [
+        [back, "returned"],
+        [notYet, "not_yet"],
+        [gone, "returned"], // moved out: not counted
+      ] as const) {
+        await c.query(`INSERT INTO return_poll_responses (poll_id, student_id, response) VALUES ($1, $2, $3)`, [
+          id,
+          student,
+          response,
+        ]);
+      }
+      const { rows: active } = await c.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM users WHERE role = 'student' AND is_active`,
+      );
+
+      const card = (await getDashboard(c, TODAY)).returnPoll;
+
+      expect(card).toEqual({
+        id,
+        title: "Back after Diwali?",
+        createdAt: expect.any(Date),
+        counts: { returned: 1, notYet: 1, noResponse: active[0].n - 2 },
+      });
+    }));
+});
+
+describe("getDashboard: the fees card (day 9)", () => {
+  // Fee rows from other files are dated 1996-1999; these use November 2026 around TODAY
+  // (5 November), and the card is compared before and after within the snapshot.
+  const fee = async (c: PoolClient, student: number, due: string, amount: number | null, paidOn?: string) => {
+    const recorder = paidOn ? await insertOwner(c) : null;
+    await c.query(
+      `INSERT INTO fees (student_id, due_date, amount, status, paid_on, recorded_by) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [student, due, amount, paidOn ? "paid" : "pending", paidOn ?? null, recorder],
+    );
+  };
+  const diff = (a: { count: number; amount: number }, b: { count: number; amount: number }) => ({
+    count: a.count - b.count,
+    amount: a.amount - b.amount,
+  });
+
+  it("counts pending fees due from today to 7 days ahead, overdue ones, and this month's pending", () =>
+    inSnapshot(async (c) => {
+      const before = (await getDashboard(c, TODAY)).fees;
+      const a = await insertStudent(c);
+      const b = await insertStudent(c, { isActive: false }); // moved out: still owes
+      await fee(c, a, "2026-10-20", 6000); // overdue, last month
+      await fee(c, b, "2026-11-04", 5000); // overdue, this month
+      await fee(c, a, "2026-11-05", 100); // due today: soon, this month
+      await fee(c, b, "2026-11-12", 200); // 7 days ahead: soon, this month
+      await fee(c, a, "2026-11-13", 400); // 8 days ahead: this month only
+      await fee(c, b, "2026-12-01", 800); // next month: nothing
+      await fee(c, a, "2026-11-06", null); // soon and this month, adds no amount
+      await fee(c, b, "2026-11-01", 9999, "2026-11-02"); // paid: nothing
+
+      const after = (await getDashboard(c, TODAY)).fees;
+
+      expect(diff(after.dueSoon, before.dueSoon)).toEqual({ count: 3, amount: 300 });
+      expect(diff(after.overdue, before.overdue)).toEqual({ count: 2, amount: 11000 });
+      expect(diff(after.pendingThisMonth, before.pendingThisMonth)).toEqual({ count: 5, amount: 5700 });
+    }));
+
+  it("reads 'this month' from India's today", () =>
+    inSnapshot(async (c) => {
+      const before = (await getDashboard(c, "2026-12-01")).fees;
+      const a = await insertStudent(c);
+      await fee(c, a, "2026-11-30", 100); // overdue on 1 December, not this month
+      await fee(c, a, "2026-12-31", 200); // this month, not soon
+      const after = (await getDashboard(c, "2026-12-01")).fees;
+      expect(diff(after.pendingThisMonth, before.pendingThisMonth)).toEqual({ count: 1, amount: 200 });
+      expect(diff(after.overdue, before.overdue)).toEqual({ count: 1, amount: 100 });
+      expect(diff(after.dueSoon, before.dueSoon)).toEqual({ count: 0, amount: 0 });
+    }));
+});

@@ -72,6 +72,13 @@ function renderAt(path: string) {
           failingDeletions: 0,
           photosConfigured: false,
         },
+        // Day 9: the return poll and fees cards.
+        returnPoll: null,
+        fees: {
+          dueSoon: { count: 0, amount: 0 },
+          overdue: { count: 0, amount: 0 },
+          pendingThisMonth: { count: 0, amount: 0 },
+        },
       });
     }
     return jsonResponse(404, { error: { code: "not_found", message: "No such endpoint" } });
