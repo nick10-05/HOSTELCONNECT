@@ -1,7 +1,9 @@
 import type { Queryable } from "../db";
+import { POLL_NOT_FOUND } from "./returnPolls";
 
 // Food counts for the cook (design doc, sections 2 and 9; day 8, written by Claude at
-// Nikhil's request). tests/foodCounts.test.ts describes getFoodCounts.
+// Nikhil's request; the return-poll filter on day 9). tests/foodCounts.test.ts describes
+// getFoodCounts.
 
 export type FoodCount = { veg: number; nonVeg: number; total: number };
 export type BuildingFoodCount = FoodCount & { buildingId: number; buildingName: string };
@@ -9,6 +11,7 @@ export type BuildingFoodCount = FoodCount & { buildingId: number; buildingName: 
 export type FoodCounts = {
   date: string; // 'YYYY-MM-DD', as asked
   weekday: number; // ISO: 1 = Monday ... 7 = Sunday, as veg_days numbers them
+  pollId: number | null; // the return poll counted by, as asked; null for everyone
   overall: FoodCount;
   buildings: BuildingFoodCount[];
 };
@@ -28,10 +31,23 @@ export type FoodCounts = {
 // veg_days include the date's weekday. Non-veg side: the other non-veg students.
 // total = veg + nonVeg.
 //
+// With a return poll (`pollId`, day 9; section 9: "only students who confirmed return in
+// this poll", so the cook does not over-cook after a holiday): of the students above, only
+// those whose answer to that poll is 'returned'. 'not_yet', no answer, or an answer to
+// another poll does not count. The poll may be open or closed. The stay rule and the veg
+// days apply as without a poll, and is_active is still not looked at.
+//   404 poll_not_found  "That poll does not exist."
+//
 // buildings: every building, empty ones included with zeros, ordered by name ignoring
 // case (lower(name)), then id, as on the dashboard. overall is the sum over buildings.
 // Read-only, outside a transaction; no names or phone numbers, counts only.
-export async function getFoodCounts(db: Queryable, date: string): Promise<FoodCounts> {
+export async function getFoodCounts(db: Queryable, date: string, pollId: number | null = null): Promise<FoodCounts> {
+  if (pollId !== null) {
+    const { rowCount } = await db.query(`SELECT 1 FROM return_polls WHERE id = $1`, [pollId]);
+    if (!rowCount) throw POLL_NOT_FOUND();
+  }
+
+
   // The calendar date's weekday, whatever the server's time zone: getUTCDay of midnight
   // UTC is 0 = Sunday ... 6 = Saturday; ISO Sunday is 7.
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
@@ -48,14 +64,19 @@ export async function getFoodCounts(db: Queryable, date: string): Promise<FoodCo
                       AND s.started_on <= $1::date
                       AND (s.ended_on IS NULL OR s.ended_on > $1::date)
      LEFT JOIN users u ON u.id = s.student_id AND u.role = 'student'
+                      -- With a poll, only students who said they are back. In the join, not
+                      -- in WHERE, so a building where nobody returned still has its row.
+                      AND ($3::bigint IS NULL OR EXISTS (
+                            SELECT 1 FROM return_poll_responses a
+                            WHERE a.poll_id = $3 AND a.student_id = u.id AND a.response = 'returned'))
      GROUP BY b.id
      ORDER BY lower(b.name), b.id`,
-    [date, weekday],
+    [date, weekday, pollId],
   );
 
   const overall = rows.reduce(
     (sum, b) => ({ veg: sum.veg + b.veg, nonVeg: sum.nonVeg + b.nonVeg, total: sum.total + b.total }),
     { veg: 0, nonVeg: 0, total: 0 },
   );
-  return { date, weekday, overall, buildings: rows };
+  return { date, weekday, pollId, overall, buildings: rows };
 }

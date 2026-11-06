@@ -88,3 +88,55 @@ describe("GET /api/food-counts", () => {
     }
   });
 });
+
+// The return-poll filter (day 9). Committed rows: the poll is closed, so it never blocks
+// another file's open poll.
+describe("GET /api/food-counts?pollId=", () => {
+  it("counts only students who answered 'returned' to that poll", async () => {
+    const id = await building();
+    const owner = await insertOwner(db);
+    const { rows } = await db.query<{ id: number }>(
+      `INSERT INTO return_polls (title, created_by, status, closed_at) VALUES ('Back?', $1, 'closed', now()) RETURNING id`,
+      [owner],
+    );
+    const poll = rows[0].id;
+    const { rows: students } = await db.query<{ id: number }>(
+      `SELECT student_id AS id FROM stays WHERE building_id = $1 ORDER BY student_id`,
+      [id],
+    );
+    // Only the veg student (the first) says they are back.
+    await db.query(`INSERT INTO return_poll_responses (poll_id, student_id, response) VALUES ($1, $2, 'returned')`, [
+      poll,
+      students[0].id,
+    ]);
+
+    const res = await request(app())
+      .get(`/api/food-counts?date=2032-06-14&pollId=${poll}`)
+      .set("Cookie", cookieFor(owner, "owner"));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ date: "2032-06-14", pollId: poll });
+    expect(res.body.buildings.find((b: { buildingId: number }) => b.buildingId === id)).toMatchObject({
+      veg: 1,
+      nonVeg: 0,
+      total: 1,
+    });
+    expect(res.body.overall).toEqual({ veg: 1, nonVeg: 0, total: 1 });
+  });
+
+  it("answers pollId null without a poll", async () => {
+    const res = await request(app()).get("/api/food-counts").set("Cookie", cookieFor(await insertOwner(db), "owner"));
+    expect(res.body.pollId).toBeNull();
+  });
+
+  it("refuses a poll id that is not a positive whole number, and an unknown poll", async () => {
+    const owner = cookieFor(await insertOwner(db), "owner");
+    for (const pollId of ["abc", "0", "-1", "1.5", ""]) {
+      const res = await request(app()).get("/api/food-counts").query({ pollId }).set("Cookie", owner);
+      expect(res.status, pollId).toBe(400);
+      expect(res.body.error.code, pollId).toBe("invalid_input");
+    }
+    const missing = await request(app()).get("/api/food-counts?pollId=999999999").set("Cookie", owner);
+    expect(missing.status).toBe(404);
+    expect(missing.body).toEqual({ error: { code: "poll_not_found", message: "That poll does not exist." } });
+  });
+});

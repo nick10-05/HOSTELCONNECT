@@ -15,6 +15,7 @@ import { foodRouter } from "./routes/food";
 import { internalRouter } from "./routes/internal";
 import { notificationsRouter } from "./routes/notifications";
 import { rejoinRouter } from "./routes/rejoin";
+import { returnPollsRouter } from "./routes/returnPolls";
 import { structureRouter } from "./routes/structure";
 import { studentsRouter } from "./routes/students";
 import type { ComplaintLimits } from "./services/complaints";
@@ -107,6 +108,7 @@ export function createApp({
     }),
   );
   app.use("/api", announcementsRouter({ db, jwtSecret }));
+  app.use("/api", returnPollsRouter({ db, jwtSecret }));
   app.use("/api", foodRouter({ db, jwtSecret, clock }));
   app.use("/api", internalRouter({ db, jobSecret, storage, clock }));
 
