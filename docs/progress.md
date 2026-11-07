@@ -728,9 +728,9 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 Done when: reminders appear once each and the daily digest works; `docs/RECOVERY.md` is
 written and a second restore drill passes on seeded data; the README has screenshots and an
 architecture diagram; you can demo and explain it in 2 minutes. So far: reminders, the digest
-and the recovery guide are met in tests on the local database; the drill was rehearsed with a
-throwaway key but not yet run with the real one; the README has its diagrams and four
-screenshots. Not deployed yet (see "Notes for later days").
+and the recovery guide are met in tests on the local database; both restore drills with the
+real key passed (seeded data and the newest production backup); the README has its diagrams
+and four screenshots. Not deployed yet (see "Notes for later days").
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -742,7 +742,8 @@ screenshots. Not deployed yet (see "Notes for later days").
 | `docs/RECOVERY.md` | Claude | Done | Every script, file and option it names exists. The seeded-data drill (section 9) rehearsed end to end with a throwaway key, since deleted: the local database (215 users, 217 stays, 104 beds, migration 012) dumped as the nightly backup does, encrypted, restored by `ops/restore-drill.sh`, "Drill passed" |
 | README: the problem, features, architecture (two Mermaid diagrams), stack, security, running it locally | Claude | Done | Facts checked against the code (16 tables, 60-second photo links, the `_test` database, the `/api` proxy); "installable as a PWA" removed, as there is no manifest yet; "password resets" removed from the owner's list, as students' passwords cannot be reset yet. The diagrams have not been seen rendered |
 | Screenshots for the README (`docs/screenshots/`: owner dashboard, owner complaints, student home, student fees) | Nikhil | Done | Taken from the local database only. A fake "Demo Student" was admitted locally; its joining date was corrected to 2025-01-14 in the local database (there is no edit screen), and its fee rows (14 Sep, 14 Oct, 14 Nov 2026, ₹6,500 each) came from a local `run-jobs` call with `FEES_START_DATE=2026-09-01`. A demo UPI ID (`hostelconnect.demo@upi`), an urgent notice and a return poll were set up locally. All four checked by Claude: fake names and the demo UPI ID only, no phone numbers or emails |
-| Second restore drill with the real key | Nikhil (needs the private key) | To do | |
+| Restore drill on seeded data, with the real key | Nikhil (needs the private key) | Passed (2026-11-07) | `docs/RECOVERY.md` section 9: the local database dumped as the nightly backup does, encrypted to the real key, restored by `ops/restore-drill.sh`, "Drill passed". Row counts not recorded |
+| Restore drill on the newest production backup, `hostelconnect-2026-11-07T0105Z.dump.age` | Nikhil | Passed (2026-11-07) | "Drill passed"; users 2, stays 2, 12 migrations, the last `012_polls_fees_settings.sql` (the newest file in `server/migrations/`); `restore_drill` dropped and the downloaded backup deleted. Expected 1 user; the second is unverified (see "Notes for later days") |
 | "Decisions and trade-offs" write-up, in his own words | Nikhil | To do | |
 
 New tests were checked to fail against planted bugs, then the code was restored. Not caught:
@@ -795,8 +796,18 @@ photo-expiry race test's photos committed; not proven.
   screen exists, so a wrong joining date or monthly fee can only be fixed in the database.
 - **Seen in the screenshots:** the student's fee list writes September as "Sept" (the
   browser's date format); the server's reminder text writes "Sep".
-- **Before the merge:** the real-key drill (`docs/RECOVERY.md`, section 9: on seeded data
-  and on the newest production backup) and the write-up. No migration, so no
+- **Unverified second production user:** the production backup of 2026-11-07 01:05 UTC has
+  2 users where the records expect only the owner (made on day 3; "no students yet" up to
+  day 8). No script can have made it: `seed:owner` refuses a second owner, and
+  `import-students` and `seed:students` refuse any database not on this machine. Only an
+  admission, a transfer or a reactivation in the app inserts stays, always for a student, and
+  the backup has 2, so it is most likely a student admitted in the app (then transferred or
+  moved out and reactivated) between the day 9 deploy and the backup. Not checked: the
+  backup was deleted after the drill, and production was not queried. To settle it later,
+  without touching production: the owner's Students page, or the next drill with `--keep`
+  and a query of role, `is_active` and `created_at` only. If it is a test student, move it
+  out in the app (no deletes); if a real one, nothing to do.
+- **Before the merge:** the write-up. No migration, so no
   backup-then-migrate step; no new Render or GitHub settings.
 - **After the merge:** a "Run jobs" run answers 200 with `feeReminders`, `digest` and
   `pruned`; the owner gets a digest the next morning if anything is pending.
