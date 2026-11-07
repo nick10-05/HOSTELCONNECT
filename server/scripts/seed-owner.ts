@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { createPool } from "../src/db";
+import { createPool, withHostel } from "../src/db";
 import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { loadDotEnv } from "../src/loadEnv";
 import { hashPassword } from "../src/lib/password";
@@ -38,19 +38,23 @@ async function main() {
   const db = createPool(url);
 
   try {
-    const existing = await db.query("SELECT 1 FROM users WHERE role = 'owner' LIMIT 1");
-
-    if (existing.rowCount) {
-      throw new Error("An owner account already exists. Nothing was changed.");
-    }
-
     const password = generateTemporaryPassword();
+    const passwordHash = await hashPassword(password);
 
-    await db.query(
-      `INSERT INTO users (role, name, email, password_hash, must_change_password)
-       VALUES ('owner', $1, $2, $3, true)`,
-      [args.name, args.email, await hashPassword(password)],
-    );
+    // Hostel #1's owner: owners of new hostels sign up themselves (multi-tenant phase 4).
+    await withHostel(db, 1, async (tx) => {
+      const existing = await tx.query(
+        "SELECT 1 FROM users WHERE role = 'owner' AND hostel_id = current_hostel_id() LIMIT 1",
+      );
+      if (existing.rowCount) {
+        throw new Error("An owner account already exists. Nothing was changed.");
+      }
+      await tx.query(
+        `INSERT INTO users (role, name, email, password_hash, must_change_password)
+         VALUES ('owner', $1, $2, $3, true)`,
+        [args.name, args.email, passwordHash],
+      );
+    });
 
     // The one time this password is ever shown. It is not stored anywhere in plain text.
     console.log(`Owner account created for ${args.email}.`);

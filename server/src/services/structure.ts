@@ -60,7 +60,7 @@ async function exists(db: Queryable, sql: string, params: unknown[]): Promise<bo
 }
 
 async function requireBuilding(db: Queryable, buildingId: number): Promise<void> {
-  if (!(await exists(db, "SELECT 1 FROM buildings WHERE id = $1", [buildingId]))) {
+  if (!(await exists(db, "SELECT 1 FROM buildings WHERE id = $1 AND hostel_id = current_hostel_id()", [buildingId]))) {
     throw new HttpError(404, "building_not_found", "That building no longer exists.");
   }
 }
@@ -99,7 +99,7 @@ export async function addRoom(
   // as a foreign-key error that does not say which rule failed.
   if (
     input.floorId !== null &&
-    !(await exists(db, "SELECT 1 FROM floors WHERE id = $1 AND building_id = $2", [
+    !(await exists(db, "SELECT 1 FROM floors WHERE id = $1 AND building_id = $2 AND hostel_id = current_hostel_id()", [
       input.floorId,
       buildingId,
     ]))
@@ -119,7 +119,7 @@ export async function addRoom(
 }
 
 export async function addBed(db: Queryable, roomId: number, bedNumber: string): Promise<Bed> {
-  if (!(await exists(db, "SELECT 1 FROM rooms WHERE id = $1", [roomId]))) {
+  if (!(await exists(db, "SELECT 1 FROM rooms WHERE id = $1 AND hostel_id = current_hostel_id()", [roomId]))) {
     throw new HttpError(404, "room_not_found", "That room no longer exists.");
   }
   const trimmed = bedNumber.trim();
@@ -140,14 +140,14 @@ export async function retireBed(db: Queryable, bedId: number): Promise<Bed> {
   // bed between them: the row is only updated while no current stay uses it.
   const { rows } = await db.query<Bed>(
     `UPDATE beds SET is_active = false
-     WHERE id = $1
+     WHERE id = $1 AND hostel_id = current_hostel_id()
        AND NOT EXISTS (SELECT 1 FROM stays WHERE bed_id = $1 AND ended_on IS NULL)
      RETURNING ${BED}`,
     [bedId],
   );
   if (rows[0]) return rows[0];
   // Nothing updated: either the bed does not exist or someone sleeps in it.
-  if (!(await exists(db, "SELECT 1 FROM beds WHERE id = $1", [bedId]))) throw bedNotFound();
+  if (!(await exists(db, "SELECT 1 FROM beds WHERE id = $1 AND hostel_id = current_hostel_id()", [bedId]))) throw bedNotFound();
   throw new HttpError(
     409,
     "bed_occupied",
@@ -157,7 +157,7 @@ export async function retireBed(db: Queryable, bedId: number): Promise<Bed> {
 
 export async function reactivateBed(db: Queryable, bedId: number): Promise<Bed> {
   const { rows } = await db.query<Bed>(
-    `UPDATE beds SET is_active = true WHERE id = $1 RETURNING ${BED}`,
+    `UPDATE beds SET is_active = true WHERE id = $1 AND hostel_id = current_hostel_id() RETURNING ${BED}`,
     [bedId],
   );
   if (!rows[0]) throw bedNotFound();
@@ -174,11 +174,11 @@ export async function deleteBuilding(db: Queryable, buildingId: number): Promise
   if (await exists(db, "SELECT 1 FROM stays WHERE building_id = $1", [buildingId])) throw inUse;
   // Floors, rooms and beds go with it (ON DELETE CASCADE). The foreign keys from
   // stays still refuse if a stay was added since the check above.
-  await writeOr(db, "DELETE FROM buildings WHERE id = $1", [buildingId], FOREIGN_KEY_VIOLATION, inUse);
+  await writeOr(db, "DELETE FROM buildings WHERE id = $1 AND hostel_id = current_hostel_id()", [buildingId], FOREIGN_KEY_VIOLATION, inUse);
 }
 
 export async function deleteFloor(db: Queryable, floorId: number): Promise<void> {
-  if (!(await exists(db, "SELECT 1 FROM floors WHERE id = $1", [floorId]))) {
+  if (!(await exists(db, "SELECT 1 FROM floors WHERE id = $1 AND hostel_id = current_hostel_id()", [floorId]))) {
     throw new HttpError(404, "floor_not_found", "That floor no longer exists.");
   }
   const hasRooms = new HttpError(
@@ -187,11 +187,11 @@ export async function deleteFloor(db: Queryable, floorId: number): Promise<void>
     "This floor still has rooms. Delete or move them first.",
   );
   if (await exists(db, "SELECT 1 FROM rooms WHERE floor_id = $1", [floorId])) throw hasRooms;
-  await writeOr(db, "DELETE FROM floors WHERE id = $1", [floorId], FOREIGN_KEY_VIOLATION, hasRooms);
+  await writeOr(db, "DELETE FROM floors WHERE id = $1 AND hostel_id = current_hostel_id()", [floorId], FOREIGN_KEY_VIOLATION, hasRooms);
 }
 
 export async function deleteRoom(db: Queryable, roomId: number): Promise<void> {
-  if (!(await exists(db, "SELECT 1 FROM rooms WHERE id = $1", [roomId]))) {
+  if (!(await exists(db, "SELECT 1 FROM rooms WHERE id = $1 AND hostel_id = current_hostel_id()", [roomId]))) {
     throw new HttpError(404, "room_not_found", "That room no longer exists.");
   }
   const inUse = new HttpError(
@@ -201,7 +201,7 @@ export async function deleteRoom(db: Queryable, roomId: number): Promise<void> {
   );
   if (await exists(db, "SELECT 1 FROM stays WHERE room_id = $1", [roomId])) throw inUse;
   // Its beds go with it (ON DELETE CASCADE).
-  await writeOr(db, "DELETE FROM rooms WHERE id = $1", [roomId], FOREIGN_KEY_VIOLATION, inUse);
+  await writeOr(db, "DELETE FROM rooms WHERE id = $1 AND hostel_id = current_hostel_id()", [roomId], FOREIGN_KEY_VIOLATION, inUse);
 }
 
 // Room and bed numbers are text ("101", "G1", "A"). Ordering by length first puts
@@ -213,17 +213,17 @@ export async function listStructure(db: Queryable): Promise<StructureBuilding[]>
   // to read than one query building nested JSON. One after another, not Promise.all:
   // db may be a single connection inside a transaction, which runs one query at a time.
   const buildings = await db.query<Building>(
-    `SELECT ${BUILDING} FROM buildings ORDER BY lower(name)`,
+    `SELECT ${BUILDING} FROM buildings WHERE hostel_id = current_hostel_id() ORDER BY lower(name)`,
   );
-  const floors = await db.query<Floor>(`SELECT ${FLOOR} FROM floors ORDER BY number`);
+  const floors = await db.query<Floor>(`SELECT ${FLOOR} FROM floors WHERE hostel_id = current_hostel_id() ORDER BY number`);
   const rooms = await db.query<Room>(
-    `SELECT ${ROOM} FROM rooms ORDER BY ${NATURAL("room_number")}`,
+    `SELECT ${ROOM} FROM rooms WHERE hostel_id = current_hostel_id() ORDER BY ${NATURAL("room_number")}`,
   );
   const beds = await db.query<StructureBed>(
     `SELECT ${BED},
             EXISTS (SELECT 1 FROM stays s WHERE s.bed_id = beds.id AND s.ended_on IS NULL)
               AS occupied
-     FROM beds ORDER BY ${NATURAL("bed_number")}`,
+     FROM beds WHERE hostel_id = current_hostel_id() ORDER BY ${NATURAL("bed_number")}`,
   );
 
   // Group children under their parent id, keeping the order the queries gave.

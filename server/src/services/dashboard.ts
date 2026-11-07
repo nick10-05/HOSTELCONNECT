@@ -44,6 +44,7 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
      FROM buildings b
      LEFT JOIN stays s ON s.building_id = b.id AND s.ended_on IS NULL
      LEFT JOIN users u ON u.id = s.student_id AND u.is_active
+     WHERE b.hostel_id = current_hostel_id()
      GROUP BY b.id
      ORDER BY lower(b.name), b.id`,
     [today],
@@ -57,7 +58,7 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
      FROM beds bd
      JOIN rooms r ON r.id = bd.room_id
      LEFT JOIN stays s ON s.bed_id = bd.id AND s.ended_on IS NULL
-     WHERE bd.is_active
+     WHERE bd.is_active AND bd.hostel_id = current_hostel_id()
      GROUP BY r.building_id`,
   );
   const bedsOf = new Map(beds.map((b) => [b.buildingId, b]));
@@ -65,21 +66,21 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
   const { rows: requests } = await db.query<{ pending: number; oldestRequestedOn: string | null }>(
     `SELECT count(*)::int AS pending,
             to_char(min(created_at) AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "oldestRequestedOn"
-     FROM rejoin_requests WHERE status = 'pending'`,
+     FROM rejoin_requests WHERE status = 'pending' AND hostel_id = current_hostel_id()`,
   );
 
   const { rows: complaints } = await db.query<Dashboard["complaints"]>(
     `SELECT count(*)::int AS active,
             count(*) FILTER (WHERE priority = 'high')::int AS "highPriority",
             min(created_at) AS "oldestActiveAt"
-     FROM complaints WHERE status IN ('open', 'in_progress')`,
+     FROM complaints WHERE status IN ('open', 'in_progress') AND hostel_id = current_hostel_id()`,
   );
 
   // At most one poll is open (return_polls_one_open); the newest, should that rule change.
   // Its counts come from getPollCounts, the same rule as its results page.
   const { rows: polls } = await db.query<{ id: number; title: string; createdAt: Date }>(
     `SELECT id, title, created_at AS "createdAt" FROM return_polls
-     WHERE status = 'open' ORDER BY created_at DESC, id DESC LIMIT 1`,
+     WHERE status = 'open' AND hostel_id = current_hostel_id() ORDER BY created_at DESC, id DESC LIMIT 1`,
   );
   const poll = polls[0] ?? null;
 
@@ -106,7 +107,7 @@ export async function getDashboard(db: Queryable, today: string): Promise<Dashbo
               due_date BETWEEN $1::date AND $1::date + $2::int AS soon,
               due_date < $1::date AS overdue,
               date_trunc('month', due_date) = date_trunc('month', $1::date) AS this_month
-       FROM fees WHERE status = 'pending'
+       FROM fees WHERE status = 'pending' AND hostel_id = current_hostel_id()
      ) f`,
     [today, FEE_ROW_DAYS_AHEAD],
   );

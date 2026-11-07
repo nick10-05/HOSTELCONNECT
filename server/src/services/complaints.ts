@@ -121,7 +121,7 @@ export async function createComplaint(
     // The student first, as on every path that changes a student. A second complaint
     // from the same student waits here until this one commits, then counts it.
     const student = await c.query<{ role: string; isActive: boolean }>(
-      `SELECT role, is_active AS "isActive" FROM users WHERE id = $1 FOR UPDATE`,
+      `SELECT role, is_active AS "isActive" FROM users WHERE id = $1 AND hostel_id = current_hostel_id() FOR UPDATE`,
       [studentId],
     );
     if (student.rowCount === 0 || student.rows[0].role !== "student") {
@@ -139,7 +139,7 @@ export async function createComplaint(
               coalesce(bool_or(status IN ('open', 'in_progress') AND category = $2), false)
                 AS "categoryActive"
        FROM complaints
-       WHERE student_id = $1`,
+       WHERE student_id = $1 AND hostel_id = current_hostel_id()`,
       [studentId, input.category],
     );
     const counts = rows[0];
@@ -287,7 +287,7 @@ export async function getRaiseStatus(
             coalesce(array_agg(DISTINCT category) FILTER (WHERE status IN ('open', 'in_progress')), '{}')
               AS "activeCategories"
      FROM complaints
-     WHERE student_id = $1`,
+     WHERE student_id = $1 AND hostel_id = current_hostel_id()`,
     [studentId],
   );
   const { active, recent } = rows[0];
@@ -345,14 +345,14 @@ export async function listMyComplaints(
   page: { page: number; limit: number },
 ): Promise<{ items: MyComplaintItem[]; total: number }> {
   const { rows: counted } = await db.query<{ total: number }>(
-    `SELECT count(*)::int AS total FROM complaints WHERE student_id = $1`,
+    `SELECT count(*)::int AS total FROM complaints WHERE student_id = $1 AND hostel_id = current_hostel_id()`,
     [studentId],
   );
 
   const { rows } = await db.query<MyComplaintItem>(
     `SELECT ${MY_COMPLAINT_COLUMNS}
      FROM complaints
-     WHERE student_id = $1
+     WHERE student_id = $1 AND hostel_id = current_hostel_id()
      ORDER BY created_at DESC, id DESC
      LIMIT $2 OFFSET $3`,
     [studentId, page.limit, (page.page - 1) * page.limit],
@@ -376,7 +376,7 @@ export async function getMyComplaint(
   const { rows } = await db.query<MyComplaintItem>(
     `SELECT ${MY_COMPLAINT_COLUMNS}
      FROM complaints
-     WHERE id = $1 AND student_id = $2`,
+     WHERE id = $1 AND student_id = $2 AND hostel_id = current_hostel_id()`,
     [complaintId, studentId],
   );
   if (rows.length === 0) {
@@ -390,7 +390,7 @@ export async function getMyComplaint(
             to_status AS "toStatus",
             created_at AS "createdAt"
      FROM complaint_events
-     WHERE complaint_id = $1
+     WHERE complaint_id = $1 AND hostel_id = current_hostel_id()
      ORDER BY created_at, id`,
     [complaintId],
   );
@@ -563,7 +563,8 @@ export async function listOwnerComplaints(
      LEFT JOIN stays s ON s.student_id = c.student_id AND s.ended_on IS NULL
      LEFT JOIN buildings b ON b.id = s.building_id
      LEFT JOIN rooms r ON r.id = s.room_id
-     WHERE ($1::text IS NULL OR c.status = $1)
+     WHERE c.hostel_id = current_hostel_id()
+       AND ($1::text IS NULL OR c.status = $1)
        AND ($2::text IS NULL OR c.priority = $2)
        AND ($3::text IS NULL OR c.category = $3)
        AND ($4::bigint IS NULL OR s.building_id = $4)
@@ -670,7 +671,7 @@ export async function getOwnerComplaint(db: Queryable, complaintId: number): Pro
      LEFT JOIN stays s ON s.student_id = c.student_id AND s.ended_on IS NULL
      LEFT JOIN buildings b ON b.id = s.building_id
      LEFT JOIN rooms r ON r.id = s.room_id
-     WHERE c.id = $1`,
+     WHERE c.id = $1 AND c.hostel_id = current_hostel_id()`,
     [complaintId],
   );
   if (rows.length === 0) {
@@ -684,7 +685,7 @@ export async function getOwnerComplaint(db: Queryable, complaintId: number): Pro
             to_status AS "toStatus",
             created_at AS "createdAt"
      FROM complaint_events
-     WHERE complaint_id = $1
+     WHERE complaint_id = $1 AND hostel_id = current_hostel_id()
      ORDER BY created_at, id`,
     [complaintId],
   );
@@ -785,7 +786,7 @@ export async function changeComplaintStatus(
     }>(
       `SELECT student_id AS "studentId", category
        FROM complaints
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [complaintId],
     );
 
@@ -798,7 +799,7 @@ export async function changeComplaintStatus(
 
     // Serialize status changes with new complaints for the same student.
     const { rows: studentRows } = await c.query<{ id: number }>(
-      `SELECT id FROM users WHERE id = $1 FOR UPDATE`,
+      `SELECT id FROM users WHERE id = $1 AND hostel_id = current_hostel_id() FOR UPDATE`,
       [complaint.studentId],
     );
 
@@ -811,7 +812,7 @@ export async function changeComplaintStatus(
        SET status = $1,
            updated_at = now(),
            resolved_at = CASE WHEN $1 = 'resolved' THEN now() ELSE NULL END
-       WHERE id = $2 AND status = $3`,
+       WHERE id = $2 AND status = $3 AND hostel_id = current_hostel_id()`,
       [input.to, complaintId, input.from],
     );
 
@@ -938,7 +939,7 @@ export async function addComplaintNote(
     }>(
       `SELECT student_id AS "studentId", category
        FROM complaints
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [complaintId],
     );
 
@@ -948,10 +949,10 @@ export async function addComplaintNote(
 
     const complaint = complaintRows[0];
 
-    await c.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [complaint.studentId]);
+    await c.query(`SELECT id FROM users WHERE id = $1 AND hostel_id = current_hostel_id() FOR UPDATE`, [complaint.studentId]);
 
     // Only updated_at: the status, priority and resolved_at stay as they are.
-    await c.query(`UPDATE complaints SET updated_at = now() WHERE id = $1`, [complaintId]);
+    await c.query(`UPDATE complaints SET updated_at = now() WHERE id = $1 AND hostel_id = current_hostel_id()`, [complaintId]);
 
     await c.query(
       `INSERT INTO complaint_events (complaint_id, actor_id, kind, note)
@@ -1005,7 +1006,7 @@ export async function setComplaintPriority(
   complaintId: number,
   priority: ComplaintPriority,
 ): Promise<OwnerComplaintDetail> {
-  const { rowCount } = await db.query(`UPDATE complaints SET priority = $2 WHERE id = $1`, [
+  const { rowCount } = await db.query(`UPDATE complaints SET priority = $2 WHERE id = $1 AND hostel_id = current_hostel_id()`, [
     complaintId,
     priority,
   ]);

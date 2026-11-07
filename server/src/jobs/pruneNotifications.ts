@@ -14,7 +14,7 @@ export type PruneResult = { deleted: number };
 // (jobs/feeReminders.ts). Returns how many were deleted.
 export async function pruneNotifications(db: Queryable, opts: { now: Date }): Promise<PruneResult> {
   const { rowCount } = await db.query(
-    `DELETE FROM notifications WHERE created_at < $1::timestamptz - make_interval(days => $2)`,
+    `DELETE FROM notifications WHERE hostel_id = current_hostel_id() AND created_at < $1::timestamptz - make_interval(days => $2)`,
     [opts.now, NOTIFICATION_DAYS_KEPT],
   );
   return { deleted: rowCount ?? 0 };

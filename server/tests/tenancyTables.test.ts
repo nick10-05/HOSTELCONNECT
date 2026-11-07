@@ -150,7 +150,7 @@ describe("hostel_id on every table that belongs to a hostel", () => {
       expect(rows.map((r) => r.table_name)).toEqual([...PER_HOSTEL, ...NOT_PER_HOSTEL].sort());
     }));
 
-  it("each per-hostel table has hostel_id bigint NOT NULL DEFAULT 1", () =>
+  it("each per-hostel table has hostel_id bigint NOT NULL DEFAULT current_hostel_id() (migration 016)", () =>
     inRollback(db, async (c) => {
       const { rows } = await c.query<{ table_name: string; data_type: string; is_nullable: string; column_default: string }>(
         `SELECT table_name, data_type, is_nullable, column_default FROM information_schema.columns
@@ -158,7 +158,7 @@ describe("hostel_id on every table that belongs to a hostel", () => {
       );
       expect(rows.map((r) => r.table_name)).toEqual(PER_HOSTEL);
       for (const row of rows) {
-        expect(row, row.table_name).toMatchObject({ data_type: "bigint", is_nullable: "NO", column_default: "1" });
+        expect(row, row.table_name).toMatchObject({ data_type: "bigint", is_nullable: "NO", column_default: "current_hostel_id()" });
       }
     }));
 

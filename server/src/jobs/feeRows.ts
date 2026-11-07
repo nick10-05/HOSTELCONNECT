@@ -48,7 +48,7 @@ export async function createDueFeeRows(
                + date_part('month', $1::date + $3::int) - date_part('month', u.joining_date))::int
             ) AS n
      ) d
-     WHERE u.role = 'student' AND u.is_active AND u.joining_date IS NOT NULL
+     WHERE u.role = 'student' AND u.is_active AND u.joining_date IS NOT NULL AND u.hostel_id = current_hostel_id()
        AND d.due >= $2::date
        AND d.due <= $1::date + $3::int
      ON CONFLICT (student_id, due_date) DO NOTHING`,

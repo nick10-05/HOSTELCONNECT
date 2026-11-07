@@ -6,10 +6,28 @@ import { createPool, type Db } from "../../src/db";
 // also prove what that role is and is not allowed to do. DATABASE_URL already points
 // at the throwaway test database here (tests/setup.ts).
 // A missing DATABASE_URL fails loudly instead of skipping, so CI cannot pass by accident.
+//
+// Multi-tenant (phase 2b): every connection of testPool() starts in hostel #1 for the
+// whole session (the startup option app.hostel_id=1), so the many tests that call a
+// service or insert a fixture straight on the pool keep working as hostel #1. The app's
+// own pool has no such default: there, anything outside withHostel fails. withHostel and
+// inRollback still mark their transactions, which wins over the session default. Tests
+// about running outside any hostel use bareTestPool().
 export function testPool(): Db {
+  const url = new URL(testDatabaseUrl());
+  url.searchParams.set("options", "-c app.hostel_id=1");
+  return createPool(url.toString());
+}
+
+// Like the app's pool: no hostel unless withHostel marks one.
+export function bareTestPool(): Db {
+  return createPool(testDatabaseUrl());
+}
+
+function testDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set; database tests need a migrated database");
-  return createPool(url);
+  return url;
 }
 
 // Runs fn inside a transaction that is always rolled back, for tests that only need
@@ -130,20 +148,20 @@ type UserOptions = {
   passwordHash?: string;
   mustChangePassword?: boolean;
   isActive?: boolean;
-  // Hostel #1 when not given.
+  // The transaction's hostel (current_hostel_id()) when not given.
   hostelId?: number;
 };
 
 export async function insertOwner(c: Queryable, opts: UserOptions = {}): Promise<number> {
   const { rows } = await c.query<{ id: number }>(
     `INSERT INTO users (role, name, email, password_hash, must_change_password, is_active, hostel_id)
-     VALUES ('owner', 'Test Owner', $1, $2, $3, $4, $5) RETURNING id`,
+     VALUES ('owner', 'Test Owner', $1, $2, $3, $4, coalesce($5::bigint, current_hostel_id())) RETURNING id`,
     [
       `owner-${randomUUID()}@test.local`,
       opts.passwordHash ?? "not-a-real-hash",
       opts.mustChangePassword ?? false,
       opts.isActive ?? true,
-      opts.hostelId ?? 1,
+      opts.hostelId ?? null,
     ],
   );
   return rows[0].id;
@@ -154,13 +172,13 @@ export async function insertStudent(c: Queryable, opts: UserOptions = {}): Promi
     `INSERT INTO users (role, name, email, password_hash, must_change_password, is_active,
                         phone, parent_phone, category, joining_date, food_preference, hostel_id)
      VALUES ('student', 'Test Student', $1, $2, $3, $4,
-             '9000000000', '9000000001', 'other', '2026-01-14', 'veg', $5) RETURNING id`,
+             '9000000000', '9000000001', 'other', '2026-01-14', 'veg', coalesce($5::bigint, current_hostel_id())) RETURNING id`,
     [
       `student-${randomUUID()}@test.local`,
       opts.passwordHash ?? "not-a-real-hash",
       opts.mustChangePassword ?? false,
       opts.isActive ?? true,
-      opts.hostelId ?? 1,
+      opts.hostelId ?? null,
     ],
   );
   return rows[0].id;

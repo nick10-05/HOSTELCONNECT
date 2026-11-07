@@ -114,7 +114,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
 
   router.get("/me", requireAuth(deps, { allowTemporaryPassword: true }), async (req, res) => {
     const { rows } = await inHostel(req, (tx) =>
-      tx.query<UserRow>("SELECT id, name, role, must_change_password FROM users WHERE id = $1", [req.user!.id]),
+      tx.query<UserRow>("SELECT id, name, role, must_change_password FROM users WHERE id = $1 AND hostel_id = current_hostel_id()", [req.user!.id]),
     );
     res.json({ user: publicUser(rows[0]) });
   });
@@ -134,7 +134,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
       const userId = req.user!.id;
       // Two short transactions, not one: no connection is held while bcrypt works.
       const current = await inHostel(req, (tx) =>
-        tx.query<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = $1", [userId]),
+        tx.query<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = $1 AND hostel_id = current_hostel_id()", [userId]),
       );
       if (!(await verifyPassword(body.currentPassword, current.rows[0].password_hash))) {
         // 400, not 401: the session is fine, only this form field is wrong.
@@ -146,7 +146,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
       const { rows } = await inHostel(req, (tx) =>
         tx.query<UserRow>(
           `UPDATE users SET password_hash = $1, must_change_password = false
-           WHERE id = $2
+           WHERE id = $2 AND hostel_id = current_hostel_id()
            RETURNING id, name, role, must_change_password`,
           [newHash, userId],
         ),

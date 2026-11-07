@@ -1101,3 +1101,37 @@ the bare pool.
 - Inside a test's rollback transaction, `withHostel` becomes a savepoint, and its hostel
   mark lasts until the test's transaction ends. Tests that run more than one hostel in one
   transaction (2c) must name the hostel again afterwards, or use separate transactions.
+
+## Multi-tenant SaaS, phase 2b-2: every query scoped to its hostel (2026-11-07)
+
+Every service and job query now filters on `hostel_id = current_hostel_id()`, and every
+new row takes the transaction's hostel. What the app does still does not change: every
+account is in hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Reads, updates and deletes | Claude, at Nikhil's request | Done | The table each query starts from carries `hostel_id = current_hostel_id()` (services, jobs, `/me` and change-password). Rows reached through a join follow it: the composite foreign keys of migration 013 keep a child in its parent's hostel. Two joins that had no such key now say so: the poll counts join students of the poll's hostel, and a student's last stay is looked up in their own hostel |
+| New rows, migration `016_hostel_id_default.sql` | Claude | Done | `hostel_id` defaults to `current_hostel_id()` on all 15 tables, instead of 1: an insert names the transaction's hostel without the code saying so, and an insert outside `withHostel` fails |
+| `seed-owner` script | Claude | Done | Creates hostel #1's owner inside `withHostel(db, 1, …)` |
+| Tests | Claude | Done | `hostelIsolation.test.ts` (2 tests): with hostel #1 and a second hostel each holding one of everything, hostel #1's 13 lists, counts and totals read the same before and after the second hostel's rows exist, and 29 lookups or changes by id of the second hostel's rows answer 404 and change nothing of its. `testPool()` connections start in hostel #1 for the session, so the existing tests that call services straight on the pool keep working; `bareTestPool()` has no hostel, like the app's pool. 3 new tests in `currentHostel.test.ts` |
+
+Checks: server 1129 tests (1125 before), typecheck clean, two full runs. Ten planted bugs
+(a filter removed each time): eight caught. The two not caught are the beds lists of the
+dashboard and of the structure page, where another hostel's beds would be dropped anyway
+when matched to this hostel's rooms; their filters stay.
+
+### Notes for later days
+
+- **Deployment order matters.** The code from 2b-1 on calls `current_hostel_id()`
+  (migration 015), and migration 016 makes inserts outside `withHostel` fail, which the
+  code before 2b-1 does. So: back up, apply 013 to 015, deploy this code, then apply 016.
+  Applying 016 while the old code still runs would refuse every insert until the deploy.
+- Still global, to be changed before other hostels can sign up (phase 2d or 4): the
+  unique indexes on users' email, buildings' name and the one open return poll (only the
+  per-hostel ones should stay); `hostel_settings`, still one row overall (`id = 1`); photo
+  storage and egress usage (`services/usage.ts`), deliberately counted for the whole
+  platform, because the limits are those of the one shared bucket; and the owner password
+  reset script, a tool of the platform's operator that finds an owner by email anywhere.
+- The untracked local demo seed (`npm run seed:demo`) now fails on its first insert: it
+  needs to run inside `withHostel(db, 1, …)`. Its test still passes, because test pool
+  connections start in hostel #1.

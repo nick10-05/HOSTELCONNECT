@@ -93,7 +93,7 @@ export async function sendFeeReminders(
     `SELECT f.id, f.student_id AS "studentId", f.due_date AS "dueDate", f.amount
      FROM fees f
      JOIN users u ON u.id = f.student_id
-     WHERE f.status = 'pending'
+     WHERE f.status = 'pending' AND f.hostel_id = current_hostel_id()
        AND (f.amount IS NULL OR f.amount > 0)
        AND u.is_active
        AND f.due_date BETWEEN $1::date - $2::int AND $1::date + $3::int

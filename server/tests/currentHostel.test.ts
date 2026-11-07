@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { withHostel } from "../src/db";
-import { inRollback, testPool } from "./helpers/db";
+import { bareTestPool, inRollback, testPool } from "./helpers/db";
 
 // Multi-tenant phase 2b (migration 015): current_hostel_id() is the hostel the current
 // transaction works in, as withHostel marked it. Every query about a hostel's data
@@ -20,9 +20,41 @@ describe("current_hostel_id()", () => {
   });
 
   it("fails outside withHostel, so a query can never run for no hostel or all of them", async () => {
-    await expect(db.query("SELECT current_hostel_id()")).rejects.toThrow(/no hostel/i);
-    await withHostel(db, 1, async () => undefined);
-    await expect(db.query("SELECT current_hostel_id()")).rejects.toThrow(/no hostel/i);
+    const bare = bareTestPool();
+    try {
+      await expect(bare.query("SELECT current_hostel_id()")).rejects.toThrow(/no hostel/i);
+      await withHostel(bare, 1, async () => undefined);
+      await expect(bare.query("SELECT current_hostel_id()")).rejects.toThrow(/no hostel/i);
+    } finally {
+      await bare.end();
+    }
+  });
+
+  // Migration 016: a new row belongs to the transaction's hostel, and outside withHostel
+  // there is no hostel to give it.
+  it("is the hostel of every new row, and an insert outside withHostel fails", async () => {
+    await inRollback(db, async (c) => {
+      const other = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Default Hostel') RETURNING id"))
+        .rows[0].id;
+      await c.query(`SET LOCAL app.hostel_id = '${other}'`);
+      const { rows } = await c.query<{ hostel: number }>(
+        "INSERT INTO buildings (name) VALUES ('Default Hostel Block') RETURNING hostel_id AS hostel",
+      );
+      expect(rows[0].hostel).toBe(other);
+    });
+    const bare = bareTestPool();
+    try {
+      await expect(bare.query("INSERT INTO buildings (name) VALUES ('Nowhere Block')")).rejects.toThrow(/no hostel/i);
+    } finally {
+      await bare.end();
+    }
+  });
+
+  it("is hostel #1 on testPool's connections outside withHostel, and withHostel's mark wins", async () => {
+    expect((await db.query("SELECT current_hostel_id() AS id")).rows[0].id).toBe(1);
+    const inside = await withHostel(db, 4, async (tx) => (await tx.query("SELECT current_hostel_id() AS id")).rows[0].id);
+    expect(inside).toBe(4);
+    expect((await db.query("SELECT current_hostel_id() AS id")).rows[0].id).toBe(1);
   });
 
   it("may be called by the app and by nobody else, and is stable within a statement", () =>

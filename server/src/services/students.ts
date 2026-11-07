@@ -206,7 +206,7 @@ async function checkPlace(
   place: { buildingId: number; roomId: number | null; bedId: number | null },
 ): Promise<void> {
   const building = await c.query(
-    "SELECT id FROM buildings WHERE id = $1",
+    "SELECT id FROM buildings WHERE id = $1 AND hostel_id = current_hostel_id()",
     [place.buildingId],
   );
 
@@ -217,7 +217,7 @@ async function checkPlace(
   // If a room was provided, verify that it belongs to this building.
   if (place.roomId !== null) {
     const room = await c.query(
-      "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
+      "SELECT id FROM rooms WHERE id = $1 AND building_id = $2 AND hostel_id = current_hostel_id()",
       [place.roomId, place.buildingId],
     );
 
@@ -229,7 +229,7 @@ async function checkPlace(
   // If a bed was provided, verify its room and active status.
   if (place.bedId !== null) {
     const bed = await c.query<{ id: number; is_active: boolean }>(
-      "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
+      "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2 AND hostel_id = current_hostel_id()",
       [place.bedId, place.roomId],
     );
 
@@ -313,7 +313,7 @@ export async function transferStudent(
     const student = await c.query<{ isActive: boolean }>(
       `SELECT is_active AS "isActive"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -344,7 +344,7 @@ export async function transferStudent(
               bed_id AS "bedId",
               to_char(started_on, 'YYYY-MM-DD') AS "startedOn"
        FROM stays
-       WHERE student_id = $1 AND ended_on IS NULL
+       WHERE student_id = $1 AND ended_on IS NULL AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -380,7 +380,7 @@ export async function transferStudent(
       await c.query(
         `UPDATE stays
          SET building_id = $1, room_id = $2, bed_id = $3
-         WHERE id = $4`,
+         WHERE id = $4 AND hostel_id = current_hostel_id()`,
         [to.buildingId, to.roomId, to.bedId, oldStay.id],
       );
 
@@ -401,7 +401,7 @@ export async function transferStudent(
     await c.query(
       `UPDATE stays
        SET ended_on = $1
-       WHERE id = $2`,
+       WHERE id = $2 AND hostel_id = current_hostel_id()`,
       [today, oldStay.id],
     );
 
@@ -501,7 +501,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     const student = await c.query<{ isActive: boolean }>(
       `SELECT is_active AS "isActive"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -518,7 +518,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     await c.query(
       `UPDATE users
        SET is_active = false, deactivated_at = now()
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [studentId],
     );
 
@@ -527,7 +527,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     await c.query(
       `UPDATE stays
        SET ended_on = GREATEST(started_on, $1::date)
-       WHERE student_id = $2 AND ended_on IS NULL`,
+       WHERE student_id = $2 AND ended_on IS NULL AND hostel_id = current_hostel_id()`,
       [today, studentId],
     );
 
@@ -602,7 +602,7 @@ export async function reactivateInTransaction(
   }>(
     `SELECT id, name, email, is_active AS "isActive"
      FROM users
-     WHERE id = $1 AND role = 'student'
+     WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
      FOR UPDATE`,
     [studentId],
   );
@@ -624,12 +624,12 @@ export async function reactivateInTransaction(
     `SELECT to_char(
               COALESCE(
                 (u.deactivated_at AT TIME ZONE 'Asia/Kolkata')::date,
-                (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id)
+                (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id AND hostel_id = u.hostel_id)
               ),
               'YYYY-MM-DD'
             ) AS "leftOn"
      FROM users u
-     WHERE u.id = $1`,
+     WHERE u.id = $1 AND u.hostel_id = current_hostel_id()`,
     [studentId],
   );
 
@@ -654,7 +654,7 @@ export async function reactivateInTransaction(
          joining_date = $1,
          password_hash = $2,
          must_change_password = true
-     WHERE id = $3`,
+     WHERE id = $3 AND hostel_id = current_hostel_id()`,
     [input.joiningDate, passwordHash, studentId],
   );
 
@@ -694,7 +694,7 @@ export async function reactivateInTransaction(
   await c.query(
     `UPDATE rejoin_requests
      SET status = 'approved', decided_at = now(), decided_by = $2
-     WHERE student_id = $1 AND status = 'pending'`,
+     WHERE student_id = $1 AND status = 'pending' AND hostel_id = current_hostel_id()`,
     [studentId, ownerId],
   );
 
@@ -798,7 +798,7 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
     const student = await c.query<{ isActive: boolean; monthlyFee: number | null }>(
       `SELECT is_active AS "isActive", monthly_fee AS "monthlyFee"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -822,7 +822,7 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
          SET name = $2, email = $3, phone = $4, parent_phone = $5, category = $6,
              college_name = $7, branch = $8, academic_year = $9, company = $10,
              designation = $11, food_preference = $12, veg_days = $13, monthly_fee = $14
-         WHERE id = $1`,
+         WHERE id = $1 AND hostel_id = current_hostel_id()`,
         [
           studentId,
           input.name,
@@ -899,6 +899,7 @@ export async function resetStudentPassword(
      SET password_hash = $1,
          must_change_password = true
      WHERE id = $2
+       AND hostel_id = current_hostel_id()
        AND role = 'student'
        AND is_active = true
      RETURNING id`,
@@ -912,7 +913,7 @@ export async function resetStudentPassword(
     }>(
       `SELECT role, is_active AS "isActive"
        FROM users
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [studentId],
     );
 
@@ -1047,7 +1048,7 @@ export async function listStudents(
     FROM users u
     LEFT JOIN stays s ON s.student_id = u.id AND s.ended_on IS NULL
     ${PLACE_JOINS}
-    WHERE u.role = 'student'
+    WHERE u.role = 'student' AND u.hostel_id = current_hostel_id()
       AND ($1::text IS NULL
            OR u.name ILIKE $1 OR u.email ILIKE $1 OR r.room_number ILIKE $1)
       AND ($2::bigint IS NULL OR s.building_id = $2)
@@ -1104,7 +1105,7 @@ export async function getStudent(db: Queryable, id: number, today: string): Prom
             -- The day the student left, as India's date, like every other date here.
             to_char(deactivated_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "deactivatedAt",
             must_change_password AS "mustChangePassword"
-     FROM users WHERE id = $1 AND role = 'student'`,
+     FROM users WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()`,
     [id],
   );
   if (rows.length === 0) {
@@ -1115,7 +1116,7 @@ export async function getStudent(db: Queryable, id: number, today: string): Prom
   const { rows: stayRows } = await db.query<PlaceRow & { id: number; startedOn: string; endedOn: string | null }>(
     `SELECT s.id, s.started_on AS "startedOn", s.ended_on AS "endedOn", ${PLACE_COLUMNS}
      FROM stays s ${PLACE_JOINS}
-     WHERE s.student_id = $1
+     WHERE s.student_id = $1 AND s.hostel_id = current_hostel_id()
      ORDER BY s.started_on DESC, s.id DESC`,
     [id],
   );

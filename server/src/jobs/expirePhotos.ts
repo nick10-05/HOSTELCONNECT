@@ -76,10 +76,10 @@ export async function expirePhotos(
       }
 
       if (confirmed) {
-        await tx.query("UPDATE complaints SET photo_deleted_at = $2 WHERE id = $1", [id, opts.now]);
+        await tx.query("UPDATE complaints SET photo_deleted_at = $2 WHERE id = $1 AND hostel_id = current_hostel_id()", [id, opts.now]);
         result.deleted += 1;
       } else {
-        await tx.query("UPDATE complaints SET photo_delete_attempts = photo_delete_attempts + 1 WHERE id = $1", [
+        await tx.query("UPDATE complaints SET photo_delete_attempts = photo_delete_attempts + 1 WHERE id = $1 AND hostel_id = current_hostel_id()", [
           id,
         ]);
         result.failed += 1;

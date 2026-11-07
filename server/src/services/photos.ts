@@ -65,7 +65,7 @@ export async function getComplaintPhoto(db: Queryable, complaintId: number): Pro
   const { rows } = await db.query<PhotoFields>(
     `SELECT photo_path AS path, photo_size_bytes AS "sizeBytes",
             photo_expires_at AS "expiresAt", photo_deleted_at AS "deletedAt"
-     FROM complaints WHERE id = $1`,
+     FROM complaints WHERE id = $1 AND hostel_id = current_hostel_id()`,
     [complaintId],
   );
   return rows[0] ?? { path: null, sizeBytes: null, expiresAt: null, deletedAt: null };
