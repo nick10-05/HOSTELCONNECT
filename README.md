@@ -30,8 +30,9 @@ can reach everyone) and removes what failed:
   overdue, the open return poll, storage and bandwidth use.
 - Building structure: buildings first; floors, rooms and beds optional, added any time.
 - Students: admission with an individual temporary password, directory and search,
-  transfers with history, move-out, reactivation, password resets, a CSV import for the
-  first 200.
+  transfers with history, move-out, reactivation, a CSV import for the first 200. Not
+  built yet: resetting a student's password and editing a student's details after
+  admission.
 - Complaints: filters, priority, status changes with a timeline, one-way notes.
 - Announcements: publish, edit, pin, mark urgent, delete.
 - Return polls after holidays ("Back after Dussehra?"): who has returned, who has not,
@@ -49,8 +50,26 @@ paid after checking his bank.
 
 ## Screenshots
 
-<!-- To add: docs/screenshots/ owner-dashboard.png, owner-complaints.png,
-     student-home.png (phone width), student-fees.png (phone width). -->
+All from a local development database with fake students and a demo UPI ID.
+
+**The owner's dashboard:** students per building, the open return poll, active complaints,
+rejoin requests, fees due and overdue, and storage and bandwidth use, in one request.
+
+![Owner dashboard](docs/screenshots/owner-dashboard.png)
+
+**The owner's complaint list:** active first, high priority first, oldest first, with
+filters by status, priority, category, building and date.
+
+![Owner complaint list](docs/screenshots/owner-complaints.png)
+
+**A student's phone:** the home page (an urgent notice, the return poll, their complaints and
+fees) and My fees (the balance, the owner's UPI ID with a QR drawn from it, and each due
+date).
+
+<p>
+  <img src="docs/screenshots/student-home.png" alt="Student home page on a phone" width="300">
+  <img src="docs/screenshots/student-fees.png" alt="Student fees page on a phone" width="300">
+</p>
 
 ## Architecture
 

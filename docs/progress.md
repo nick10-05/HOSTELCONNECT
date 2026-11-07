@@ -729,7 +729,7 @@ Done when: reminders appear once each and the daily digest works; `docs/RECOVERY
 written and a second restore drill passes on seeded data; the README has screenshots and an
 architecture diagram; you can demo and explain it in 2 minutes. So far: reminders, the digest
 and the recovery guide are met in tests on the local database; the drill was rehearsed with a
-throwaway key but not yet run with the real one; the README has its diagrams but no
+throwaway key but not yet run with the real one; the README has its diagrams and four
 screenshots. Not deployed yet (see "Notes for later days").
 
 | Task | Who | Status | How verified |
@@ -740,8 +740,8 @@ screenshots. Not deployed yet (see "Notes for later days").
 | The three jobs in `POST /api/internal/run-jobs`, after photos and fee rows | Claude | Done | 5 new tests in `jobsRoutes.test.ts` (a fee row reminded in the call that created it, reminders without `FEES_START_DATE`, the digest at 08:30 and not at 07:00, pruning by the app's clock); the existing ones now expect `feeReminders`, `digest` and `pruned` in the answer |
 | Production owner-password reset (`reset-owner-password --production`) | Claude | Done | 5 new tests in `resetOwnerPassword.test.ts` (`resetTargetProblem`, `confirmationMatches`). By hand with fake URLs only, every run exiting 1: no `DATABASE_URL` in the window (`.env` ignored), a local URL with `--production`, another machine's URL without it, a wrong or empty retyped email, and the right one (which then tried to connect and failed on the fake host). Not run against production |
 | `docs/RECOVERY.md` | Claude | Done | Every script, file and option it names exists. The seeded-data drill (section 9) rehearsed end to end with a throwaway key, since deleted: the local database (215 users, 217 stays, 104 beds, migration 012) dumped as the nightly backup does, encrypted, restored by `ops/restore-drill.sh`, "Drill passed" |
-| README: the problem, features, architecture (two Mermaid diagrams), stack, security, running it locally | Claude | Done, screenshots to add | Facts checked against the code (16 tables, 60-second photo links, the `_test` database, the `/api` proxy); "installable as a PWA" removed, as there is no manifest yet. The diagrams have not been seen rendered |
-| Screenshots for the README | Nikhil (needs signing in) | To do | |
+| README: the problem, features, architecture (two Mermaid diagrams), stack, security, running it locally | Claude | Done | Facts checked against the code (16 tables, 60-second photo links, the `_test` database, the `/api` proxy); "installable as a PWA" removed, as there is no manifest yet; "password resets" removed from the owner's list, as students' passwords cannot be reset yet. The diagrams have not been seen rendered |
+| Screenshots for the README (`docs/screenshots/`: owner dashboard, owner complaints, student home, student fees) | Nikhil | Done | Taken from the local database only. A fake "Demo Student" was admitted locally; its joining date was corrected to 2025-01-14 in the local database (there is no edit screen), and its fee rows (14 Sep, 14 Oct, 14 Nov 2026, ₹6,500 each) came from a local `run-jobs` call with `FEES_START_DATE=2026-09-01`. A demo UPI ID (`hostelconnect.demo@upi`), an urgent notice and a return poll were set up locally. All four checked by Claude: fake names and the demo UPI ID only, no phone numbers or emails |
 | Second restore drill with the real key | Nikhil (needs the private key) | To do | |
 | "Decisions and trade-offs" write-up, in his own words | Nikhil | To do | |
 
@@ -786,12 +786,22 @@ photo-expiry race test's photos committed; not proven.
 
 - **Correction:** the day 5 notes said "the day 8 job prunes notifications". Pruning was
   added on day 10.
-- **Before the merge:** screenshots, the real-key drill (`docs/RECOVERY.md`, section 9: on
-  seeded data and on the newest production backup) and the write-up. No migration, so no
+- **Correction:** the first versions of the README and `docs/RECOVERY.md` (this branch)
+  said the owner can reset a student's password in the app. No such action or endpoint
+  exists (`POST /api/students/:id/reset-password` in design doc section 5 was never built);
+  both now say so.
+- **Also missing, found while taking the screenshots:** editing a student's details after
+  admission (`PATCH /api/students/:id`, design doc section 5). Neither the route nor a
+  screen exists, so a wrong joining date or monthly fee can only be fixed in the database.
+- **Seen in the screenshots:** the student's fee list writes September as "Sept" (the
+  browser's date format); the server's reminder text writes "Sep".
+- **Before the merge:** the real-key drill (`docs/RECOVERY.md`, section 9: on seeded data
+  and on the newest production backup) and the write-up. No migration, so no
   backup-then-migrate step; no new Render or GitHub settings.
 - **After the merge:** a "Run jobs" run answers 200 with `feeReminders`, `digest` and
   `pruned`; the owner gets a digest the next morning if anything is pending.
-- **Still open, unchanged:** changing a student's monthly fee after admission, a browser check
-  of the day 9 screens, opening the Fees and Payment settings pages on production, student
+- **Still open, unchanged:** changing a student's monthly fee after admission, a full browser
+  check of the day 9 screens (the screenshots covered the dashboard cards, the poll tile and
+  My fees locally), opening the Fees and Payment settings pages on production, student
   password reset, Aadhaar, helmet/CSP, the Supabase certificate, the "Recent notices" card,
   rotation of a real phone-camera photo, a PWA manifest.

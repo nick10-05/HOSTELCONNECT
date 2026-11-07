@@ -126,7 +126,10 @@ npm run reset:owner-password -- --email <owner's email> --production
 - Then: `Clear-Host; Remove-Item Env:DATABASE_URL` and close the window.
 
 If it says "No owner account has that email", nothing changed: check the spelling.
-Students' passwords are reset by the owner in the app (student profile → Reset password).
+This script resets the owner's password only. There is no way yet to reset a student's
+password: the app has no such action and the API no such endpoint (design doc section 5 plans
+one; see `docs/progress.md`). Until it is built, a student who forgets their password cannot
+log in.
 
 ## 7. Rotating a secret
 
