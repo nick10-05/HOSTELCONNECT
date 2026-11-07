@@ -233,6 +233,15 @@ export function studentsRouter(deps: AuthDeps): Router {
     res.status(204).end();
   });
 
+  router.post("/students/:id/reset-password", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    const result = await students.resetStudentPassword(db, id);
+    // The answer carries the temporary password, shown once: no browser or proxy may keep it.
+    res.set("Cache-Control", "no-store");
+    res.json(result);
+  });
+
   router.post("/students/:id/reactivate", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;

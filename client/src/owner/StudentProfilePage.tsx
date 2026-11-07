@@ -6,19 +6,20 @@ import { hostelToday } from "./admissionForm";
 import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeText } from "./format";
 import { MoveOutConfirm } from "./MoveOutConfirm";
 import { ReactivateForm } from "./ReactivateForm";
+import { ResetPasswordConfirm } from "./ResetPasswordConfirm";
 import { primaryButton, secondaryButton } from "./styles";
 import { TemporaryPassword } from "./TemporaryPassword";
 import { TransferForm } from "./TransferForm";
 
 // One student's profile for the owner (design doc, section 5), with the day 5 actions:
-// transfer and move out for a current student, reactivate for a former one. Fee history
+// transfer, move out and reset password for a current student, reactivate for a former one. Fee history
 // arrives on day 9. Phone numbers appear only here, never in the directory or the page
 // address.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-type Action = "transfer" | "moveOut" | "reactivate";
+type Action = "transfer" | "moveOut" | "reactivate" | "resetPassword";
 
 export function StudentProfilePage() {
   const { id } = useParams();
@@ -32,6 +33,8 @@ export function StudentProfilePage() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   // After a reactivation: the temporary password, held only until the owner presses Done.
   const [reactivated, setReactivated] = useState<Admission | null>(null);
+  // After a password reset: the temporary password, held only until the owner presses Done.
+  const [resetPassword, setResetPassword] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -166,6 +169,33 @@ export function StudentProfilePage() {
             Done
           </button>
         </section>
+      ) : resetPassword ? (
+        <section
+          aria-labelledby="password-reset-heading"
+          className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"
+        >
+          <h2 id="password-reset-heading" className="text-sm font-semibold text-slate-700">
+            Password reset
+          </h2>
+          <p className="text-slate-700">
+            <strong>{s.name}</strong>&apos;s old password no longer works.
+          </p>
+          <TemporaryPassword password={resetPassword} />
+          {/* Done forgets the password: it is never shown again. */}
+          <button type="button" onClick={() => setResetPassword(null)} className={primaryButton}>
+            Done
+          </button>
+        </section>
+      ) : action === "resetPassword" ? (
+        <ResetPasswordConfirm
+          studentId={s.id}
+          name={s.name}
+          onDone={(temporaryPassword) => {
+            setResetPassword(temporaryPassword);
+            refresh("the change");
+          }}
+          onCancel={() => setAction(null)}
+        />
       ) : action === "transfer" && s.currentStay ? (
         <TransferForm studentId={s.id} stay={s.currentStay} onDone={transferred} onCancel={() => setAction(null)} />
       ) : action === "moveOut" ? (
@@ -195,6 +225,11 @@ export function StudentProfilePage() {
             <button type="button" onClick={() => open("transfer")} className={secondaryButton}>
               {/* A stay that has not started is only reassigned (decided on day 5). */}
               {s.currentStay.startedOn > hostelToday() ? "Change room or bed" : "Transfer"}
+            </button>
+          )}
+          {s.isActive && (
+            <button type="button" onClick={() => open("resetPassword")} className={secondaryButton}>
+              Reset password
             </button>
           )}
           {s.isActive ? (
