@@ -157,6 +157,11 @@ export type ReactivationForm = TransferTarget & { joiningDate: string }; // YYYY
 // POST /api/students/:id/reactivate: a new joining date, stay and temporary password
 // (shown once). Refusals arrive as ApiError: 409 "student_active",
 // "joining_before_leaving", "bed_occupied", "bed_retired"; 400 "invalid_input".
+// Gives an active student a new temporary password (they forgot theirs). Shown once.
+export async function resetStudentPassword(id: number): Promise<{ temporaryPassword: string }> {
+  return apiFetch<{ temporaryPassword: string }>(`/api/students/${id}/reset-password`, { method: "POST" });
+}
+
 export async function reactivateStudent(id: number, form: ReactivationForm): Promise<Admission> {
   return apiFetch<Admission>(`/api/students/${id}/reactivate`, { method: "POST", body: form });
 }

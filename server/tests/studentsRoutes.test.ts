@@ -18,6 +18,7 @@ vi.mock("../src/services/students", () => ({
   transferStudent: vi.fn(),
   deactivateStudent: vi.fn(),
   reactivateStudent: vi.fn(),
+  resetStudentPassword: vi.fn(),
 }));
 const service = vi.mocked(students);
 
@@ -534,5 +535,54 @@ describe("POST /api/students/:id/reactivate", () => {
       .send({ joiningDate: hostelToday(), buildingId: 1 });
     expect(res.status).toBe(403);
     expect(service.reactivateStudent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/students/:id/reset-password", () => {
+  const reset = async (id: string, cookie?: string) =>
+    request(app)
+      .post(`/api/students/${id}/reset-password`)
+      .set("Cookie", cookie ?? (await asOwner()))
+      .send({});
+
+  it("needs the owner", async () => {
+    expect((await request(app).post("/api/students/7/reset-password").send({})).status).toBe(401);
+    const student = await insertStudent(db);
+    expect((await reset("7", cookieFor(student, "student"))).status).toBe(403);
+    expect(service.resetStudentPassword).not.toHaveBeenCalled();
+  });
+
+  it("resets the password and returns the temporary password once, never cached", async () => {
+    service.resetStudentPassword.mockResolvedValue({ temporaryPassword: "ABCD234567" });
+    const res = await reset("7");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ temporaryPassword: "ABCD234567" });
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(service.resetStudentPassword).toHaveBeenCalledWith(db, 7);
+  });
+
+  it("answers 404 for an id that is not a positive number", async () => {
+    const res = await reset("abc");
+    expect(res.status).toBe(404);
+    expect(service.resetStudentPassword).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's refusal on as the normal error answer", async () => {
+    service.resetStudentPassword.mockRejectedValue(
+      new HttpError(409, "student_inactive", "This student is inactive."),
+    );
+    const res = await reset("7");
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: { code: "student_inactive", message: "This student is inactive." } });
+  });
+
+  it("refuses a cross-site request", async () => {
+    const res = await request(app)
+      .post("/api/students/7/reset-password")
+      .set("Cookie", await asOwner())
+      .set("Origin", "https://elsewhere.example")
+      .send({});
+    expect(res.status).toBe(403);
+    expect(service.resetStudentPassword).not.toHaveBeenCalled();
   });
 });

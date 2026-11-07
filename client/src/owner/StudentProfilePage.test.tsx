@@ -432,7 +432,7 @@ function actionServer(profiles: StudentProfile[], answers: Record<string, () => 
       return jsonResponse(200, { student });
     }
     if (url === "/api/structure") return jsonResponse(200, { buildings: [blockA, blockB] });
-    const action = url.match(/^\/api\/students\/7\/(\w+)$/)?.[1];
+    const action = url.match(/^\/api\/students\/7\/([\w-]+)$/)?.[1];
     if (action && init?.method === "POST" && answers[action]) {
       posts.push({ action, body: init.body ? JSON.parse(init.body as string) : undefined });
       return answers[action]();
@@ -591,5 +591,64 @@ describe("reactivating", () => {
     expect(screen.queryByLabelText("Joining date")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reactivate" })).toBeInTheDocument();
     expect(posts).toEqual([]);
+  });
+});
+
+describe("resetting a password", () => {
+  const ashaOwnPassword: StudentProfile = { ...asha, mustChangePassword: false };
+  const reset = () => jsonResponse(200, { temporaryPassword: "WXYZ234567" });
+
+  it("is offered to a current student only", async () => {
+    actionServer([asha], { "reset-password": reset });
+    expect(await screen.findByRole("button", { name: "Reset password" })).toBeInTheDocument();
+  });
+
+  it("is not offered to a former student", async () => {
+    actionServer([formerAsha], { "reset-password": reset });
+    await screen.findByRole("button", { name: "Reactivate" });
+    expect(screen.queryByRole("button", { name: "Reset password" })).not.toBeInTheDocument();
+  });
+
+  it("asks first, and Cancel sends nothing", async () => {
+    const { user, posts } = actionServer([ashaOwnPassword], { "reset-password": reset });
+    await user.click(await screen.findByRole("button", { name: "Reset password" }));
+
+    expect(
+      screen.getByText(
+        "Reset Asha Rao's password? Their current password stops working at once, and they must choose a new one when they next log in.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("button", { name: "Reset password" })).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
+
+  it("resets, shows the temporary password once, and forgets it on Done", async () => {
+    const { user, posts, profileCalls } = actionServer([ashaOwnPassword, asha], { "reset-password": reset });
+    await user.click(await screen.findByRole("button", { name: "Reset password" }));
+    await user.click(screen.getByRole("button", { name: "Yes, reset password" }));
+
+    expect(await screen.findByText("WXYZ234567")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Password reset" })).toBeInTheDocument();
+    expect(posts).toEqual([{ action: "reset-password", body: undefined }]);
+    // The profile behind the password is already the current one.
+    expect(profileCalls()).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("WXYZ234567")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset password" })).toBeInTheDocument();
+  });
+
+  it("shows the server's refusal and keeps the question open", async () => {
+    const { user } = actionServer([asha], {
+      "reset-password": () =>
+        jsonResponse(409, { error: { code: "student_inactive", message: "This student is inactive." } }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Reset password" }));
+    await user.click(screen.getByRole("button", { name: "Yes, reset password" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This student is inactive.");
+    expect(screen.getByRole("button", { name: "Yes, reset password" })).toBeEnabled();
   });
 });

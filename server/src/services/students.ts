@@ -755,6 +755,83 @@ export async function reactivateStudent(
   }
 }
 
+// ---- Password reset (owner only) ----
+
+// Gives an active student a new temporary password, for one who forgot theirs (design doc,
+// section 5: POST /api/students/:id/reset-password). Nikhil writes it; the tests in
+// tests/resetStudentPassword.test.ts say what it must do.
+//
+// - A new password from generateTemporaryPassword(), hashed with hashPassword() before the
+//   UPDATE, as admitStudent and reactivateStudent do. Returned once in plain text for the
+//   owner to pass on; never stored or logged.
+// - The users row gets the new password_hash and must_change_password = true, so the old
+//   password stops working at once and the student must choose a new one at the next login.
+//   A session already open is held at the change-password screen, because requireAuth reads
+//   must_change_password from the database on every request.
+// - Nothing else changes: not the name, email, is_active, stays, fees or notifications.
+//   No notification is sent (the student cannot log in to read it).
+// - The check and the change in one UPDATE (WHERE id = $… AND role = 'student' AND
+//   is_active), so a move-out cannot slip between them. Only when it changes no row, look
+//   at the row to choose the refusal.
+//
+// The refusals (status, code), changing nothing:
+//   404 student_not_found   no student with this id (an owner's id counts as missing)
+//   409 student_inactive    the student has moved out (reactivation gives a new password)
+export async function resetStudentPassword(
+  db: Queryable,
+  studentId: number,
+): Promise<{ temporaryPassword: string }> {
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordHash = await hashPassword(temporaryPassword);
+
+  const updated = await db.query(
+    `UPDATE users
+     SET password_hash = $1,
+         must_change_password = true
+     WHERE id = $2
+       AND role = 'student'
+       AND is_active = true
+     RETURNING id`,
+    [passwordHash, studentId],
+  );
+
+  if (updated.rowCount === 0) {
+    const existing = await db.query<{
+      role: string;
+      isActive: boolean;
+    }>(
+      `SELECT role, is_active AS "isActive"
+       FROM users
+       WHERE id = $1`,
+      [studentId],
+    );
+
+    if (
+      existing.rowCount === 0 ||
+      existing.rows[0].role !== "student"
+    ) {
+      throw new HttpError(
+        404,
+        "student_not_found",
+        "Student not found.",
+      );
+    }
+
+    if (!existing.rows[0].isActive) {
+      throw new HttpError(
+        409,
+        "student_inactive",
+        "This student is inactive. Reactivate them before resetting their password.",
+      );
+    }
+
+    // The student changed between the UPDATE and this SELECT (e.g. reactivated just now).
+    throw new HttpError(409, "student_inactive", "This student changed just now. Try again.");
+  }
+
+  return { temporaryPassword };
+}
+
 // ---- Directory and profile (owner only) ----
 
 export type Category = AdmissionInput["category"];
