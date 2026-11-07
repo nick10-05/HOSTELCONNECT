@@ -964,6 +964,44 @@ browser is signed in as the owner.
 
 ### Notes for later days
 
-- The README screenshots still show the earlier look; retake them after deploying.
+- README screenshots retaken by Nikhil after the deployment (owner pages in light at
+  laptop width, student pages in dark at phone size, local demo data).
 - Not checked on a real phone yet (only the browser's phone-size view).
-- Deployed: not yet.
+- Deployed on 2026-11-07 (see "Deployment" below).
+
+### Deployment (2026-11-07, UTC)
+
+| Step | Evidence |
+|---|---|
+| Pushed on `redesign-foundations` | `202a686` (code) and `c38132a` (docs), author nick10-05, no co-author line |
+| Before the merge | No migration, so no backup-then-migrate step; no new Render or GitHub settings |
+| Merge into `main` | Through GitHub pull request #14, as merge commit `250c4e9` at 11:54, opened and merged by Nikhil |
+| CI on `main` | Run #75 on `250c4e9`: green (1 min 12 s) |
+| Live site | `/api/health` answers `{"status":"ok"}`; the page now carries the light/dark script from `index.html` (`hc-theme`), which the earlier build did not have, so the new client is served. Checked with plain requests only: no login, no data touched |
+| Owner check | Not done yet: the owner looks at the live site on a phone, in light and dark, and tries the Automatic/Light/Dark switch |
+
+## Content Security Policy and security headers (2026-11-07)
+
+The live site sent no browser security headers. Now every response (the page, its files,
+the API and error answers) carries them, from `server/src/middleware/securityHeaders.ts`,
+mounted first in `app.ts`.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Light/dark script moved out of `index.html` into `client/public/theme-init.js` | Claude | Done | The only inline script, so `script-src 'self'` needs no `unsafe-inline`; `client/src/indexHtml.test.ts` (3 tests) keeps `index.html` free of inline scripts and handlers |
+| Fonts never inlined (`vite.config.ts`, `assetsInlineLimit`) | Claude | Done | Vite had turned one 1.7 KB font subset into a `data:` URL, which `font-src 'self'` blocked in the browser check; now 0 `data:` URLs in the built CSS |
+| Headers middleware and tests | Claude | Done | `default-src`, `script-src`, `style-src`, `font-src`, `connect-src` `'self'`; `img-src 'self' data:` plus the Supabase origin for complaint photos; `object-src` and `base-uri 'none'`; `frame-ancestors 'none'`; plus `nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, COOP, a Permissions-Policy, and HSTS in production only; 16 tests in `securityHeaders.test.ts` |
+| `CSP_REPORT_ONLY` setting (`config.ts`) | Claude | Done | `true` sends the same policy as `Content-Security-Policy-Report-Only`; anything else (or unset) enforces; test in `config.test.ts` |
+
+Checks: server 1074 tests and client 381 tests pass, both typechecks clean, client build
+clean. In the local browser, the production build was served with exactly these headers
+(enforced, not report-only) and all 14 owner pages visited: no CSP violations after the font
+fix, the Settings QR (`data:` image) shows, and a saved dark choice is applied from
+`theme-init.js` before the first paint.
+
+### Notes for later days
+
+- Not checked locally: complaint photos from the Supabase origin (the local setup has no
+  bucket) and the student pages. Check both on the live site during the report-only trial.
+- Rollout: deploy with `CSP_REPORT_ONLY=true` set in Render, check the live site's console,
+  then delete the setting to enforce. No code change is needed to switch.

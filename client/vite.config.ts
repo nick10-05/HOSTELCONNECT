@@ -4,6 +4,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // Vite writes files under 4 KB into the CSS as data: URLs. One tiny font subset was,
+    // and the server's Content Security Policy (font-src 'self') blocks fonts from data:
+    // URLs. Fonts always stay separate files; other assets keep Vite's default.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
+  },
   server: {
     // In development the browser talks only to Vite, which forwards API calls to
     // Express. One origin, as in production, so the session cookie just works.

@@ -61,26 +61,27 @@ icons) are in `client/src/ui/`.
 
 ## Screenshots
 
-All from a local development database with fake students and a demo UPI ID. They were
-taken before the redesign and still show the earlier look.
+All from a local development database with fake students and a demo UPI ID. The owner's
+pages are shown in light mode on a laptop, the student's in dark mode on a phone.
 
-**The owner's dashboard:** students per building, the open return poll, active complaints,
-rejoin requests, fees due and overdue, and storage and bandwidth use, in one request.
+**The owner's dashboard:** how full the beds are, what needs attention (high-priority
+complaints, overdue fees), quick actions, then students per building and the return poll,
+with complaints, rejoin requests, fees and storage use further down, all in one request.
 
-![Owner dashboard](docs/screenshots/owner-dashboard.png)
+![Owner dashboard in light mode, with the sidebar menu](docs/screenshots/owner-dashboard.png)
 
 **The owner's complaint list:** active first, high priority first, oldest first, with
 filters by status, priority, category, building and date.
 
-![Owner complaint list](docs/screenshots/owner-complaints.png)
+![Owner complaint list in light mode](docs/screenshots/owner-complaints.png)
 
-**A student's phone:** the home page (an urgent notice, the return poll, their complaints and
-fees) and My fees (the balance, the owner's UPI ID with a QR drawn from it, and each due
-date).
+**A student's phone:** the home page (a greeting, pinned and urgent notices, then their
+complaints) and My fees (what is due now, the next due date, and the owner's UPI ID with a
+QR drawn from it), with the tab bar at the bottom.
 
 <p>
-  <img src="docs/screenshots/student-home.png" alt="Student home page on a phone" width="300">
-  <img src="docs/screenshots/student-fees.png" alt="Student fees page on a phone" width="300">
+  <img src="docs/screenshots/student-home.png" alt="Student home page on a phone in dark mode" width="300">
+  <img src="docs/screenshots/student-fees.png" alt="Student fees page on a phone in dark mode" width="300">
 </p>
 
 ## Architecture
@@ -154,6 +155,9 @@ flowchart LR
 - The app's database role cannot drop or truncate tables; migrations use a separate
   credential that is not on the server.
 - Parameterised SQL only; Zod on every body and query; same-origin check on every write.
+- A strict Content Security Policy on every response (scripts, styles and fonts from the
+  site itself only, no inline scripts, no framing by other sites), plus HSTS, `nosniff`
+  and a same-origin referrer policy.
 - Uploads checked by their content, not their name; photos in a private bucket, reached
   only through 60-second signed links that stop at the 48-hour mark.
 - Usage guard: photo uploads switch off at 85% of the free storage or bandwidth limit.

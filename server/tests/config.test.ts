@@ -215,5 +215,13 @@ describe("loadConfig: FEES_START_DATE", () => {
       expect(problemsWith(value), value).toMatch(/FEES_START_DATE/);
     }
   });
+
+  it("enforces the Content Security Policy unless CSP_REPORT_ONLY is true", () => {
+    expect(loadConfig(valid).CSP_REPORT_ONLY).toBe(false);
+    expect(loadConfig({ ...valid, CSP_REPORT_ONLY: "" }).CSP_REPORT_ONLY).toBe(false);
+    expect(loadConfig({ ...valid, CSP_REPORT_ONLY: "false" }).CSP_REPORT_ONLY).toBe(false);
+    expect(loadConfig({ ...valid, CSP_REPORT_ONLY: "true" }).CSP_REPORT_ONLY).toBe(true);
+    expect(() => loadConfig({ ...valid, CSP_REPORT_ONLY: "yes" })).toThrow(/CSP_REPORT_ONLY: must be true or false/);
+  });
 });
 
