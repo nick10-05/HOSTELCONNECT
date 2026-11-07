@@ -52,8 +52,12 @@ const detailsObject = z.object({
 type Details = z.infer<typeof detailsObject>;
 export type StudentDetails = Omit<students.AdmissionInput, "buildingId" | "roomId" | "bedId">;
 
+// The edit form has no joining date (it cannot be changed after admission), so the rules
+// below take one only when there is one.
+type EditDetails = Omit<Details, "joiningDate">;
+
 // The rules that span several fields.
-function checkDetails(v: Details, ctx: z.RefinementCtx): void {
+function checkDetails(v: EditDetails & { joiningDate?: string }, ctx: z.RefinementCtx): void {
   const missing = (path: string) => ctx.addIssue({ code: "custom", path: [path], message: "is required" });
   if (v.category === "college") {
     if (!v.collegeName) missing("collegeName");
@@ -68,7 +72,7 @@ function checkDetails(v: Details, ctx: z.RefinementCtx): void {
     ctx.addIssue({ code: "custom", path: ["vegDays"], message: "are only for non-veg students" });
   }
   // Checked when the request arrives, against India's date.
-  if (v.joiningDate > addDays(hostelToday(), MAX_DAYS_AHEAD)) {
+  if (v.joiningDate !== undefined && v.joiningDate > addDays(hostelToday(), MAX_DAYS_AHEAD)) {
     ctx.addIssue({
       code: "custom",
       path: ["joiningDate"],
@@ -79,7 +83,7 @@ function checkDetails(v: Details, ctx: z.RefinementCtx): void {
 
 // Keep only the fields that belong to the chosen category, so a form that still holds
 // a college name after switching to "working" does not store it.
-const pickDetails = (v: Details): StudentDetails => ({
+const pickEdit = (v: EditDetails): students.StudentEdit => ({
   name: v.name,
   email: v.email,
   phone: v.phone,
@@ -90,13 +94,23 @@ const pickDetails = (v: Details): StudentDetails => ({
   academicYear: v.category === "college" ? v.academicYear! : null,
   company: v.category === "working" ? v.company! : null,
   designation: v.category === "working" ? (v.designation ?? null) : null,
-  joiningDate: v.joiningDate,
   foodPreference: v.foodPreference,
   vegDays: [...v.vegDays].sort((a, b) => a - b),
   monthlyFee: v.monthlyFee,
 });
 
+const pickDetails = (v: Details): StudentDetails => ({ ...pickEdit(v), joiningDate: v.joiningDate });
+
 export const studentDetailsSchema = detailsObject.superRefine(checkDetails).transform(pickDetails);
+
+// Editing a student (PATCH /api/students/:id): the same details and rules, without the
+// joining date or the place. Strict, so a joining date or a building sent anyway is a 400,
+// not silently ignored.
+export const studentEditSchema = detailsObject
+  .omit({ joiningDate: true })
+  .strict()
+  .superRefine(checkDetails)
+  .transform(pickEdit);
 
 export const admissionSchema = detailsObject
   .extend({
@@ -204,6 +218,17 @@ export function studentsRouter(deps: AuthDeps): Router {
     const id = idParam(req, res);
     if (id === undefined) return;
     // Phone numbers are in this answer: no browser or proxy may keep a copy.
+    res.set("Cache-Control", "no-store");
+    res.json({ student: await students.getStudent(db, id, hostelToday()) });
+  });
+
+  router.patch("/students/:id", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    const body = parseBody(studentEditSchema, req, res);
+    if (!body) return;
+    await students.updateStudent(db, id, body);
+    // The profile as it is now. Phone numbers are in it: no browser or proxy may keep a copy.
     res.set("Cache-Control", "no-store");
     res.json({ student: await students.getStudent(db, id, hostelToday()) });
   });

@@ -171,7 +171,7 @@ export function AdmitStudentPage() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <legend className="px-1 text-sm font-semibold text-slate-700">{title}</legend>
@@ -207,7 +207,7 @@ function FieldError({ id, error }: { id: string; error?: string }) {
   ) : null;
 }
 
-function TextField({
+export function TextField({
   values,
   errors,
   set,
@@ -244,7 +244,7 @@ function TextField({
   );
 }
 
-function SelectField({
+export function SelectField({
   values,
   errors,
   set,
@@ -272,7 +272,7 @@ function SelectField({
   );
 }
 
-function FoodField({
+export function FoodField({
   values,
   errors,
   set,

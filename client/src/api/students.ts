@@ -154,14 +154,26 @@ export async function deactivateStudent(id: number): Promise<void> {
 
 export type ReactivationForm = TransferTarget & { joiningDate: string }; // YYYY-MM-DD
 
-// POST /api/students/:id/reactivate: a new joining date, stay and temporary password
-// (shown once). Refusals arrive as ApiError: 409 "student_active",
-// "joining_before_leaving", "bed_occupied", "bed_retired"; 400 "invalid_input".
+// The edit form's body: the admission details without the joining date and the place.
+export type StudentEditForm = Omit<AdmissionForm, "joiningDate" | "buildingId" | "roomId" | "bedId">;
+
+// Corrects a student's details; answers with the profile as it is now.
+export async function updateStudent(id: number, form: StudentEditForm): Promise<StudentProfile> {
+  const { student } = await apiFetch<{ student: StudentProfile }>(`/api/students/${id}`, {
+    method: "PATCH",
+    body: form,
+  });
+  return student;
+}
+
 // Gives an active student a new temporary password (they forgot theirs). Shown once.
 export async function resetStudentPassword(id: number): Promise<{ temporaryPassword: string }> {
   return apiFetch<{ temporaryPassword: string }>(`/api/students/${id}/reset-password`, { method: "POST" });
 }
 
+// POST /api/students/:id/reactivate: a new joining date, stay and temporary password
+// (shown once). Refusals arrive as ApiError: 409 "student_active",
+// "joining_before_leaving", "bed_occupied", "bed_retired"; 400 "invalid_input".
 export async function reactivateStudent(id: number, form: ReactivationForm): Promise<Admission> {
   return apiFetch<Admission>(`/api/students/${id}/reactivate`, { method: "POST", body: form });
 }

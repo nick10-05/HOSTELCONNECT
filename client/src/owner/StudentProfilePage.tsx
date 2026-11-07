@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { ApiError } from "../api/client";
 import { getStudent, type Admission, type StudentProfile, type TransferredStay } from "../api/students";
 import { hostelToday } from "./admissionForm";
+import { EditStudentForm } from "./EditStudentForm";
 import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeText } from "./format";
 import { MoveOutConfirm } from "./MoveOutConfirm";
 import { ReactivateForm } from "./ReactivateForm";
@@ -12,14 +13,15 @@ import { TemporaryPassword } from "./TemporaryPassword";
 import { TransferForm } from "./TransferForm";
 
 // One student's profile for the owner (design doc, section 5), with the day 5 actions:
-// transfer, move out and reset password for a current student, reactivate for a former one. Fee history
+// transfer, move out and reset password for a current student, reactivate for a former one,
+// and editing the details for both. Fee history
 // arrives on day 9. Phone numbers appear only here, never in the directory or the page
 // address.
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-type Action = "transfer" | "moveOut" | "reactivate" | "resetPassword";
+type Action = "transfer" | "moveOut" | "reactivate" | "resetPassword" | "edit";
 
 export function StudentProfilePage() {
   const { id } = useParams();
@@ -186,6 +188,17 @@ export function StudentProfilePage() {
             Done
           </button>
         </section>
+      ) : action === "edit" ? (
+        <EditStudentForm
+          student={s}
+          onDone={(updated) => {
+            // The answer is the profile as it is now, so no second load is needed.
+            setStudent(updated);
+            setAction(null);
+            setNotice("Details saved.");
+          }}
+          onCancel={() => setAction(null)}
+        />
       ) : action === "resetPassword" ? (
         <ResetPasswordConfirm
           studentId={s.id}
@@ -221,6 +234,9 @@ export function StudentProfilePage() {
         />
       ) : (
         <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={() => open("edit")} className={secondaryButton}>
+            Edit details
+          </button>
           {s.isActive && s.currentStay && (
             <button type="button" onClick={() => open("transfer")} className={secondaryButton}>
               {/* A stay that has not started is only reassigned (decided on day 5). */}
