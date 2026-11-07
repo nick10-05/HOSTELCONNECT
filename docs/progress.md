@@ -889,3 +889,40 @@ migration and no new settings.
 | CI on `main` | Run #60 on `c2fb446`: green at 08:23 |
 | Live site | `/api/health` 200. `POST /api/students/1/reset-password` without a login answers 401, where a path the app does not have answers 404, so the new route is served. No student's data was touched: the login check refused it first |
 | Owner check | Not done yet: the Reset password button on a current student's profile in production (look only, do not click it on a real student) |
+
+## After the plan: editing a student's details and monthly fee (2026-11-07)
+
+The second item of `docs/decisions.md` section 8: a wrong detail or monthly fee after
+admission could only be fixed in the database (the day 10 notes found
+`PATCH /api/students/:id`, design doc section 5, missing). Branch `edit-student`, from
+`main` at `77b63bc`.
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| `updateStudent` (`services/students.ts`) | Claude, at Nikhil's request, against the stub, contract and tests written first | Done | 10 tests in `updateStudent.test.ts`: every detail saved and nothing else on the account; the old category's fields cleared; stays and existing fee rows unchanged; the student's own email accepted in any letter case; another account's email refused (409 `email_taken`), changing nothing; a former student's details corrected when the fee stays the same; a former student's fee refused (409 `student_inactive`), changing nothing; only that student changes; 404 for an unknown id and for the owner's id |
+| `PATCH /api/students/:id` | Claude | Done | Tests in `studentsRoutes.test.ts` (owner only; the cleaned details saved and the profile sent back with `Cache-Control: no-store`; a missing fee as not set; bad input refused, including a joining date or place; a bad id; the service's refusal; a cross-site request) and 1 end-to-end test in `editStudentFlow.test.ts` against the real database |
+| Profile: **Edit details** for current and former students (`EditStudentForm.tsx`) | Claude | Done | 6 tests in `StudentProfilePage.test.tsx` (offered to both; filled with the stored details, the joining date read-only, Cancel sends nothing; saving shows the server's profile and closes the form; the fields checked before sending; a refusal shown with the form kept; a former student's fee shown but not editable). In the local browser on the fake Demo Student: Non-Veg with a Tuesday veg day saved (`200`, "Details saved.", the profile updated), then set back to Veg |
+| README | Claude | Done | Editing moved from "Not built yet" to the students' features |
+
+A planted bug in the form (sending the request after the field checks failed) first passed
+the client tests; the tests were strengthened to count requests and then caught it.
+
+Checks: server 1046 tests (1022 before), client 328 (322 before), typecheck clean. No
+migration and no new settings.
+
+### Decisions
+
+- **Who writes:** Claude wrote the service function as well, at Nikhil's request.
+- **A new fee applies to future fee rows only:** each fee row copies `monthly_fee` when it
+  is created, so rows already listed keep their amount; the form says so.
+- **The joining date cannot be edited.** Migration 007 lets the app role change only where a
+  stay ends and its place, never `started_on`, by design. Changing it would need a
+  migration and rules for fee rows already created; left out for now.
+- **Former students:** their details can be corrected, but their fee cannot change.
+
+### Notes for later days
+
+- `docs/decisions.md` section 8 still lists this as not built (Nikhil's write-up).
+- The day 10 note above ("Also missing … editing a student's details") is now built, except
+  the joining date.
+- Not deployed yet.

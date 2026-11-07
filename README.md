@@ -31,8 +31,8 @@ can reach everyone) and removes what failed:
 - Building structure: buildings first; floors, rooms and beds optional, added any time.
 - Students: admission with an individual temporary password, directory and search,
   transfers with history, move-out, reactivation, password reset (a new temporary
-  password, shown once), a CSV import for the first 200. Not built yet: editing a
-  student's details after admission.
+  password, shown once), editing a student's details and monthly fee (the joining date
+  stays as admitted), a CSV import for the first 200.
 - Complaints: filters, priority, status changes with a timeline, one-way notes.
 - Announcements: publish, edit, pin, mark urgent, delete.
 - Return polls after holidays ("Back after Dussehra?"): who has returned, who has not,
