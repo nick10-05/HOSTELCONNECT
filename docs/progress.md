@@ -730,7 +730,8 @@ written and a second restore drill passes on seeded data; the README has screens
 architecture diagram; you can demo and explain it in 2 minutes. So far: reminders, the digest
 and the recovery guide are met in tests on the local database; both restore drills with the
 real key passed (seeded data and the newest production backup); the README has its diagrams
-and four screenshots. Not deployed yet (see "Notes for later days").
+and four screenshots. Deployed on 2026-11-07 and checked with a "Run jobs" run (see
+"Deployment" below).
 
 | Task | Who | Status | How verified |
 |---|---|---|---|
@@ -809,10 +810,23 @@ photo-expiry race test's photos committed; not proven.
   out in the app (no deletes); if a real one, nothing to do.
 - **Before the merge:** nothing left. No migration, so no backup-then-migrate step; no new
   Render or GitHub settings.
-- **After the merge:** a "Run jobs" run answers 200 with `feeReminders`, `digest` and
-  `pruned`; the owner gets a digest the next morning if anything is pending.
+- **After the merge:** done; "Run jobs" run #4 answered 200 with `feeReminders`, `digest`
+  and `pruned` (see "Deployment"). Still to see: the owner's first digest, on a morning when
+  something is pending.
 - **Still open, unchanged:** changing a student's monthly fee after admission, a full browser
   check of the day 9 screens (the screenshots covered the dashboard cards, the poll tile and
   My fees locally), opening the Fees and Payment settings pages on production, student
   password reset, Aadhaar, helmet/CSP, the Supabase certificate, the "Recent notices" card,
   rotation of a real phone-camera photo, a PWA manifest.
+
+### Deployment (2026-11-07, UTC)
+
+| Step | Evidence |
+|---|---|
+| Day 10 pushed on `day-10` | `dedea31` to `0aa0270` (9 commits: code, docs and this record), author nick10-05, no co-author line |
+| CI on `day-10` | Runs #42 to #46, one per push, the last on `0aa0270`: green |
+| Before the merge | No migration, so no backup-then-migrate step; no new Render or GitHub settings |
+| Merge into `main` | Through GitHub pull request #5, as merge commit `f145494`, merged by Nikhil |
+| CI on `main` | Run #48 at 07:23 on `f145494`: green |
+| Health | `/api/health` 200 `ok` at 07:24 (this alone does not show which version is served) |
+| "Run jobs" with the secret | Run #4 (id 42351315267) on `main` (`f145494`), started by hand, success. Per the run's log, as reported by Nikhil: `Status 200` with `expirePhotos`, `feeReminders`, `digest` and `pruned`, so the day 10 code is live |
