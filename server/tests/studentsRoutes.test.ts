@@ -19,6 +19,7 @@ vi.mock("../src/services/students", () => ({
   deactivateStudent: vi.fn(),
   reactivateStudent: vi.fn(),
   resetStudentPassword: vi.fn(),
+  updateStudent: vi.fn(),
 }));
 const service = vi.mocked(students);
 
@@ -584,5 +585,112 @@ describe("POST /api/students/:id/reset-password", () => {
       .send({});
     expect(res.status).toBe(403);
     expect(service.resetStudentPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/students/:id", () => {
+  // The edit form: the admission details without the place and the joining date.
+  const editForm = (overrides: Record<string, unknown> = {}) => {
+    const { buildingId: _b, joiningDate: _j, ...details } = form();
+    return { ...details, ...overrides };
+  };
+  const patch = async (id: string, body: unknown, cookie?: string) =>
+    request(app)
+      .patch(`/api/students/${id}`)
+      .set("Cookie", cookie ?? (await asOwner()))
+      .send(body as object);
+
+  it("needs the owner", async () => {
+    expect((await request(app).patch("/api/students/7").send(editForm())).status).toBe(401);
+    const student = await insertStudent(db);
+    expect((await patch("7", editForm(), cookieFor(student, "student"))).status).toBe(403);
+    expect(service.updateStudent).not.toHaveBeenCalled();
+  });
+
+  it("saves the cleaned details and answers with the profile as it is now, never cached", async () => {
+    service.updateStudent.mockResolvedValue(undefined);
+    service.getStudent.mockResolvedValue({ id: 7, name: "Asha Rao" } as never);
+    const res = await patch(
+      "7",
+      editForm({
+        email: "  Asha@Example.COM ",
+        phone: "+91 98765-43210",
+        company: "left over from another category",
+        foodPreference: "non_veg",
+        vegDays: [6, 2],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ student: { id: 7, name: "Asha Rao" } });
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(service.updateStudent).toHaveBeenCalledWith(db, 7, {
+      name: "Asha Rao",
+      email: "asha@example.com",
+      phone: "9876543210",
+      parentPhone: "9876500000",
+      category: "college",
+      collegeName: "City College",
+      branch: "CSE",
+      academicYear: 2,
+      company: null,
+      designation: null,
+      foodPreference: "non_veg",
+      vegDays: [2, 6],
+      monthlyFee: 6500,
+    });
+    expect(service.getStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+  });
+
+  it("treats a missing fee as not set", async () => {
+    service.updateStudent.mockResolvedValue(undefined);
+    service.getStudent.mockResolvedValue({ id: 7 } as never);
+    const { monthlyFee: _f, ...withoutFee } = editForm();
+    expect((await patch("7", withoutFee)).status).toBe(200);
+    expect(service.updateStudent.mock.calls[0][2].monthlyFee).toBeNull();
+  });
+
+  it.each([
+    ["missing name", { name: "  " }, "name"],
+    ["bad mobile number", { phone: "12345" }, "phone"],
+    ["college student without a college", { collegeName: undefined }, "collegeName"],
+    ["veg days for a veg student", { vegDays: [2] }, "vegDays"],
+    ["negative fee", { monthlyFee: -1 }, "monthlyFee"],
+    ["joining date (not editable)", { joiningDate: "2026-01-31" }, "joiningDate"],
+    ["building (a move is a transfer)", { buildingId: 2 }, "buildingId"],
+  ])("refuses a %s with 400 before reaching the service", async (_name, overrides, field) => {
+    const res = await patch("7", editForm(overrides));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("invalid_input");
+    expect(res.body.error.message).toContain(field);
+    expect(service.updateStudent).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for an id that is not a positive number", async () => {
+    const res = await patch("abc", editForm());
+    expect(res.status).toBe(404);
+    expect(service.updateStudent).not.toHaveBeenCalled();
+  });
+
+  it("passes the service's refusal on as the normal error answer", async () => {
+    service.updateStudent.mockRejectedValue(
+      new HttpError(409, "email_taken", "This email address already belongs to an account."),
+    );
+    const res = await patch("7", editForm());
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: { code: "email_taken", message: "This email address already belongs to an account." },
+    });
+    expect(service.getStudent).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-site request", async () => {
+    const res = await request(app)
+      .patch("/api/students/7")
+      .set("Cookie", await asOwner())
+      .set("Origin", "https://elsewhere.example")
+      .send(editForm());
+    expect(res.status).toBe(403);
+    expect(service.updateStudent).not.toHaveBeenCalled();
   });
 });

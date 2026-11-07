@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -425,7 +425,14 @@ const formerAsha: StudentProfile = {
 function actionServer(profiles: StudentProfile[], answers: Record<string, () => Response>) {
   const posts: { action: string; body: unknown }[] = [];
   let profileCalls = 0;
+  let requests = 0;
   mockFetch(async (url, init) => {
+    requests += 1;
+    // Editing is a PATCH to the profile's own address, recorded as the action "edit".
+    if (url === "/api/students/7" && init?.method === "PATCH" && answers.edit) {
+      posts.push({ action: "edit", body: JSON.parse(init.body as string) });
+      return answers.edit();
+    }
     if (url === "/api/students/7" && init?.method !== "POST") {
       const student = profiles[Math.min(profileCalls, profiles.length - 1)];
       profileCalls += 1;
@@ -447,7 +454,7 @@ function actionServer(profiles: StudentProfile[], answers: Record<string, () => 
       </Routes>
     </MemoryRouter>,
   );
-  return { user, posts, profileCalls: () => profileCalls };
+  return { user, posts, profileCalls: () => profileCalls, requestCount: () => requests };
 }
 
 const noContent = () => new Response(null, { status: 204 });
@@ -650,5 +657,117 @@ describe("resetting a password", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This student is inactive.");
     expect(screen.getByRole("button", { name: "Yes, reset password" })).toBeEnabled();
+  });
+});
+
+describe("editing details", () => {
+  const saved = (student: StudentProfile) => () => jsonResponse(200, { student });
+  const ashaAtWork: StudentProfile = {
+    ...asha,
+    name: "Asha R. Rao",
+    category: "working",
+    collegeName: null,
+    branch: null,
+    academicYear: null,
+    company: "Acme Ltd",
+  };
+
+  it("is offered to current and former students", async () => {
+    actionServer([asha], {});
+    expect(await screen.findByRole("button", { name: "Edit details" })).toBeInTheDocument();
+    cleanup();
+    actionServer([formerAsha], {});
+    expect(await screen.findByRole("button", { name: "Edit details" })).toBeInTheDocument();
+  });
+
+  it("opens with the current details, the joining date read-only, and Cancel sends nothing", async () => {
+    const { user, posts } = actionServer([asha], { edit: saved(asha) });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+
+    expect(field("Full name")).toHaveValue("Asha Rao");
+    expect(field("Email")).toHaveValue("asha@example.com");
+    expect(field("Mobile number")).toHaveValue("9876543210");
+    expect(field("Category")).toHaveValue("college");
+    expect(field("College")).toHaveValue("City College");
+    expect(field("Year")).toHaveValue("2");
+    expect(screen.getByRole("radio", { name: "Veg" })).toBeChecked();
+    expect(field(/Monthly fee/)).toHaveValue("6500");
+    expect(screen.getByText("Joining date: 31 Jan 2026 (cannot be changed)")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Joining date")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Edit details" })).toBeInTheDocument();
+    expect(posts).toEqual([]);
+  });
+
+  it("saves the changes, shows the profile the server sends back, and closes the form", async () => {
+    const { user, posts, profileCalls } = actionServer([asha], { edit: saved(ashaAtWork) });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+    await user.clear(field("Full name"));
+    await user.type(field("Full name"), "Asha R. Rao");
+    await user.selectOptions(field("Category"), "working");
+    await user.type(field("Company"), "Acme Ltd");
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Details saved.");
+    expect(posts).toEqual([
+      {
+        action: "edit",
+        body: {
+          name: "Asha R. Rao",
+          email: "asha@example.com",
+          phone: "9876543210",
+          parentPhone: "9876500000",
+          category: "working",
+          company: "Acme Ltd",
+          foodPreference: "veg",
+          monthlyFee: 6500,
+        },
+      },
+    ]);
+    expect(screen.getByRole("heading", { name: "Asha R. Rao" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save details" })).not.toBeInTheDocument();
+    // The answer already holds the profile as it is now: no second load.
+    expect(profileCalls()).toBe(1);
+  });
+
+  it("checks the fields before sending anything", async () => {
+    const { user, posts, requestCount } = actionServer([asha], { edit: saved(asha) });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+    await user.clear(field("Full name"));
+    await user.clear(field("Mobile number"));
+    await user.type(field("Mobile number"), "12345");
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+
+    expect(field("Full name")).toHaveAccessibleDescription("Required.");
+    expect(field("Mobile number")).toHaveAccessibleDescription("Enter a 10-digit mobile number.");
+    // Nothing was sent: no request, so no saving state and no error from the server.
+    expect(posts).toEqual([]);
+    expect(requestCount()).toBe(1); // only the profile itself
+    expect(screen.getByRole("button", { name: "Save details" })).toBeEnabled();
+  });
+
+  it("shows the server's refusal and keeps the form", async () => {
+    const { user } = actionServer([asha], {
+      edit: () =>
+        jsonResponse(409, { error: { code: "email_taken", message: "This email address already belongs to an account." } }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This email address already belongs to an account.");
+    expect(screen.getByRole("button", { name: "Save details" })).toBeEnabled();
+  });
+
+  it("shows a former student's fee without letting it change, and sends it back as it is", async () => {
+    const { user, posts } = actionServer([formerAsha], { edit: saved(formerAsha) });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+
+    expect(screen.queryByLabelText(/Monthly fee/)).not.toBeInTheDocument();
+    expect(screen.getByText("Monthly fee: ₹6,500 (cannot be changed after moving out)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+
+    await screen.findByRole("status");
+    expect(posts[0].body).toMatchObject({ monthlyFee: 6500 });
   });
 });

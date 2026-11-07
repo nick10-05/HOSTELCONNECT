@@ -1,4 +1,4 @@
-import type { AdmissionForm, Category, FoodPreference } from "../api/students";
+import type { AdmissionForm, Category, FoodPreference, StudentEditForm } from "../api/students";
 
 // The admission form's checks, the same rules as server/src/routes/students.ts, so the
 // owner sees a mistake at once instead of after a round trip. The server still checks
@@ -158,4 +158,16 @@ export function checkAdmission(
       bedId: v.bedId ? Number(v.bedId) : null,
     },
   };
+}
+
+// Checks the edit form: the same rules as admission, without the joining date and the
+// place, which the edit form does not have. Returns the errors, or the body to send.
+export function checkEdit(v: AdmissionValues): { errors: AdmissionErrors } | { form: StudentEditForm } {
+  const today = hostelToday();
+  // Stand-ins for the two fields admission requires and editing leaves out; both are
+  // removed again below, so they are never sent.
+  const checked = checkAdmission({ ...v, joiningDate: today, buildingId: "0", roomId: "", bedId: "" }, today);
+  if ("errors" in checked) return checked;
+  const { joiningDate: _date, buildingId: _building, roomId: _room, bedId: _bed, ...form } = checked.form;
+  return { form };
 }

@@ -755,6 +755,116 @@ export async function reactivateStudent(
   }
 }
 
+// ---- Editing a student's details (owner only) ----
+
+// What the edit form sends: the admission details without the place (a move is a transfer)
+// and without the joining date (the database will not let the app move a stay's start,
+// migration 007; decided after day 10 to leave it out for now). Already validated and
+// cleaned by the route, exactly as at admission: fields that do not belong to the category
+// are null, phones are 10 digits, the email is trimmed and lower case, veg days sorted.
+export type StudentEdit = Omit<AdmissionInput, "buildingId" | "roomId" | "bedId" | "joiningDate">;
+
+// Corrects a student's details after admission (design doc, section 5: PATCH
+// /api/students/:id). Claude wrote it at Nikhil's request; tests/updateStudent.test.ts says
+// what it must do.
+//
+// - One transaction. Lock the student's users row first (SELECT ... FOR UPDATE, as
+//   deactivateStudent and transferStudent do), so an edit and a move-out cannot interleave.
+// - Sets name, email, phone, parent_phone, category, college_name, branch, academic_year,
+//   company, designation, food_preference, veg_days and monthly_fee to the input's values.
+// - Nothing else changes: not the password, must_change_password, is_active, joining_date,
+//   stays, or any fee row. Fee rows already created keep their amount; rows created later
+//   copy the new monthly_fee (jobs/feeRows.ts), so a fee change applies from the next row.
+// - A former student's details can be corrected too, but not their fee: an input whose
+//   monthly_fee differs from the stored one is refused (a former student gets no new rows).
+//   Sending the same fee back is fine; the edit form always sends it.
+//
+// The refusals (status, code), changing nothing:
+//   404 student_not_found   no student with this id (an owner's id counts as missing)
+//   409 student_inactive    a former student, and the monthly fee would change
+//   409 email_taken         another account has this email, in any letter case (the unique
+//                           index users_email_lower_key refuses the UPDATE with error 23505,
+//                           as at admission; the student's own email is never "taken")
+export async function updateStudent(db: Db, studentId: number, input: StudentEdit): Promise<void> {
+  const c = await db.connect();
+  let transactionStarted = false;
+  let rollbackFailed = false;
+
+  try {
+    await c.query("BEGIN");
+    transactionStarted = true;
+
+    // Lock the student first, so an edit and a move-out (or two edits) run one after the other.
+    const student = await c.query<{ isActive: boolean; monthlyFee: number | null }>(
+      `SELECT is_active AS "isActive", monthly_fee AS "monthlyFee"
+       FROM users
+       WHERE id = $1 AND role = 'student'
+       FOR UPDATE`,
+      [studentId],
+    );
+
+    if (student.rowCount === 0) {
+      throw new HttpError(404, "student_not_found", "That student does not exist.");
+    }
+
+    const { isActive, monthlyFee } = student.rows[0];
+    if (!isActive && monthlyFee !== input.monthlyFee) {
+      throw new HttpError(
+        409,
+        "student_inactive",
+        "This student has moved out, so their monthly fee cannot be changed.",
+      );
+    }
+
+    try {
+      await c.query(
+        `UPDATE users
+         SET name = $2, email = $3, phone = $4, parent_phone = $5, category = $6,
+             college_name = $7, branch = $8, academic_year = $9, company = $10,
+             designation = $11, food_preference = $12, veg_days = $13, monthly_fee = $14
+         WHERE id = $1`,
+        [
+          studentId,
+          input.name,
+          input.email,
+          input.phone,
+          input.parentPhone,
+          input.category,
+          input.collegeName,
+          input.branch,
+          input.academicYear,
+          input.company,
+          input.designation,
+          input.foodPreference,
+          input.vegDays,
+          input.monthlyFee,
+        ],
+      );
+    } catch (err) {
+      // The unique index on lower(email) has the last word, as at admission.
+      const pgError = err as { code?: string; constraint?: string };
+      if (pgError.code === "23505" && pgError.constraint === "users_email_lower_key") {
+        throw new HttpError(409, "email_taken", "This email address already belongs to an account.");
+      }
+      throw err;
+    }
+
+    await c.query("COMMIT");
+    transactionStarted = false;
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await c.query("ROLLBACK");
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    throw err;
+  } finally {
+    c.release(rollbackFailed);
+  }
+}
+
 // ---- Password reset (owner only) ----
 
 // Gives an active student a new temporary password, for one who forgot theirs (design doc,
