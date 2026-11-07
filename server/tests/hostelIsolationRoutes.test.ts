@@ -6,7 +6,7 @@ import { hostelToday } from "../src/lib/dates";
 import { signSession, type Role } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import { inRollback, testPool } from "./helpers/db";
-import { fillHostelB, type HostelB } from "./helpers/hostels";
+import { fillHostelB, rowsOfHostel, type HostelB } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // Multi-tenant phase 2c: two hostels through the real routes. Two new hostels, A and B,
@@ -39,18 +39,6 @@ async function call(c: PoolClient, app: App, cookie: string, method: Method, pat
 }
 
 const ids = (items: { id: number }[]) => items.map((i) => i.id).sort((a, b) => a - b);
-
-async function rowsOf(c: PoolClient, hostel: number) {
-  const out: Record<string, unknown[]> = {};
-  for (const table of [
-    "users", "buildings", "floors", "rooms", "beds", "stays", "rejoin_requests", "notifications",
-    "complaints", "complaint_events", "announcements", "return_polls", "return_poll_responses", "fees",
-    "hostel_settings",
-  ]) {
-    out[table] = (await c.query(`SELECT * FROM ${table} WHERE hostel_id = $1 ORDER BY 1, 2`, [hostel])).rows;
-  }
-  return out;
-}
 
 // Two fresh hostels and an app on the same transaction.
 function withTwoHostels(fn: (ctx: { c: PoolClient; app: App; a: HostelB; b: HostelB }) => Promise<void>) {
@@ -157,9 +145,9 @@ describe("two hostels through the routes", () => {
   it("answers 404 to each hostel for every one of the other's rows, and changes none of them", { timeout: 30_000 }, () =>
     withTwoHostels(async ({ c, app, a, b }) => {
       for (const [me, other] of [[a, b], [b, a]]) {
-        const before = await rowsOf(c, other.hostel);
+        const before = await rowsOfHostel(c, other.hostel);
         await expectOthersRowsRefused(c, app, me, other);
-        expect(await rowsOf(c, other.hostel)).toEqual(before);
+        expect(await rowsOfHostel(c, other.hostel)).toEqual(before);
       }
     }));
 

@@ -46,14 +46,12 @@ describe("hostel_settings", () => {
         .rows[0].id;
       await c.query(`SET LOCAL app.hostel_id = '${other}'`);
       await c.query(UPI_ONLY, ["other@ybl"]);
-      const { rows } = await c.query(
-        "SELECT hostel_id, upi_id FROM hostel_settings WHERE hostel_id IN (1, $1) ORDER BY hostel_id",
-        [other],
-      );
-      expect(rows).toEqual([
-        { hostel_id: 1, upi_id: "owner@okaxis" },
-        { hostel_id: other, upi_id: "other@ybl" },
-      ]);
+      const settingsOf = async (hostel: number) => {
+        await c.query(`SET LOCAL app.hostel_id = '${hostel}'`);
+        return (await c.query("SELECT hostel_id, upi_id FROM hostel_settings")).rows;
+      };
+      expect(await settingsOf(other)).toEqual([{ hostel_id: other, upi_id: "other@ybl" }]);
+      expect(await settingsOf(1)).toEqual([{ hostel_id: 1, upi_id: "owner@okaxis" }]);
     }));
 
   it("saves with an upsert, so the first save creates the row and later ones change it", () =>

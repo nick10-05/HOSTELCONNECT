@@ -5,6 +5,7 @@ import { expirePhotos } from "../src/jobs/expirePhotos";
 import { newPhotoPath, type PhotoStorage } from "../src/lib/storage";
 import { inRollback, insertStudent, photoJobLockShared, testPool, withPhotoJobLock } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
+import { asHostel } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // The expire-photos job (Claude, at Nikhil's request; section 12 lists "expiry and retry
@@ -183,10 +184,12 @@ describe("expirePhotos", () => {
         await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Photo Hostel') RETURNING id")
       ).rows[0].id;
       const mine = await complaintWithPhoto(c, storage);
+      await asHostel(c, other);
       const theirs = await complaintWithPhoto(c, storage, { hostelId: other });
 
       expect(await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW })).toMatchObject({ deleted: 1 });
       expect(removed(storage, [mine.path, theirs.path])).toEqual([mine.path]);
+      await asHostel(c, other);
       expect(await photoState(c, theirs.id)).toEqual({ deletedAt: null, attempts: 0 });
 
       expect(await expirePhotos(jobDb, storage, { hostelId: other, now: NOW })).toMatchObject({ deleted: 1 });

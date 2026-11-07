@@ -86,13 +86,20 @@ export async function fillHostel(c: PoolClient) {
 
 // Every row of a hostel, read with its hostel named explicitly (not through the
 // services), so "nothing of this hostel's changed" does not depend on the code under test.
+// Row-level security (migration 018) shows only the marked hostel's rows, so the reads
+// run marked with `hostel`; the transaction's mark is put back afterwards.
 export async function rowsOfHostel(c: PoolClient, hostel: number) {
+  const mark = (await c.query<{ mark: string | null }>("SELECT current_setting('app.hostel_id', true) AS mark")).rows[0]
+    .mark;
+  await asHostel(c, hostel);
   const out: Record<string, unknown[]> = {};
   for (const table of [
     "users", "buildings", "floors", "rooms", "beds", "stays", "rejoin_requests", "notifications",
     "complaints", "complaint_events", "announcements", "return_polls", "return_poll_responses", "fees",
+    "hostel_settings",
   ]) {
     out[table] = (await c.query(`SELECT * FROM ${table} WHERE hostel_id = $1 ORDER BY 1, 2`, [hostel])).rows;
   }
+  await c.query("SELECT set_config('app.hostel_id', $1, true)", [mark ?? ""]);
   return out;
 }

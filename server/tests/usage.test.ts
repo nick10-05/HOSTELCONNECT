@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { AMBER_PERCENT, egressKey, getUsage, UPLOADS_OFF_PERCENT, type UsageLimits } from "../src/services/usage";
 import { inRollback, insertStudent, testPool } from "./helpers/db";
+import { asHostel } from "./helpers/hostels";
 
 // The usage guard (Nikhil). Other test files add complaints at the same time, so storage
 // and failed deletions are totals over every complaint: each test runs in one rolled-back
@@ -111,6 +112,23 @@ describe("getUsage", () => {
         limitBytes: LIMIT_BYTES,
         percent: Math.floor(((stored + 500_000) * 100) / LIMIT_BYTES),
       });
+    }));
+
+  // Multi-tenant phase 2d: the storage limit is the one shared bucket's, so every hostel's
+  // photos count, though row-level security hides the other hostels' rows; a failing
+  // deletion is shown only to the owner of the hostel it belongs to.
+  it("counts every hostel's photos for storage, and only this hostel's failing deletions", () =>
+    inSnapshot(async (c) => {
+      const { stored, failing } = await before(c);
+      const other = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Usage Hostel') RETURNING id"))
+        .rows[0].id;
+      await asHostel(c, other);
+      await photo(c, 400_000, { attempts: 5 });
+      await asHostel(c, 1);
+
+      const usage = await getUsage(c, LIMITS, NOW);
+      expect(usage.storage.usedBytes).toBe(stored + 400_000);
+      expect(usage.failingDeletions).toBe(failing);
     }));
 
   it("reads this India month's egress counter, and 0 for a month with none", () =>

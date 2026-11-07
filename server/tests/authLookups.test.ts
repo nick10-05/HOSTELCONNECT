@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
+import { asHostel } from "./helpers/hostels";
 import { toTestDatabaseUrl } from "./helpers/testDatabase";
 
 // Multi-tenant phase 2a (migration 014). From phase 2d, row-level security hides every
@@ -43,10 +44,12 @@ describe("auth_user_by_id", () => {
   it("finds users of every hostel, since the session names no hostel", () =>
     inRollback(db, async (c) => {
       const other = await newHostel(c);
+      await asHostel(c, other);
       const { rows: made } = await c.query<{ id: number }>(
         "INSERT INTO users (hostel_id, role, name, email, password_hash) VALUES ($1, 'owner', 'Other', 'lookup-other@test.local', 'x') RETURNING id",
         [other],
       );
+      await asHostel(c, 1);
       const { rows } = await c.query("SELECT id, hostel_id FROM auth_user_by_id($1)", [made[0].id]);
       expect(rows).toEqual([{ id: made[0].id, hostel_id: other }]);
     }));
@@ -103,10 +106,12 @@ describe("auth_user_by_email", () => {
   it("never finds an account of another hostel", () =>
     inRollback(db, async (c) => {
       const other = await newHostel(c);
+      await asHostel(c, other);
       await c.query(
         "INSERT INTO users (hostel_id, role, name, email, password_hash) VALUES ($1, 'owner', 'Other', 'only-in-other@test.local', 'x')",
         [other],
       );
+      await asHostel(c, 1);
       expect((await c.query("SELECT * FROM auth_user_by_email(1, 'only-in-other@test.local')")).rows).toEqual([]);
       expect((await c.query("SELECT id FROM auth_user_by_email($1, 'only-in-other@test.local')", [other])).rows).toHaveLength(1);
     }));

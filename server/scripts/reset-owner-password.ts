@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { createPool } from "../src/db";
+import { createPool, withHostel } from "../src/db";
 import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { loadDotEnv } from "../src/loadEnv";
 import { confirmationMatches, resetOwnerPassword, resetTargetProblem } from "./resetOwnerPassword";
@@ -56,7 +56,8 @@ async function main() {
 
   const db = createPool(url);
   try {
-    const { temporaryPassword } = await resetOwnerPassword(db, email);
+    // Inside hostel #1 (row-level security, migration 018, shows no row outside a hostel).
+    const { temporaryPassword } = await withHostel(db, 1, (tx) => resetOwnerPassword(tx, email));
     // The one time this password is ever shown. It is not stored anywhere in plain text.
     console.log(production ? "Production owner password reset." : "Owner password reset.");
     console.log(`Temporary password: ${temporaryPassword}`);

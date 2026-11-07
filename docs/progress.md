@@ -1164,3 +1164,41 @@ which the scoped lookup before it already stops with a 404.
 - 2d (row-level security) remains: policies on all 15 tables reading
   `current_hostel_id()`, a way for the nightly backup to read every row, and one owner per
   hostel.
+
+## Multi-tenant SaaS, phase 2d: row-level security (2026-11-07)
+
+2d makes the database itself keep each hostel's rows to that hostel. A query that forgets
+its hostel filter, or a bug that passes another hostel's id, now finds nothing and can
+write nothing outside the hostel `withHostel` marked the transaction with.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Policies on the 15 per-hostel tables (migration `018_row_level_security.sql`) | Claude, at Nikhil's request | Done | `hostel_app` reads, changes and deletes only rows where `hostel_id = current_hostel_id()`, and may write only such rows. Outside `withHostel` every query on these tables fails ("No hostel is set"). Not forced: the tables' owner (migrations, restores, the sign-in lookups of migration 014) is not limited. `rowSecurity.test.ts` (8 tests) sends SQL with no hostel filter and checks it sees, changes and deletes none of another hostel's rows |
+| The nightly backup's own role, `hostel_backup` | Claude; the password is Nikhil's step | Done in code | Reads every row of every hostel and writes nothing; created without a login. `scripts/backup-role.ts` gives it the password from `BACKUP_DATABASE_URL` (6 tests in `backupRole.test.ts`). `backup.yml` dumps with `--enable-row-security`. Checked locally: `pg_dump` as `hostel_backup` succeeds with the flag and fails without it. The migration refuses an existing `hostel_backup` with more rights than a backup needs |
+| Photo storage for the whole platform | Claude | Done | The storage limit is the one shared bucket's, so `photo_storage_bytes()` (owner's rights, one number) counts every hostel's photos; failing deletions stay each hostel's own. New test in `usage.test.ts` |
+| Owner password reset script | Claude | Done | Runs inside hostel #1 (`withHostel`), since the table is no longer readable outside a hostel |
+| Tests that build two hostels | Claude | Done | Rows of another hostel are now written and read from inside that hostel (`asHostel`), so the foreign keys, not row-level security, are what the cross-hostel tests see refusing; `rowsOfHostel` reads under the hostel's own mark and restores the previous one |
+| Deploy and recovery docs | Claude | Done | `docs/deploy.md`: the `hostel_backup` URL, the one-time script, and the order for moving an existing deployment; `docs/RECOVERY.md`: the backup password as its own secret, and how to rotate it |
+
+Checks: server 1148 tests (1133 before), typecheck clean. Eleven planted bugs: nine caught.
+Not caught:
+- the failing-deletions count without its hostel filter: row-level security still limits
+  it to the hostel, which is what 2d is for;
+- `hostel_backup` created with BYPASSRLS: roles belong to the whole server, so the role
+  from an earlier run was reused and the planted CREATE never ran. The migration's guard
+  against such a role was checked by hand instead: with BYPASSRLS given to the local role,
+  the migration stopped with its message.
+
+### Notes for later days
+
+- Deployment order, complete: back up; apply 013 to 015; deploy the code; apply 016 to
+  018; then at once give `hostel_backup` its login (`scripts/backup-role.ts`) and set the
+  GitHub secret `BACKUP_DATABASE_URL` to its URL, and run the backup by hand. Until then
+  the nightly backup fails, since `hostel_app` now sees one hostel at most.
+  (`docs/deploy.md`, "Moving an existing deployment to hostels".)
+- Nikhil's step: a third password for `hostel_backup`, and the secret above.
+- The local demo seed (`scripts/demoSeed.ts`, Nikhil's uncommitted work) must run inside
+  `withHostel(db, 1, …)`, like `seed-owner.ts`, or row-level security refuses its queries.
+- One owner per hostel moves to phase 4 (sign-up), where each new hostel gets its owner;
+  the tests still create many owners in hostel #1.
+- `hostels` and `usage_counters` have no policies: they belong to no hostel.

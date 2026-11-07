@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { inRollback, insertOwner, insertStructure, insertStudent, pgError, testPool } from "./helpers/db";
+import { asHostel } from "./helpers/hostels";
 
 // Multi-tenant SaaS, phase 1 (migration 013): the "expand" step. Every hostel's rows carry
 // a hostel_id; today's single hostel is hostel #1, and every row the current code writes
@@ -192,10 +193,13 @@ describe("hostel_id on every table that belongs to a hostel", () => {
 });
 
 describe("a row can never point into another hostel", () => {
+  // Each refused row is written from inside its own hostel (the transaction marked with
+  // it), so row-level security lets it through and the foreign key is what refuses.
   it("refuses accommodation that mixes hostels", () =>
     inRollback(db, async (c) => {
       const other = await newHostel(c);
       const { building } = await insertStructure(c); // hostel #1
+      await asHostel(c, other);
       const floor = pgError(c, "INSERT INTO floors (hostel_id, building_id, number) VALUES ($1, $2, 2)", [other, building]);
       expect(await floor).toMatchObject({ code: FOREIGN_KEY_VIOLATION, constraint: "floors_hostel_building_fkey" });
       const room = pgError(c, "INSERT INTO rooms (hostel_id, building_id, room_number) VALUES ($1, $2, '9')", [
@@ -209,6 +213,7 @@ describe("a row can never point into another hostel", () => {
     inRollback(db, async (c) => {
       const other = await newHostel(c);
       const { room } = await insertStructure(c);
+      await asHostel(c, other);
       expect(
         await pgError(c, "INSERT INTO beds (hostel_id, room_id, bed_number) VALUES ($1, $2, 'Z')", [other, room]),
       ).toMatchObject({ code: FOREIGN_KEY_VIOLATION, constraint: "beds_hostel_room_fkey" });
@@ -220,6 +225,7 @@ describe("a row can never point into another hostel", () => {
       const owner = await insertOwner(c);
       const student = await insertStudent(c);
       const { building } = await insertStructure(c);
+      await asHostel(c, other);
       const stay = "INSERT INTO stays (hostel_id, student_id, building_id, started_on, created_by) VALUES ($1, $2, $3, '2026-01-14', $4)";
       const err = await pgError(c, stay, [other, student, building, owner]);
       expect(err.code).toBe(FOREIGN_KEY_VIOLATION);
@@ -265,6 +271,7 @@ describe("a row can never point into another hostel", () => {
           [other, student],
         ],
       ];
+      await asHostel(c, other);
       for (const [constraint, sql, params] of cases) {
         expect(await pgError(c, sql, params), constraint).toMatchObject({ code: FOREIGN_KEY_VIOLATION, constraint });
       }
@@ -287,6 +294,7 @@ describe("a row can never point into another hostel", () => {
           [owner],
         )
       ).rows[0].id;
+      await asHostel(c, other);
       expect(
         await pgError(c, "INSERT INTO complaint_events (hostel_id, complaint_id, actor_id, kind) VALUES ($1, $2, $3, 'created')", [
           other,
@@ -305,6 +313,7 @@ describe("a row can never point into another hostel", () => {
 
   it("refuses a row for a hostel that does not exist", () =>
     inRollback(db, async (c) => {
+      await asHostel(c, 999999);
       expect(await pgError(c, "INSERT INTO buildings (hostel_id, name) VALUES (999999, 'Nowhere')")).toMatchObject({
         code: FOREIGN_KEY_VIOLATION,
         constraint: "buildings_hostel_id_fkey",
@@ -314,6 +323,7 @@ describe("a row can never point into another hostel", () => {
   it("still allows a whole set of rows inside another hostel", () =>
     inRollback(db, async (c) => {
       const other = await newHostel(c);
+      await asHostel(c, other);
       const id = async (sql: string, params: unknown[]) => (await c.query<{ id: number }>(sql, params)).rows[0].id;
       const building = await id("INSERT INTO buildings (hostel_id, name) VALUES ($1, 'Block A') RETURNING id", [other]);
       const floor = await id("INSERT INTO floors (hostel_id, building_id, number) VALUES ($1, $2, 0) RETURNING id", [

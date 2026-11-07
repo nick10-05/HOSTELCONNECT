@@ -55,7 +55,11 @@ Build these URLs (replace the `<…>` parts):
 |---|---|
 | `MIGRATION_DATABASE_URL` | `postgres://postgres.<ref>:<ADMIN_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
 | `DATABASE_URL` | `postgres://hostel_app.<ref>:<APP_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
-| `BACKUP_DATABASE_URL` | the `DATABASE_URL` above, ending in `?sslmode=require` instead |
+| `BACKUP_DATABASE_URL` | `postgres://hostel_backup.<ref>:<BACKUP_PW>@<pooler-host>:5432/postgres?sslmode=require` |
+
+`<BACKUP_PW>` is a third password, made the same way as the app's. `hostel_backup` is
+the nightly backup's own role: it may read every hostel's rows and write nothing. It is
+created by migration 018 without a login; step 3 gives it this password.
 
 Why two `sslmode`s: both encrypt the connection. The Node `pg` driver reads `require`
 as "also verify the certificate against the public CAs", which fails for Supabase's
@@ -80,6 +84,17 @@ Check that Supabase's API roles can see nothing (SQL Editor, should return no ro
 select grantee, table_name from information_schema.role_table_grants
 where table_schema = 'public' and grantee in ('anon', 'authenticated');
 ```
+
+Then give the backup its login (migration 018 on): from `server/`, in PowerShell, with
+the two URLs set in this window only, never in `.env`:
+```powershell
+$env:MIGRATION_DATABASE_URL = Read-Host "Paste MIGRATION_DATABASE_URL"
+$env:BACKUP_DATABASE_URL = Read-Host "Paste BACKUP_DATABASE_URL"
+npx tsx scripts/backup-role.ts
+Remove-Item Env:MIGRATION_DATABASE_URL, Env:BACKUP_DATABASE_URL
+```
+It prints `hostel_backup can log in and read every hostel: …`. Running it again sets the
+password again (to change it).
 
 ## 4. Render
 
@@ -140,7 +155,8 @@ password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost 
 
 1. Create a new Supabase project (step 1) and update the three URL secrets (step 2).
 2. Run **Migrate production database** on the commit that matches the backup, so the
-   empty schema has the same migrations as the backup.
+   empty schema has the same migrations as the backup. Then give the backup its login
+   again (`scripts/backup-role.ts`, step 3): the new project's `hostel_backup` has none.
 3. Load the rows, in Git Bash. Paste the admin URL (ending in `?sslmode=require` here)
    at the hidden `read` prompt: Bash saves typed commands to a history file, and only
    the name `$RESTORE_URL` ends up there, never the URL.
@@ -157,6 +173,19 @@ password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost 
 A pull request with a new migration: run **Migrate production database** on that branch
 first, then merge. Migrations only ever add, so the running code keeps working while the
 new tables arrive, and the new code never starts without them.
+
+### Moving an existing deployment to hostels (migrations 013 to 018)
+
+These need the code in between, so the order matters:
+
+1. Run **Backup database**, and keep that backup.
+2. Migrate with the code before the hostels change: 013, 014 and 015 only.
+3. Deploy the hostels code (Render).
+4. Migrate again: 016, 017 and 018.
+5. At once after 018: make `<BACKUP_PW>`, run `scripts/backup-role.ts` (step 3), and
+   set the GitHub secret `BACKUP_DATABASE_URL` to the `hostel_backup` URL (step 1's
+   table). Until then the nightly backup fails: `hostel_app`, which it used before, now
+   sees at most one hostel. Then run **Backup database** by hand to check it.
 
 ## Free-plan limits to expect
 

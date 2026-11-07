@@ -48,8 +48,10 @@ async function hostelWithOldNotification(c: PoolClient, name: string) {
   return { hostel, notification };
 }
 
-const exists = async (c: PoolClient, notification: number) =>
-  (await c.query("SELECT 1 FROM notifications WHERE id = $1", [notification])).rowCount === 1;
+const exists = async (c: PoolClient, { hostel, notification }: { hostel: number; notification: number }) => {
+  await asHostel(c, hostel);
+  return (await c.query("SELECT 1 FROM notifications WHERE id = $1", [notification])).rowCount === 1;
+};
 
 describe("run-jobs with more than one hostel", () => {
   it("rolls back a failing hostel's jobs, still runs the hostels after it, and answers 500", () =>
@@ -66,8 +68,8 @@ describe("run-jobs with more than one hostel", () => {
         expect(res.body.error.code).toBe("jobs_failed");
         // The broken hostel's prune was undone with the rest of its jobs; the healthy one,
         // which runs after it, pruned its own.
-        expect(await exists(c, broken.notification)).toBe(true);
-        expect(await exists(c, healthy.notification)).toBe(false);
+        expect(await exists(c, broken)).toBe(true);
+        expect(await exists(c, healthy)).toBe(false);
         expect(errors).toHaveBeenCalledWith(`run-jobs: the jobs of hostel ${broken.hostel} failed`, expect.any(Error));
         expect(errors).toHaveBeenCalledTimes(1);
       } finally {

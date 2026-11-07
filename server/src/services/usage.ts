@@ -57,14 +57,17 @@ export function egressKey(now: Date): string {
 //                     DELETE_WARNING_ATTEMPTS times or more (photo_delete_attempts).
 export async function getUsage(db: Queryable, limits: UsageLimits, now: Date): Promise<Usage> {
   const key = egressKey(now);
-  // One query, so storage, failures and egress are read at the same moment. The partial
-  // index complaints_photo_due covers exactly these rows.
+  // One query, so storage, failures and egress are read at the same moment. Storage and
+  // egress are the whole platform's (one shared bucket): photo_storage_bytes() counts every
+  // hostel's photos (migration 018), and usage_counters belongs to no hostel. Failing
+  // deletions are this hostel's own, for its owner's dashboard.
   const { rows } = await db.query<{ stored: number; failing: number; egress: number }>(
-    `SELECT coalesce(sum(photo_size_bytes), 0)::bigint AS stored,
-            count(*) FILTER (WHERE photo_delete_attempts >= $2)::int AS failing,
-            coalesce((SELECT value FROM usage_counters WHERE key = $1), 0)::bigint AS egress
-     FROM complaints
-     WHERE photo_path IS NOT NULL AND photo_deleted_at IS NULL`,
+    `SELECT photo_storage_bytes() AS stored,
+            (SELECT count(*)::int FROM complaints
+             WHERE hostel_id = current_hostel_id()
+               AND photo_path IS NOT NULL AND photo_deleted_at IS NULL
+               AND photo_delete_attempts >= $2) AS failing,
+            coalesce((SELECT value FROM usage_counters WHERE key = $1), 0)::bigint AS egress`,
     [key, DELETE_WARNING_ATTEMPTS],
   );
   const { stored, failing, egress } = rows[0];

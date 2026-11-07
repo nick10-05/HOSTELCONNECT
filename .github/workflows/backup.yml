@@ -28,9 +28,11 @@ jobs:
     timeout-minutes: 15
     environment: production
     env:
-      # hostel_app through Supabase's session pooler, with sslmode=require (pg_dump
-      # reads the URL the libpq way). hostel_app can read every table, which is all a
-      # dump needs, so the admin password never has to be here.
+      # hostel_backup through Supabase's session pooler, with sslmode=require (pg_dump
+      # reads the URL the libpq way). Since migration 018, row-level security shows
+      # hostel_app one hostel's rows at most; hostel_backup may read every row of every
+      # hostel and write none, so neither the app's nor the admin password is here.
+      # Its login is set once with server/scripts/backup-role.ts (docs/deploy.md).
       BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
       AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
     steps:
@@ -52,9 +54,11 @@ jobs:
           # Custom format (-Fc) is compressed, and pg_restore can load all of it (the
           # restore drill) or only the rows into a freshly migrated database (a real
           # recovery, docs/deploy.md). Owners and grants come from the migrations.
+          # --enable-row-security: without it pg_dump refuses tables with row-level
+          # security; with it, hostel_backup's policy shows it every row.
           # The unencrypted dump only ever exists inside this pipe, never as a file.
           docker run --rm -e BACKUP_DATABASE_URL postgres:17-alpine \
-            sh -c 'exec pg_dump "$BACKUP_DATABASE_URL" --format=custom --schema=public --no-owner --no-privileges' \
+            sh -c 'exec pg_dump "$BACKUP_DATABASE_URL" --format=custom --schema=public --no-owner --no-privileges --enable-row-security' \
             | age --encrypt --recipient "$AGE_PUBLIC_KEY" > "$file"
           # An empty or failed dump would still make a small file; a real one is larger.
           size=$(stat -c %s "$file")
