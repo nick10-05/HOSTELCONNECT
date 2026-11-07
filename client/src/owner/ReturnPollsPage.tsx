@@ -11,6 +11,7 @@ import {
 } from "../api/returnPolls";
 import { formatTime } from "../components/complaintText";
 import { inputClass, primaryButton } from "./styles";
+import { ListSkeleton, Pager } from "../ui/ListParts";
 
 // The owner's return polls (design doc, sections 2 and 9; day 9): start one with a short
 // question, which notifies every current student, and see every poll with its counts.
@@ -22,17 +23,15 @@ const PAGE_SIZE = 20; // the server's default page size
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export const countsText = (c: PollCounts) =>
   `${c.returned} returned · ${c.notYet} not yet · ${c.noResponse} no response`;
 
 export function PollStatusBadge({ status }: { status: PollWithCounts["status"] }) {
   return status === "open" ? (
-    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Open</span>
+    <span className="rounded-full hc-pill-green px-2 py-0.5 text-xs font-semibold">Open</span>
   ) : (
-    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Closed</span>
+    <span className="rounded-full bg-soft px-2 py-0.5 text-xs font-semibold text-muted">Closed</span>
   );
 }
 
@@ -63,11 +62,11 @@ export function ReturnPollsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Return polls</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Return polls</h1>
 
       {result &&
         (anyOpen ? (
-          page === 1 && <p className="text-sm text-slate-600">Close the open poll before starting another.</p>
+          page === 1 && <p className="text-sm text-muted">Close the open poll before starting another.</p>
         ) : (
           <StartForm
             onStarted={() => {
@@ -78,61 +77,39 @@ export function ReturnPollsPage() {
         ))}
 
       {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {message}
         </p>
       )}
 
       {loadError ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {loadError}
         </p>
       ) : !result ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading polls…" rows={3} />
       ) : result.total === 0 ? (
-        <p className="text-sm text-slate-600">No return polls yet.</p>
+        <p className="text-sm text-muted">No return polls yet.</p>
       ) : (
         <>
           <ul aria-label="Return polls" className="space-y-3">
             {result.items.map((p) => (
-              <li key={p.id} className="space-y-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <li key={p.id} className="space-y-1 rounded-card border border-line bg-surface p-4 shadow-card">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Link to={`/return-polls/${p.id}`} className="font-medium text-indigo-700 hover:underline">
+                  <Link to={`/return-polls/${p.id}`} className="-my-2.5 inline-flex min-h-11 items-center font-semibold text-accent hover:underline">
                     {p.title}
                   </Link>
                   <PollStatusBadge status={p.status} />
                 </div>
-                <p className="text-sm text-slate-700">{countsText(p.counts)}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm text-muted">{countsText(p.counts)}</p>
+                <p className="text-xs text-muted">
                   Started {formatTime(p.createdAt)}
                   {p.closedAt && ` · closed ${formatTime(p.closedAt)}`}
                 </p>
               </li>
             ))}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page <= 1}
-                onClick={() => setParams(page - 1 > 1 ? { page: String(page - 1) } : {})}
-              >
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page >= pages}
-                onClick={() => setParams({ page: String(page + 1) })}
-              >
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={(n) => setParams(n > 1 ? { page: String(n) } : {})} />
         </>
       )}
     </div>
@@ -166,10 +143,10 @@ function StartForm({ onStarted }: { onStarted: () => void }) {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-700">New poll</h2>
+    <form onSubmit={submit} className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 className="text-base font-bold text-ink">New poll</h2>
       <div className="space-y-1">
-        <label htmlFor={fieldId} className="block text-sm font-medium text-slate-700">
+        <label htmlFor={fieldId} className="block text-sm font-medium text-muted">
           Question
         </label>
         <input
@@ -181,13 +158,13 @@ function StartForm({ onStarted }: { onStarted: () => void }) {
           aria-describedby={countId}
           className={inputClass}
         />
-        <p id={countId} className={`text-xs ${tooLong ? "text-red-600" : "text-slate-500"}`}>
+        <p id={countId} className={`text-xs ${tooLong ? "text-danger" : "text-muted"}`}>
           {length} / {POLL_TITLE_MAX}
         </p>
       </div>
-      <p className="text-sm text-slate-500">Every current student is notified and answers from their home page.</p>
+      <p className="text-sm text-muted">Every current student is notified and answers from their home page.</p>
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}

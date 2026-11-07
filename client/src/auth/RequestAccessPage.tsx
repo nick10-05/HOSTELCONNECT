@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { requestAccess } from "../api/rejoin";
+import { buttonClass, fieldClass } from "../ui";
+import { AuthShell, authCardClass } from "../ui/AuthShell";
 
 // The public "Request access" page (design doc, section 9), for former students, who
 // cannot log in. The server answers the same sentence whoever the email belongs to, and
@@ -8,8 +10,7 @@ import { requestAccess } from "../api/rejoin";
 
 export const MESSAGE_LIMIT = 500;
 
-const inputClass =
-  "mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none";
+const inputClass = `${fieldClass} mt-1`;
 
 export function RequestAccessPage() {
   const [email, setEmail] = useState("");
@@ -36,35 +37,30 @@ export function RequestAccessPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-sm">
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900">Request access</h1>
-        <p className="mt-1 text-center text-sm text-slate-500">
-          For former residents who would like to come back
-        </p>
+    <AuthShell title="Request access" subtitle="For former residents who would like to come back">
 
         {answer ? (
-          <div className="mt-8 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p role="status" className="text-slate-700">
+          <div className={`${authCardClass} space-y-4`}>
+            <p role="status" className="font-semibold text-ink">
               {answer}
             </p>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted">
               If your request is approved, the owner will give you a temporary password in person.
             </p>
           </div>
         ) : (
           <form
             onSubmit={handleSubmit}
-            className="mt-8 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+            className={authCardClass}
           >
             {error && (
-              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
                 {error}
               </p>
             )}
 
             <div>
-              <label htmlFor="request-email" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="request-email" className="block text-sm font-semibold text-ink">
                 Email you used at the hostel
               </label>
               <input
@@ -80,7 +76,7 @@ export function RequestAccessPage() {
             </div>
 
             <div>
-              <label htmlFor="request-message" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="request-message" className="block text-sm font-semibold text-ink">
                 Message for the owner (optional)
               </label>
               <textarea
@@ -94,7 +90,7 @@ export function RequestAccessPage() {
               />
               <p
                 id="request-message-count"
-                className={`mt-1 text-right text-sm ${tooLong ? "text-red-700" : "text-slate-500"}`}
+                className={`mt-1 text-right text-sm ${tooLong ? "font-semibold text-danger" : "text-muted"}`}
               >
                 {length} / {MESSAGE_LIMIT}
               </p>
@@ -103,7 +99,7 @@ export function RequestAccessPage() {
             <button
               type="submit"
               disabled={submitting || tooLong}
-              className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`${buttonClass("primary")} min-h-12 w-full`}
             >
               {submitting ? "Sending…" : "Send request"}
             </button>
@@ -112,11 +108,10 @@ export function RequestAccessPage() {
 
         <p className="mt-6 text-center text-sm">
           {/* A plain link: the sign-in page is the same app, loaded fresh. */}
-          <a href="/" className="font-medium text-indigo-700 hover:underline">
+          <a href="/" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Back to sign in
           </a>
         </p>
-      </div>
-    </main>
+    </AuthShell>
   );
 }

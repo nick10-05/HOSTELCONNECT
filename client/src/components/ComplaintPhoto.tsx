@@ -43,17 +43,17 @@ export function ComplaintPhoto({ photo, countdown = false }: { photo: StudentPho
 
   return (
     <section aria-labelledby="complaint-photo-heading" className="space-y-2">
-      <h2 id="complaint-photo-heading" className="text-sm font-semibold text-slate-700">
+      <h2 id="complaint-photo-heading" className="text-base font-bold text-ink">
         Photo
       </h2>
       {expired ? (
-        <p className="text-sm text-slate-500">{DELETED}</p>
+        <p className="text-sm text-muted">{DELETED}</p>
       ) : (
         <>
           {photo.status === "unavailable" ? (
-            <p className="text-sm text-slate-500">The photo cannot be shown right now. Try again later.</p>
+            <p className="text-sm text-muted">The photo cannot be shown right now. Try again later.</p>
           ) : broken ? (
-            <p className="text-sm text-slate-500">The photo link has run out. Reload the page to see it again.</p>
+            <p className="text-sm text-muted">The photo link has run out. Reload the page to see it again.</p>
           ) : (
             url && (
               <img
@@ -62,11 +62,11 @@ export function ComplaintPhoto({ photo, countdown = false }: { photo: StudentPho
                 onError={() => setBroken(true)}
                 // A signed link: no Referer to other sites, which would carry it along.
                 referrerPolicy="no-referrer"
-                className="max-h-96 w-auto max-w-full rounded-lg border border-slate-200"
+                className="max-h-96 w-auto max-w-full rounded-lg border border-line"
               />
             )
           )}
-          {left && <p className="text-sm text-amber-800">Deleted in {left}</p>}
+          {left && <p className="text-sm text-warn">Deleted in {left}</p>}
         </>
       )}
     </section>

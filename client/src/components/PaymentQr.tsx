@@ -32,7 +32,7 @@ export function PaymentQr({ settings, amount }: { settings: PaymentSettings; amo
     <img
       src={src}
       alt={`QR code to pay ${payeeOf(settings)}`}
-      className="h-56 w-56 rounded-lg border border-slate-200 bg-white object-contain p-2"
+      className="h-56 w-56 rounded-lg border border-line bg-surface object-contain p-2"
     />
   );
 }
@@ -58,25 +58,25 @@ export function PaymentDetails({ amount }: { amount?: number }) {
   return (
     <section
       aria-labelledby="pay-the-hostel"
-      className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card"
     >
-      <h2 id="pay-the-hostel" className="text-sm font-semibold text-slate-700">
+      <h2 id="pay-the-hostel" className="text-base font-bold text-ink">
         Pay the hostel
       </h2>
       {nothingSet ? (
-        <p className="text-sm text-slate-600">The hostel has not added payment details yet.</p>
+        <p className="text-sm text-muted">The hostel has not added payment details yet.</p>
       ) : (
         <>
           {settings.upiId && (
             <dl className="space-y-1 text-sm">
               <div className="flex flex-wrap gap-x-2">
-                <dt className="text-slate-600">UPI ID</dt>
-                <dd className="font-mono font-medium break-all text-slate-900 select-all">{settings.upiId}</dd>
+                <dt className="text-muted">UPI ID</dt>
+                <dd className="font-mono font-medium break-all text-ink select-all">{settings.upiId}</dd>
               </div>
               {settings.upiPayeeName && (
                 <div className="flex flex-wrap gap-x-2">
-                  <dt className="text-slate-600">Name</dt>
-                  <dd className="text-slate-900">{settings.upiPayeeName}</dd>
+                  <dt className="text-muted">Name</dt>
+                  <dd className="text-ink">{settings.upiPayeeName}</dd>
                 </div>
               )}
             </dl>
@@ -85,12 +85,12 @@ export function PaymentDetails({ amount }: { amount?: number }) {
           {settings.upiId && (
             <a
               href={upiLink({ upiId: settings.upiId, upiPayeeName: settings.upiPayeeName }, amount)}
-              className="inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+              className="press bg-active inline-flex min-h-11 items-center rounded-xl px-4 text-sm font-semibold"
             >
               Pay with a UPI app
             </a>
           )}
-          <p className="text-sm text-slate-500">The hostel records your payment, and it shows here once recorded.</p>
+          <p className="text-sm text-muted">The hostel records your payment, and it shows here once recorded.</p>
         </>
       )}
     </section>

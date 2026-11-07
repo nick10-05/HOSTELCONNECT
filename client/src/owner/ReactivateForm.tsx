@@ -6,6 +6,7 @@ import { addDays, hostelToday, MAX_DAYS_AHEAD } from "./admissionForm";
 import { formatDate } from "./format";
 import { bedStillFree, PlacePicker, withPlaceChange, type PlaceErrors, type PlaceValues } from "./PlacePicker";
 import { inputClass, primaryButton, secondaryButton } from "./styles";
+import { Skeleton } from "../ui";
 
 // Bringing a former student back (design doc, sections 6 and 9), opened from the
 // profile: a new joining date and a place. The server makes the new stay and the new
@@ -121,33 +122,33 @@ export function ReactivateForm({
   return (
     <section
       aria-labelledby={headingId}
-      className="space-y-4 rounded-xl border border-indigo-200 bg-white p-4 shadow-sm"
+      className="space-y-4 rounded-card border border-indigo-400/40 bg-surface p-4 shadow-card"
     >
-      <h2 id={headingId} className="text-sm font-semibold text-slate-700">
+      <h2 id={headingId} className="text-base font-bold text-ink">
         {title}
       </h2>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-muted">
         {leftOn
           ? `Left on ${formatDate(leftOn)}. The new joining date can be that day or later, up to ${MAX_DAYS_AHEAD} days from today.`
           : `The joining date can be up to ${MAX_DAYS_AHEAD} days from today.`}
       </p>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}
 
       {buildings === null ? (
         <div className="space-y-4">
-          {!error && <p className="text-sm text-slate-500">Loading…</p>}
+          {!error && <Skeleton label="Loading rooms…" lines={3} />}
           {cancel}
         </div>
       ) : (
         <form noValidate onSubmit={submit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor={dateId} className="mb-1 block text-sm font-medium text-slate-700">
+              <label htmlFor={dateId} className="mb-1 block text-sm font-medium text-muted">
                 Joining date
               </label>
               <input
@@ -160,7 +161,7 @@ export function ReactivateForm({
                 aria-describedby={errors.joiningDate ? `${dateId}-error` : undefined}
               />
               {errors.joiningDate && (
-                <p id={`${dateId}-error`} className="mt-1 text-sm text-red-700">
+                <p id={`${dateId}-error`} className="mt-1 text-sm text-danger">
                   {errors.joiningDate}
                 </p>
               )}

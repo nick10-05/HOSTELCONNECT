@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
+import { BellIcon } from "../ui/icons";
 import {
   listNotifications,
   markAllNotificationsRead,
@@ -113,19 +114,13 @@ export function NotificationBell() {
         aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
         aria-controls={panelId}
-        className="relative rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        className="press relative flex size-11 items-center justify-center rounded-[15px] border border-line bg-surface text-ink shadow-card hover:bg-soft"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-6">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
-          />
-        </svg>
+        <BellIcon />
         {unread > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -top-0.5 -right-0.5 min-w-5 rounded-full bg-red-600 px-1 text-center text-xs leading-5 font-semibold text-white"
+            className="absolute -top-1 -right-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-[11px] leading-5 font-bold text-white ring-2 ring-[var(--hc-bg)]"
           >
             {unread > 9 ? "9+" : unread}
           </span>
@@ -138,29 +133,30 @@ export function NotificationBell() {
           role="dialog"
           aria-labelledby={headingId}
           // On a phone the bell is not at the screen's edge (Sign out is), so a panel
-          // lined up with it ran off the left side: there it spans the screen, 16px in
-          // from each side. From sm up it hangs under the bell.
-          className="fixed inset-x-4 top-14 z-10 rounded-xl border border-slate-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-80"
+          // lined up with it ran off the left side: there it spans the header bar, just
+          // under it. (The bar's blur makes it the box a fixed panel is placed in.) From
+          // sm up it hangs under the bell.
+          className="fixed inset-x-0 top-[calc(100%+0.75rem)] z-40 border border-line bg-surface animate-[sheet-up_0.35s_cubic-bezier(0.2,0.9,0.25,1)_both] overflow-hidden rounded-3xl shadow-[0_24px_50px_-18px_rgb(10_10_15/0.45)] sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-3 sm:w-96"
         >
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-            <h2 id={headingId} className="text-sm font-semibold text-slate-700">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <h2 id={headingId} className="text-base font-extrabold text-ink">
               Notifications
             </h2>
             <button
               type="button"
               onClick={markAll}
               disabled={unread === 0}
-              className="text-sm font-medium text-indigo-700 hover:underline disabled:cursor-default disabled:text-slate-400 disabled:no-underline"
+              className="min-h-11 rounded-lg px-2 text-sm font-semibold text-[var(--hc-accent)] hover:bg-soft disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent"
             >
               Mark all read
             </button>
           </div>
           {!list || list.items.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-500">
+            <p className="px-4 py-8 text-center text-sm text-muted">
               {list ? "No notifications yet." : "Loading…"}
             </p>
           ) : (
-            <ul className="max-h-96 divide-y divide-slate-100 overflow-y-auto">
+            <ul className="max-h-[60dvh] divide-y divide-line overflow-y-auto sm:max-h-96">
               {list.items.map((n) => (
                 <li key={n.id}>
                   <Entry
@@ -184,15 +180,15 @@ export function NotificationBell() {
 function Entry({ notification: n, onOpen }: { notification: NotificationItem; onOpen: () => void }) {
   const content = (
     <>
-      <p className={`text-sm ${n.readAt ? "text-slate-700" : "font-semibold text-slate-900"}`}>{n.title}</p>
-      {n.body && <span className="mt-0.5 block text-sm text-slate-600">{n.body}</span>}
-      <span className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+      <p className={`text-sm ${n.readAt ? "text-muted" : "font-semibold text-ink"}`}>{n.title}</p>
+      {n.body && <span className="mt-0.5 block text-sm text-muted">{n.body}</span>}
+      <span className="mt-1 flex items-center gap-2 text-xs text-faint">
         {formatTime(n.createdAt)}
-        {!n.readAt && <span className="rounded-full bg-indigo-50 px-1.5 font-medium text-indigo-700">Unread</span>}
+        {!n.readAt && <span className="hc-pill-violet rounded-full px-1.5 font-semibold">Unread</span>}
       </span>
     </>
   );
-  const className = `block w-full px-4 py-3 text-left hover:bg-slate-50 ${n.readAt ? "" : "bg-indigo-50/40"}`;
+  const className = `block w-full px-4 py-3 text-left hover:bg-soft ${n.readAt ? "" : "bg-soft/70"}`;
   return n.link ? (
     <Link to={n.link} onClick={onOpen} className={className}>
       {content}

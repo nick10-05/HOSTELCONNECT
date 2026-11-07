@@ -14,6 +14,10 @@ import {
   type OwnerFeeRow,
 } from "../api/fees";
 import { getStructure, type Building } from "../api/structure";
+import { Alert, Button, buttonClass, EmptyState, Pill, type PillTone } from "../ui";
+import { CheckIcon, RupeeIcon, WarningIcon } from "../ui/icons";
+import { Avatar, ListSkeleton, PageHeader, Pager, Segmented, SelectField } from "../ui/ListParts";
+import { useToast } from "../ui/Toast";
 import { formatDate, formatRupees } from "./format";
 import { inputClass, primaryButton, secondaryButton } from "./styles";
 
@@ -29,32 +33,38 @@ const PAGE_SIZE = 20; // the server's default page size
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
-const smallButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+const smallButton = `${buttonClass("secondary")} min-h-10 px-3`;
 
-const STATUSES = [
+// "All" is no filter: the empty value.
+const SHOW = [
+  ["", "All"],
   ["paid", "Paid"],
   ["pending", "Pending"],
   ["overdue", "Overdue"],
 ] as const;
-type StatusFilter = (typeof STATUSES)[number][0];
+type StatusFilter = "paid" | "pending" | "overdue";
+const isStatus = (v: string): v is StatusFilter => v === "paid" || v === "pending" || v === "overdue";
 
-const STATE_BADGE: Record<FeeState, [string, string]> = {
-  paid: ["Paid", "bg-emerald-50 text-emerald-700"],
-  overdue: ["Overdue", "bg-red-50 text-red-700"],
-  due: ["Due today", "bg-amber-50 text-amber-800"],
-  upcoming: ["Upcoming", "bg-slate-100 text-slate-600"],
+const STATE_BADGE: Record<FeeState, [string, PillTone]> = {
+  paid: ["Paid", "green"],
+  overdue: ["Overdue", "red"],
+  due: ["Due today", "amber"],
+  upcoming: ["Upcoming", "grey"],
 };
 
 const feesText = (n: number) => `${n} ${n === 1 ? "fee" : "fees"}`;
+
+// '2032-07' → 'July 2032'; with no month, India's current one.
+const monthName = (month: string) =>
+  new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: month ? "UTC" : "Asia/Kolkata" }).format(
+    month ? new Date(`${month}-01T00:00:00Z`) : new Date(),
+  );
 
 export function FeesPage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? "";
   const statusParam = params.get("status") ?? "";
-  const status = STATUSES.some(([value]) => value === statusParam) ? (statusParam as StatusFilter) : undefined;
+  const status = isStatus(statusParam) ? statusParam : undefined;
   const building = params.get("building") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
 
@@ -67,9 +77,8 @@ export function FeesPage() {
   const [confirming, setConfirming] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const toast = useToast();
   const monthId = useId();
-  const statusId = useId();
-  const buildingId = useId();
 
   useEffect(() => {
     let current = true;
@@ -115,7 +124,8 @@ export function FeesPage() {
     setParams(query);
   };
 
-  // Runs one change, then reloads the list (the row's state and the totals change).
+  // Runs one change, then reloads the list (the row's state and the totals change). The
+  // message goes in the pop-up at the top of the screen, or in the page without one.
   const run = async (action: () => Promise<unknown>, done: string) => {
     setBusy(true);
     setMessage(null);
@@ -124,7 +134,8 @@ export function FeesPage() {
       await action();
       setMarking(null);
       setConfirming(null);
-      setMessage(done);
+      if (toast.available) toast.show(done);
+      else setMessage(done);
       setReloads((n) => n + 1);
     } catch (err) {
       setActionError(errorText(err));
@@ -137,86 +148,58 @@ export function FeesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Fees</h1>
+      <PageHeader title="Fees" subtitle={monthName(month)} />
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <label htmlFor={monthId} className="block text-sm font-medium text-slate-700">
-            Month
-          </label>
-          <input
-            id={monthId}
-            type="month"
-            value={month}
-            onChange={(e) => filterBy({ month: e.target.value })}
-            className={inputClass}
-          />
-        </div>
-        <button type="button" onClick={() => filterBy({ month: "" })} className={secondaryButton}>
-          This month
-        </button>
-        <div className="space-y-1">
-          <label htmlFor={statusId} className="block text-sm font-medium text-slate-700">
-            Show
-          </label>
-          <select
-            id={statusId}
-            value={status ?? ""}
-            onChange={(e) => filterBy({ status: e.target.value })}
-            className={inputClass}
-          >
-            <option value="">All fees</option>
-            {STATUSES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-        {buildings.length > 0 && (
-          <div className="space-y-1">
-            <label htmlFor={buildingId} className="block text-sm font-medium text-slate-700">
-              Building
+      <div className="space-y-3">
+        <Segmented label="Show" options={SHOW} value={status ?? ""} onChange={(v) => filterBy({ status: v })} />
+        <div className="grid grid-cols-[1fr_auto] items-end gap-3 sm:flex sm:flex-wrap">
+          <div className="sm:w-48">
+            <label htmlFor={monthId} className="mb-1 block text-xs font-semibold tracking-wide text-muted uppercase">
+              Month
             </label>
-            <select
-              id={buildingId}
-              value={building}
-              onChange={(e) => filterBy({ building: e.target.value })}
+            <input
+              id={monthId}
+              type="month"
+              value={month}
+              onChange={(e) => filterBy({ month: e.target.value })}
               className={inputClass}
-            >
-              <option value="">All buildings</option>
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            />
           </div>
-        )}
+          <button type="button" onClick={() => filterBy({ month: "" })} className={secondaryButton}>
+            This month
+          </button>
+          {buildings.length > 0 && (
+            <div className="col-span-2 sm:w-56">
+              <SelectField label="Building" value={building} onChange={(v) => filterBy({ building: v ?? "" })}>
+                <option value="">All buildings</option>
+                {buildings.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
+        </div>
       </div>
 
-      {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {message}
-        </p>
-      )}
+      {message && <Alert tone="success">{message}</Alert>}
 
       {loadError ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {loadError}
-        </p>
+        <Alert tone="error">{loadError}</Alert>
       ) : !data ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading fees…" />
       ) : (
         <>
-          <section aria-label="Totals" className="space-y-2">
-            <dl className="grid grid-cols-3 gap-3">
-              <Total label="Paid" total={data.totals.paid} />
-              <Total label="Pending" total={data.totals.pending} />
-              <Total label="Overdue" total={data.totals.overdue} />
+          <section aria-label="Totals" className="space-y-3">
+            <dl className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <Total label="Paid" total={data.totals.paid} look="hero" />
+              <Total label="Pending" total={data.totals.pending} look="pending" />
+              <Total label="Overdue" total={data.totals.overdue} look="overdue" />
             </dl>
             {data.totals.amountNotSet > 0 && (
-              <p className="text-sm text-amber-800">
+              <p className="hc-pill-amber flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-medium">
+                <WarningIcon size={18} />
                 {data.totals.amountNotSet === 1
                   ? "1 pending fee has no amount set."
                   : `${data.totals.amountNotSet} pending fees have no amount set.`}
@@ -225,11 +208,15 @@ export function FeesPage() {
           </section>
 
           {data.items.length === 0 ? (
-            <p className="text-sm text-slate-600">No fees match.</p>
+            <EmptyState title="No fees match." tone="green" icon={<RupeeIcon />} />
           ) : (
             <ul aria-label="Fees" className="space-y-3">
-              {data.items.map((f) => (
-                <li key={f.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              {data.items.map((f, i) => (
+                <li
+                  key={f.id}
+                  style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+                  className="rise space-y-3 rounded-card border border-line bg-surface p-4 shadow-card"
+                >
                   <FeeSummary fee={f} />
                   {marking === f.id ? (
                     <MarkPaidForm
@@ -245,44 +232,37 @@ export function FeesPage() {
                       }
                     />
                   ) : confirming === f.id ? (
-                    <div role="group" aria-label="Confirm not paid" className="space-y-2 rounded-lg bg-amber-50 p-3">
-                      <p className="text-sm text-amber-900">
-                        The payment date and note are cleared. {f.studentName} is not notified.
-                      </p>
-                      {actionError && (
-                        <p role="alert" className="text-sm text-red-700">
-                          {actionError}
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
+                    <div role="group" aria-label="Confirm not paid" className="hc-pill-amber space-y-3 rounded-2xl p-3">
+                      <p className="text-sm">The payment date and note are cleared. {f.studentName} is not notified.</p>
+                      {actionError && <Alert tone="error">{actionError}</Alert>}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="strong"
                           disabled={busy}
                           onClick={() => void run(() => markFeePending(f.id), "Marked not paid.")}
-                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
                         >
                           Yes, mark not paid
-                        </button>
+                        </Button>
                         <button type="button" className={smallButton} onClick={() => setConfirming(null)}>
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 pl-14">
                       {f.status === "pending" ? (
-                        <button
-                          type="button"
+                        <Button
                           disabled={busy}
-                          className={smallButton}
+                          className="min-h-10 px-3"
                           onClick={() => {
                             setActionError(null);
                             setConfirming(null);
                             setMarking(f.id);
                           }}
                         >
+                          <CheckIcon size={18} />
                           Mark paid
-                        </button>
+                        </Button>
                       ) : (
                         <button
                           type="button"
@@ -304,63 +284,64 @@ export function FeesPage() {
             </ul>
           )}
 
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button type="button" className={pageButton} disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button type="button" className={pageButton} disabled={page >= pages} onClick={() => goToPage(page + 1)}>
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={goToPage} />
         </>
       )}
     </div>
   );
 }
 
-function Total({ label, total }: { label: string; total: FeeTotal }) {
+// Paid is the big gradient card; pending and overdue sit beside it.
+const totalLook = {
+  hero: { box: "bg-hero col-span-2 shadow-[var(--hc-hero-shadow)] md:col-span-1", label: "text-hero-muted", amount: "text-hero-ink", count: "text-hero-muted" },
+  pending: { box: "border border-line bg-surface shadow-card", label: "text-muted", amount: "text-ink", count: "text-muted" },
+  overdue: { box: "border border-line bg-surface shadow-card", label: "text-muted", amount: "text-danger", count: "text-muted" },
+};
+
+function Total({ label, total, look }: { label: string; total: FeeTotal; look: keyof typeof totalLook }) {
+  const s = totalLook[look];
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm">
-      <dt className="text-sm text-slate-600">{label}</dt>
-      <dd className="text-xl font-semibold tabular-nums text-slate-900">{formatRupees(total.amount)}</dd>
-      <dd className="text-xs text-slate-500">{feesText(total.count)}</dd>
+    <div className={`rise rounded-card p-4 ${s.box}`}>
+      <dt className={`text-sm font-semibold ${s.label}`}>{label}</dt>
+      <dd className={`font-display text-2xl font-extrabold tracking-tight tabular-nums md:text-3xl ${s.amount}`}>
+        {formatRupees(total.amount)}
+      </dd>
+      <dd className={`text-xs font-medium ${s.count}`}>{feesText(total.count)}</dd>
     </div>
   );
 }
 
 function FeeSummary({ fee }: { fee: OwnerFeeRow }) {
-  const [label, badgeClass] = STATE_BADGE[fee.state];
+  const [label, tone] = STATE_BADGE[fee.state];
   return (
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div className="space-y-0.5">
+    <div className="flex items-start gap-3">
+      <Avatar name={fee.studentName} />
+      <div className="min-w-0 flex-1 space-y-0.5">
         <p className="flex flex-wrap items-center gap-2">
-          <Link to={`/students/${fee.studentId}`} className="font-medium text-slate-900 hover:underline">
+          <Link to={`/students/${fee.studentId}`} className="-my-2.5 inline-flex min-h-11 items-center font-semibold text-ink hover:underline">
             {fee.studentName}
           </Link>
-          {!fee.isActive && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Moved out</span>
-          )}
+          {!fee.isActive && <Pill tone="grey">Moved out</Pill>}
         </p>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           {[fee.buildingName, `Due ${formatDate(fee.dueDate)}`].filter(Boolean).join(" · ")}
         </p>
         {fee.paidOn && (
-          <p className="text-sm text-emerald-800">
+          <p className="text-sm font-medium text-success">
             Paid on {formatDate(fee.paidOn)}
             {fee.note && ` · ${fee.note}`}
           </p>
         )}
       </div>
-      <div className="flex items-center gap-2">
-        <span className="font-semibold tabular-nums text-slate-900">
-          {fee.amount === null ? <span className="text-sm font-normal text-amber-800">Amount not set</span> : formatRupees(fee.amount)}
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <span className="font-display text-lg font-extrabold tabular-nums text-ink">
+          {fee.amount === null ? (
+            <span className="font-sans text-sm font-semibold text-warn">Amount not set</span>
+          ) : (
+            formatRupees(fee.amount)
+          )}
         </span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badgeClass}`}>{label}</span>
+        <Pill tone={tone}>{label}</Pill>
       </div>
     </div>
   );
@@ -393,17 +374,17 @@ function MarkPaidForm({
   };
 
   return (
-    <form onSubmit={submit} aria-label={`Mark paid: ${fee.studentName}`} className="space-y-3 rounded-lg bg-slate-50 p-3">
+    <form onSubmit={submit} aria-label={`Mark paid: ${fee.studentName}`} className="space-y-3 rounded-2xl bg-soft p-3">
       <div className="flex flex-wrap gap-3">
         <div className="space-y-1">
-          <label htmlFor={dateId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={dateId} className="block text-sm font-semibold text-ink">
             Paid on
           </label>
           <input id={dateId} type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className={inputClass} />
-          <p className="text-xs text-slate-500">Leave the date empty for today.</p>
+          <p className="text-xs text-muted">Leave the date empty for today.</p>
         </div>
         <div className="min-w-48 flex-1 space-y-1">
-          <label htmlFor={noteId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={noteId} className="block text-sm font-semibold text-ink">
             Note (optional)
           </label>
           <input
@@ -415,16 +396,12 @@ function MarkPaidForm({
             aria-describedby={countId}
             className={inputClass}
           />
-          <p id={countId} className={`text-xs ${tooLong ? "text-red-600" : "text-slate-500"}`}>
+          <p id={countId} className={`text-xs ${tooLong ? "font-semibold text-danger" : "text-muted"}`}>
             {length} / {NOTE_MAX}
           </p>
         </div>
       </div>
-      {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
       <div className="flex gap-2">
         <button type="submit" disabled={busy || tooLong} className={primaryButton}>
           Save

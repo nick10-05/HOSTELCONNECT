@@ -15,6 +15,7 @@ import { WEEKDAYS } from "./format";
 import { PlacePicker, withPlaceChange } from "./PlacePicker";
 import { inputClass, primaryButton } from "./styles";
 import { TemporaryPassword } from "./TemporaryPassword";
+import { Skeleton } from "../ui";
 
 // The owner's "Admit student" screen (design doc, section 9). Room and bed are offered
 // only where the owner has built them. On success the temporary password is shown once,
@@ -88,20 +89,20 @@ export function AdmitStudentPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Admit a student</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Admit a student</h1>
 
       {serverError && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {serverError}
         </p>
       )}
 
       {buildings === null ? (
-        !serverError && <p className="text-sm text-slate-500">Loading…</p>
+        !serverError && <Skeleton label="Loading buildings…" lines={4} />
       ) : buildings.length === 0 ? (
-        <p className="text-sm text-slate-700">
+        <p className="text-sm text-muted">
           Every student lives in a building, so add a building first on{" "}
-          <Link to="/structure" className="font-medium text-indigo-700 underline">
+          <Link to="/structure" className="font-medium text-accent underline">
             Buildings and rooms
           </Link>
           .
@@ -173,9 +174,9 @@ export function AdmitStudentPage() {
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <legend className="px-1 text-sm font-semibold text-slate-700">{title}</legend>
-      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+    <fieldset className="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card">
+      <legend className="float-left mb-4 w-full text-base font-bold text-ink">{title}</legend>
+      <div className="grid clear-both gap-4 sm:grid-cols-2">{children}</div>
     </fieldset>
   );
 }
@@ -201,7 +202,7 @@ function useFieldIds(errors: AdmissionErrors, name: keyof AdmissionValues) {
 
 function FieldError({ id, error }: { id: string; error?: string }) {
   return error ? (
-    <p id={id} className="mt-1 text-sm text-red-700">
+    <p id={id} className="mt-1 text-sm text-danger">
       {error}
     </p>
   ) : null;
@@ -226,7 +227,7 @@ export function TextField({
   const { id, error, errorId, aria } = useFieldIds(errors, name);
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="mb-1 block text-sm font-medium text-muted">
         {label}
       </label>
       <input
@@ -255,7 +256,7 @@ export function SelectField({
   const { id, error, errorId, aria } = useFieldIds(errors, name);
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="mb-1 block text-sm font-medium text-muted">
         {label}
       </label>
       <select
@@ -282,7 +283,7 @@ export function FoodField({
   return (
     <div className="sm:col-span-2">
       <fieldset aria-describedby={error ? errorId : undefined}>
-        <legend className="mb-1 block text-sm font-medium text-slate-700">Food preference</legend>
+        <legend className="mb-1 block text-sm font-medium text-muted">Food preference</legend>
         <div className="flex gap-6 py-2">
           {(
             [
@@ -290,7 +291,7 @@ export function FoodField({
               ["non_veg", "Non-Veg"],
             ] as const
           ).map(([value, text]) => (
-            <label key={value} className="flex items-center gap-2 text-base text-slate-900">
+            <label key={value} className="flex min-h-11 items-center gap-2 text-base text-ink">
               <input
                 type="radio"
                 name={`${id}-food`}
@@ -308,12 +309,12 @@ export function FoodField({
       {/* Some non-veg students avoid non-veg on particular weekdays (migration 006). */}
       {values.foodPreference === "non_veg" && (
         <fieldset className="mt-2">
-          <legend className="mb-1 block text-sm font-medium text-slate-700">
+          <legend className="mb-1 block text-sm font-medium text-muted">
             Eats veg on (optional)
           </legend>
           <div className="flex flex-wrap gap-x-4 gap-y-2 py-1">
             {WEEKDAYS.map((name, i) => (
-              <label key={name} className="flex items-center gap-1.5 text-base text-slate-900">
+              <label key={name} className="flex min-h-11 items-center gap-1.5 text-base text-ink">
                 <input
                   type="checkbox"
                   checked={values.vegDays.includes(i + 1)}
@@ -340,9 +341,9 @@ function Admitted({
   onNext: () => void;
 }) {
   return (
-    <section className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
-      <h1 className="text-xl font-semibold text-slate-900">Student admitted</h1>
-      <p className="text-slate-700">
+    <section className="space-y-4 rounded-card border border-emerald-400/40 bg-surface p-4 shadow-card">
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Student admitted</h1>
+      <p className="text-muted">
         <strong>{admission.student.name}</strong> ({admission.student.email}) can now log in
         {buildingName ? ` and lives in ${buildingName}` : ""}.
       </p>
@@ -353,7 +354,7 @@ function Admitted({
         </button>
         <Link
           to={`/students/${admission.student.id}`}
-          className="text-sm font-medium text-indigo-700 hover:underline"
+          className="text-sm font-medium text-accent hover:underline"
         >
           View profile
         </Link>

@@ -291,6 +291,85 @@ describe("DashboardPage", () => {
   });
 });
 
+// The redesign's top of the page: how full the hostel is, what needs the owner now, and
+// shortcuts. None of these are landmark regions, so the six cards stay the page's regions.
+describe("DashboardPage, top of the page", () => {
+  const QUIET: Dashboard = {
+    ...full,
+    rejoinRequests: { pending: 0, oldestRequestedOn: null },
+    complaints: { active: 2, highPriority: 0, oldestActiveAt: hoursAgo(2) },
+    fees: { ...NO_FEES, dueSoon: { count: 3, amount: 19500 } },
+  };
+
+  it("shows how full the beds are, over every building that has beds", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const hero = await screen.findByTestId("occupancy");
+    // Block A: 84 of 90; New wing: 0 of 1; Block B has no beds.
+    expect(hero).toHaveTextContent("92% of beds filled");
+    expect(hero).toHaveTextContent("84 of 91 beds taken · 7 free");
+    expect(hero).toHaveTextContent("124 current students");
+  });
+
+  it("leaves the bed count out while no building has beds", async () => {
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        students: { total: 4, joiningLater: 0, buildings: [{ id: 2, name: "Block B", students: 4, joiningLater: 0, beds: null }] },
+      }),
+    );
+    const hero = await screen.findByTestId("occupancy");
+    expect(hero).toHaveTextContent("4 current students");
+    expect(hero).not.toHaveTextContent("beds filled");
+  });
+
+  it("lists what needs the owner now, each leading to its page", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const list = await screen.findByRole("list", { name: "Needs attention" });
+    const links = within(list).getAllByRole("link");
+    expect(links.map((l) => [l.textContent, l.getAttribute("href")])).toEqual([
+      ["1 high-priority complaint", "/complaints"],
+      ["2 overdue fees · ₹13,000", "/fees"],
+      ["2 rejoin requests waiting", "/rejoin-requests"],
+    ]);
+  });
+
+  it("says all caught up when nothing is urgent", async () => {
+    renderPage(() => jsonResponse(200, QUIET));
+    await screen.findByRole("region", { name: "Students" });
+    expect(screen.queryByRole("list", { name: "Needs attention" })).not.toBeInTheDocument();
+    expect(screen.getByText("All caught up")).toBeInTheDocument();
+  });
+
+  it("flags photo uploads being off", async () => {
+    renderPage(() =>
+      jsonResponse(200, { ...QUIET, usage: { ...QUIET_USAGE, level: "uploads_off", uploadsAllowed: false, egress: { ...QUIET_USAGE.egress, percent: 90 } } }),
+    );
+    const list = await screen.findByRole("list", { name: "Needs attention" });
+    expect(list).toHaveTextContent("Photo uploads are off");
+  });
+
+  it("offers shortcuts to the everyday jobs", async () => {
+    renderPage(() => jsonResponse(200, full));
+    const actions = await screen.findByRole("list", { name: "Quick actions" });
+    expect(within(actions).getAllByRole("link").map((l) => [l.textContent, l.getAttribute("href")])).toEqual([
+      ["Admit a student", "/students/new"],
+      ["Mark fees paid", "/fees"],
+      ["Post a notice", "/announcements"],
+      ["Today's food count", "/food-counts"],
+    ]);
+  });
+
+  it("shows placeholders while loading", async () => {
+    mockFetch(() => new Promise(() => {}));
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the dashboard…");
+  });
+});
+
 describe("ageText", () => {
   const now = Date.parse("2026-11-05T12:00:00Z");
   const at = (hours: number) => new Date(now - hours * 3_600_000).toISOString();

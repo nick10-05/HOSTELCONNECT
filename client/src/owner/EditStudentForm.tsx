@@ -84,7 +84,7 @@ export function EditStudentForm({
   return (
     <form noValidate onSubmit={submit} aria-label="Edit details" className="space-y-6">
       {serverError && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {serverError}
         </p>
       )}
@@ -131,7 +131,7 @@ export function EditStudentForm({
       </Section>
 
       <Section title="Food and fees">
-        <p className="text-sm text-slate-700 sm:col-span-2">
+        <p className="text-sm text-muted sm:col-span-2">
           Joining date: {formatDate(student.joiningDate)} (cannot be changed)
         </p>
         <FoodField {...fieldProps} toggleVegDay={toggleVegDay} />
@@ -143,7 +143,7 @@ export function EditStudentForm({
             inputMode="numeric"
           />
         ) : (
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-muted">
             Monthly fee: {student.monthlyFee === null ? "Not set" : formatRupees(student.monthlyFee)} (cannot be
             changed after moving out)
           </p>
@@ -151,7 +151,7 @@ export function EditStudentForm({
       </Section>
 
       {student.isActive && (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           A new monthly fee applies from the next fee; fees already listed keep their amount.
         </p>
       )}

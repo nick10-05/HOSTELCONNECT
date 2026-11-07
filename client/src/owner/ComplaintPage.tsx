@@ -9,6 +9,7 @@ import {
   NOTE_MAX,
   noteLength,
   setComplaintPriority,
+  type ComplaintCategory,
   type ComplaintPriority,
   type ComplaintStatus,
   type OwnerComplaintDetail,
@@ -17,13 +18,16 @@ import { ComplaintPhoto } from "../components/ComplaintPhoto";
 import { ComplaintTimeline } from "../components/ComplaintTimeline";
 import {
   categoryLabel,
+  categoryLook,
   formatTime,
   PriorityBadge,
   priorityLabel,
   StatusBadge,
   statusLabel,
 } from "../components/complaintText";
+import { IconTile, Skeleton } from "../ui";
 import { inputClass, primaryButton, secondaryButton } from "./styles";
+import { backLinkClass } from "../ui/ListParts";
 
 // One complaint, as the owner works on it (design doc, sections 4 and 9): set the
 // priority, move the status, add a one-way note. The moves offered are exactly the
@@ -93,7 +97,7 @@ export function ComplaintPage() {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
         <BackLink />
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {loadError}
         </p>
       </div>
@@ -103,7 +107,7 @@ export function ComplaintPage() {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
         <BackLink />
-        <p className="text-sm text-slate-500">Loading…</p>
+        <Skeleton label="Loading the complaint…" lines={5} />
       </div>
     );
   }
@@ -114,24 +118,27 @@ export function ComplaintPage() {
 
       <section
         aria-labelledby="complaint-heading"
-        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
+        className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6"
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <h1 id="complaint-heading" className="text-xl font-semibold text-slate-900">
-            {categoryLabel[complaint.category]} #{complaint.id}
-          </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CategoryTile category={complaint.category} />
+            <h1 id="complaint-heading" className="font-display text-2xl font-extrabold tracking-tight text-ink md:text-3xl">
+              {categoryLabel[complaint.category]} #{complaint.id}
+            </h1>
+          </div>
           <div className="flex gap-2">
             <StatusBadge status={complaint.status} />
             <PriorityBadge priority={complaint.priority} />
           </div>
         </div>
-        <p className="whitespace-pre-line break-words text-slate-800">{complaint.description}</p>
-        <p className="text-sm text-slate-500">
+        <p className="whitespace-pre-line break-words text-ink">{complaint.description}</p>
+        <p className="text-sm text-muted">
           Raised {formatTime(complaint.createdAt)}
           {complaint.resolvedAt && ` · resolved ${formatTime(complaint.resolvedAt)}`}
         </p>
-        <p className="text-sm text-slate-700">
-          <Link to={`/students/${complaint.student.id}`} className="font-medium text-indigo-700 hover:underline">
+        <p className="text-sm text-muted">
+          <Link to={`/students/${complaint.student.id}`} className="font-medium text-accent hover:underline">
             {complaint.student.name}
           </Link>
           {" · "}
@@ -145,12 +152,12 @@ export function ComplaintPage() {
       </section>
 
       {notice && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {notice}
         </p>
       )}
       {error && (
-        <div role="alert" className="space-y-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div role="alert" className="hc-pill-red space-y-2 rounded-2xl px-3.5 py-3 text-sm font-medium">
           <p>{error.message}</p>
           {error.stale && (
             <button type="button" onClick={reload} className={secondaryButton}>
@@ -160,8 +167,8 @@ export function ComplaintPage() {
         </div>
       )}
 
-      <section aria-labelledby="actions-heading" className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 id="actions-heading" className="text-sm font-semibold text-slate-700">
+      <section aria-labelledby="actions-heading" className="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
+        <h2 id="actions-heading" className="text-base font-bold text-ink">
           Work on it
         </h2>
 
@@ -174,9 +181,9 @@ export function ComplaintPage() {
         />
 
         <div className="space-y-2">
-          <p className="text-sm font-medium text-slate-700">Status</p>
+          <p className="text-sm font-medium text-muted">Status</p>
           {complaint.allowedMoves.length === 0 ? (
-            <p className="text-sm text-slate-500">A rejected complaint is final.</p>
+            <p className="text-sm text-muted">A rejected complaint is final.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {complaint.allowedMoves.map((to) => (
@@ -234,9 +241,18 @@ export function ComplaintPage() {
   );
 }
 
+function CategoryTile({ category }: { category: ComplaintCategory }) {
+  const { tone, Icon } = categoryLook[category];
+  return (
+    <IconTile tone={tone}>
+      <Icon />
+    </IconTile>
+  );
+}
+
 function BackLink() {
   return (
-    <Link to="/complaints" className="text-sm font-medium text-indigo-700 hover:underline">
+    <Link to="/complaints" className={backLinkClass}>
       ← Complaints
     </Link>
   );
@@ -254,8 +270,8 @@ function PriorityPicker({
   const id = useId();
   return (
     <div className="max-w-xs">
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
-        Priority <span className="font-normal text-slate-500">(only you see it)</span>
+      <label htmlFor={id} className="mb-1 block text-sm font-medium text-muted">
+        Priority <span className="font-normal text-muted">(only you see it)</span>
       </label>
       <select
         id={id}
@@ -307,8 +323,8 @@ function NoteForm({
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
-        {label} <span className="font-normal text-slate-500">({hint})</span>
+      <label htmlFor={id} className="block text-sm font-medium text-muted">
+        {label} <span className="font-normal text-muted">({hint})</span>
       </label>
       <textarea
         id={id}
@@ -319,7 +335,7 @@ function NoteForm({
         className={inputClass}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className={`text-xs ${tooLong ? "text-red-700" : "text-slate-500"}`}>
+        <span className={`text-xs ${tooLong ? "text-danger" : "text-muted"}`}>
           {length} / {NOTE_MAX}
         </span>
         <div className="flex gap-2">

@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { changePassword, type User } from "../api/auth";
 import { ApiError } from "../api/client";
+import { buttonClass, fieldClass } from "../ui";
+import { AuthShell, authCardClass } from "../ui/AuthShell";
 
 // Same rules as the server, checked here first for instant feedback.
 // bcrypt reads only the first 72 bytes, so longer passwords are refused.
@@ -18,8 +20,7 @@ type Props = {
   onSignOut: () => void;
 };
 
-const inputClass =
-  "mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none";
+const inputClass = `${fieldClass} mt-1`;
 
 export function ChangePasswordPage({ user, onChanged, onSignOut }: Props) {
   const [current, setCurrent] = useState("");
@@ -47,28 +48,21 @@ export function ChangePasswordPage({ user, onChanged, onSignOut }: Props) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-sm">
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900">
-          Choose your password
-        </h1>
-        <p className="mt-1 text-center text-sm text-slate-500">
-          Hi {user.name}. Replace the temporary password before you continue.
-        </p>
+    <AuthShell title="Choose your password" subtitle={`Hi ${user.name}. Replace the temporary password before you continue.`}>
 
         <form
           onSubmit={handleSubmit}
           noValidate
-          className="mt-8 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          className={authCardClass}
         >
           {error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
               {error}
             </p>
           )}
 
           <div>
-            <label htmlFor="current" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="current" className="block text-sm font-semibold text-ink">
               Current (temporary) password
             </label>
             <input
@@ -82,7 +76,7 @@ export function ChangePasswordPage({ user, onChanged, onSignOut }: Props) {
           </div>
 
           <div>
-            <label htmlFor="new" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="new" className="block text-sm font-semibold text-ink">
               New password
             </label>
             <input
@@ -94,13 +88,13 @@ export function ChangePasswordPage({ user, onChanged, onSignOut }: Props) {
               onChange={(e) => setNext(e.target.value)}
               className={inputClass}
             />
-            <p id="new-hint" className="mt-1 text-xs text-slate-500">
+            <p id="new-hint" className="mt-1 text-xs text-muted">
               At least 8 characters.
             </p>
           </div>
 
           <div>
-            <label htmlFor="confirm" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="confirm" className="block text-sm font-semibold text-ink">
               New password again
             </label>
             <input
@@ -116,18 +110,17 @@ export function ChangePasswordPage({ user, onChanged, onSignOut }: Props) {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`${buttonClass("primary")} min-h-12 w-full`}
           >
             {submitting ? "Saving…" : "Save new password"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm">
-          <button type="button" onClick={onSignOut} className="text-slate-500 hover:text-slate-700">
+          <button type="button" onClick={onSignOut} className="min-h-11 px-2 font-semibold text-muted hover:text-ink">
             Sign out
           </button>
         </p>
-      </div>
-    </main>
+    </AuthShell>
   );
 }

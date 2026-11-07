@@ -14,6 +14,8 @@ import {
 import { inputClass, primaryButton } from "../owner/styles";
 import { categoryLabel } from "../components/complaintText";
 import { compressPhoto, PhotoError } from "./compressPhoto";
+import { Skeleton } from "../ui";
+import { backLinkClass } from "../ui/ListParts";
 
 // The complaint form (design doc, sections 2 and 9): a category, a short description and,
 // since day 8, an optional photo. It checks the server's rules as the student types
@@ -116,32 +118,33 @@ export function NewComplaintPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <Link to="/" className="text-sm font-medium text-indigo-700 hover:underline">
+        <Link to="/" className={backLinkClass}>
           ← My complaints
         </Link>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">New complaint</h1>
+        <h1 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">New complaint</h1>
+        <p className="mt-1 text-sm font-medium text-muted">Tell the hostel what needs fixing. The owner sees it straight away.</p>
       </div>
 
       {loadError ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {loadError}
         </p>
       ) : !canRaise ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <Skeleton label="Loading…" lines={4} />
       ) : !canRaise.allowed ? (
-        <p role="alert" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p role="alert" className="hc-pill-amber rounded-2xl px-3.5 py-3 text-sm font-medium">
           {canRaise.reason}
         </p>
       ) : (
-        <form onSubmit={submit} noValidate className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <form onSubmit={submit} noValidate className="rise space-y-6 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
           {error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
               {error}
             </p>
           )}
 
           <div>
-            <label htmlFor="complaint-category" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="complaint-category" className="block text-sm font-semibold text-ink">
               Category
             </label>
             <select
@@ -159,7 +162,7 @@ export function NewComplaintPage() {
               ))}
             </select>
             {taken.size > 0 && (
-              <p id="complaint-category-taken" className="mt-1 text-sm text-slate-500">
+              <p id="complaint-category-taken" className="mt-1 text-sm text-muted">
                 You already have an active complaint in{" "}
                 {[...taken].map((c) => categoryLabel[c]).join(", ")}. You can raise another one there when it
                 is resolved or rejected.
@@ -168,7 +171,7 @@ export function NewComplaintPage() {
           </div>
 
           <div>
-            <label htmlFor="complaint-description" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="complaint-description" className="block text-sm font-semibold text-ink">
               What is wrong?
             </label>
             <textarea
@@ -182,7 +185,7 @@ export function NewComplaintPage() {
             />
             <p
               id="complaint-description-count"
-              className={`mt-1 flex justify-between gap-2 text-sm ${tooLong ? "text-red-700" : "text-slate-500"}`}
+              className={`mt-1 flex justify-between gap-2 text-sm ${tooLong ? "font-semibold text-danger" : "text-muted"}`}
             >
               <span>
                 {tooShort ? `At least ${DESCRIPTION_MIN} characters` : tooLong ? "Too long" : ""}
@@ -195,7 +198,7 @@ export function NewComplaintPage() {
 
           {photoAllowed ? (
             <div>
-              <label htmlFor="complaint-photo" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="complaint-photo" className="block text-sm font-semibold text-ink">
                 Photo (optional)
               </label>
               <input
@@ -206,26 +209,26 @@ export function NewComplaintPage() {
                 accept="image/*"
                 onChange={choosePhoto}
                 aria-describedby="complaint-photo-status"
-                className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+                className="mt-2 block w-full rounded-2xl border-2 border-dashed border-line bg-soft/50 p-3 text-sm text-muted file:mr-3 file:min-h-10 file:cursor-pointer file:rounded-xl file:border-0 file:bg-surface file:px-4 file:text-sm file:font-semibold file:text-ink file:shadow-card"
               />
               <div id="complaint-photo-status" className="mt-1 flex items-center gap-3 text-sm">
-                {photo.state === "preparing" && <span className="text-slate-500">Preparing photo…</span>}
+                {photo.state === "preparing" && <span className="text-muted">Preparing photo…</span>}
                 {photo.state === "ready" && (
                   <>
-                    <span className="text-slate-700">Photo ready ({Math.round(photo.blob.size / 1024)} KB)</span>
-                    <button type="button" onClick={removePhoto} className="font-medium text-indigo-700 hover:underline">
+                    <span className="font-medium text-success">Photo ready ({Math.round(photo.blob.size / 1024)} KB)</span>
+                    <button type="button" onClick={removePhoto} className="min-h-11 font-semibold text-accent hover:underline">
                       Remove photo
                     </button>
                   </>
                 )}
-                {photo.state === "failed" && <span className="text-red-700">{photo.message}</span>}
+                {photo.state === "failed" && <span className="font-medium text-danger">{photo.message}</span>}
                 {photo.state === "none" && (
-                  <span className="text-slate-500">Photos are kept for 48 hours, then deleted.</span>
+                  <span className="text-muted">Photos are kept for 48 hours, then deleted.</span>
                 )}
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Photos are switched off for now. You can still send the complaint as text.</p>
+            <p className="text-sm text-muted">Photos are switched off for now. You can still send the complaint as text.</p>
           )}
 
           <button

@@ -131,7 +131,7 @@ function PlaceSelect({
   const error = errors[name];
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="mb-1 block text-sm font-medium text-muted">
         {label}
       </label>
       <select
@@ -145,7 +145,7 @@ function PlaceSelect({
         {children}
       </select>
       {error && (
-        <p id={`${id}-error`} className="mt-1 text-sm text-red-700">
+        <p id={`${id}-error`} className="mt-1 text-sm text-danger">
           {error}
         </p>
       )}

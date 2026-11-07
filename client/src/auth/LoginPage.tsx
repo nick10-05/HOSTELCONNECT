@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { login, type User } from "../api/auth";
 import { ApiError } from "../api/client";
+import { buttonClass, fieldClass } from "../ui";
+import { AuthShell, authCardClass } from "../ui/AuthShell";
 
 // The free host sleeps after 15 idle minutes and takes about a minute to wake, so a
 // slow first login is normal. After this long, say so instead of looking frozen.
@@ -40,25 +42,20 @@ export function LoginPage({ onLoggedIn }: Props) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-sm">
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900">
-          HostelConnect
-        </h1>
-        <p className="mt-1 text-center text-sm text-slate-500">Sign in to your hostel account</p>
+    <AuthShell title="Welcome back" subtitle="Sign in to your hostel account">
 
         <form
           onSubmit={handleSubmit}
-          className="mt-8 space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          className={authCardClass}
         >
           {error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
               {error}
             </p>
           )}
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="email" className="block text-sm font-semibold text-ink">
               Email
             </label>
             <input
@@ -68,13 +65,13 @@ export function LoginPage({ onLoggedIn }: Props) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+              className={`${fieldClass} mt-1`}
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between">
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="password" className="block text-sm font-semibold text-ink">
                 Password
               </label>
               <button
@@ -82,7 +79,7 @@ export function LoginPage({ onLoggedIn }: Props) {
                 onClick={() => setShowPassword((s) => !s)}
                 aria-controls="password"
                 aria-pressed={showPassword}
-                className="text-sm text-indigo-600 hover:text-indigo-500"
+                className="-my-2 min-h-11 px-2 text-sm font-semibold text-accent hover:underline"
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
@@ -94,36 +91,35 @@ export function LoginPage({ onLoggedIn }: Props) {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none"
+              className={`${fieldClass} mt-1`}
             />
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`${buttonClass("primary")} min-h-12 w-full`}
           >
             {submitting ? "Signing in…" : "Sign in"}
           </button>
 
           {slow && (
-            <p role="status" className="text-center text-sm text-slate-500">
+            <p role="status" className="text-center text-sm text-muted">
               The server is waking up. This can take up to a minute.
             </p>
           )}
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="mt-8 text-center text-sm text-muted">
           Forgot your password? Ask the hostel owner to reset it.
         </p>
-        <p className="mt-2 text-center text-sm text-slate-500">
+        <p className="mt-2 text-center text-sm text-muted">
           Former student?{" "}
           {/* A plain link, so this page needs no router (and its tests none either). */}
-          <a href="/request-access" className="font-medium text-indigo-700 hover:underline">
+          <a href="/request-access" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Request access
           </a>
         </p>
-      </div>
-    </main>
+    </AuthShell>
   );
 }

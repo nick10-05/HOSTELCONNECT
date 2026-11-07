@@ -12,7 +12,7 @@ const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
 const dangerButton =
-  "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60";
+  "press inline-flex min-h-11 items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function MoveOutConfirm({
   studentId,
@@ -51,16 +51,16 @@ export function MoveOutConfirm({
   return (
     <section
       aria-labelledby="move-out-heading"
-      className="space-y-4 rounded-xl border border-red-200 bg-white p-4 shadow-sm"
+      className="space-y-4 rounded-card border border-red-400/40 bg-surface p-4 shadow-card"
     >
-      <h2 id="move-out-heading" className="text-sm font-semibold text-slate-700">
+      <h2 id="move-out-heading" className="text-base font-bold text-ink">
         Move out
       </h2>
-      <p className="text-slate-700">
+      <p className="text-muted">
         {`Move out ${name}? They will no longer be able to log in, and ${consequence}.`}
       </p>
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}

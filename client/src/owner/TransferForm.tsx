@@ -6,6 +6,7 @@ import { hostelToday } from "./admissionForm";
 import { formatDate } from "./format";
 import { bedStillFree, PlacePicker, withPlaceChange, type PlaceValues } from "./PlacePicker";
 import { primaryButton, secondaryButton } from "./styles";
+import { Skeleton } from "../ui";
 
 // Moving a current student (design doc, section 9), opened from the profile. The server
 // decides what happens; the form only says it in advance:
@@ -94,19 +95,19 @@ export function TransferForm({
   return (
     <section
       aria-labelledby="transfer-heading"
-      className="space-y-4 rounded-xl border border-indigo-200 bg-white p-4 shadow-sm"
+      className="space-y-4 rounded-card border border-indigo-400/40 bg-surface p-4 shadow-card"
     >
-      <h2 id="transfer-heading" className="text-sm font-semibold text-slate-700">
+      <h2 id="transfer-heading" className="text-base font-bold text-ink">
         {notStarted ? "Change room or bed" : "Transfer"}
       </h2>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-muted">
         {notStarted
           ? `Joins on ${formatDate(stay.startedOn)}: this only changes the assignment, no history is kept.`
           : "The current stay ends today and the new one starts today."}
       </p>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}
@@ -114,7 +115,7 @@ export function TransferForm({
       {buildings === null ? (
         // Loading, or the buildings could not be loaded: the owner can always back out.
         <div className="space-y-4">
-          {!error && <p className="text-sm text-slate-500">Loading…</p>}
+          {!error && <Skeleton label="Loading rooms…" lines={3} />}
           {cancel}
         </div>
       ) : (

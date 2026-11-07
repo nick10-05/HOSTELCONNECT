@@ -1,9 +1,13 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { getStructure, type Building } from "../api/structure";
 import { listStudents, type DirectoryQuery, type StudentListItem } from "../api/students";
+import { Alert, buttonClass, EmptyState } from "../ui";
+import { ChevronRightIcon, PlusIcon, SearchIcon, UsersIcon } from "../ui/icons";
+import { Avatar, FilterPanel, listClass, ListSkeleton, PageHeader, Pager, SelectField } from "../ui/ListParts";
 import { categoryLabel, formatDate, placeText } from "./format";
+import { inputClass } from "./styles";
 
 // The owner's student directory (design doc, sections 5 and 9). Every filter lives in
 // the page address (/students?buildingId=2&page=3), so Back, refresh and a bookmark all
@@ -17,12 +21,6 @@ const FILTERS = ["search", "buildingId", "floorId", "roomId", "category", "statu
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-const inputClass =
-  "block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none";
-const primaryButton =
-  "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500";
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function StudentsPage() {
   const [params, setParams] = useSearchParams();
@@ -89,169 +87,142 @@ export function StudentsPage() {
   const page = Number(query.page ?? "1");
   const pages = result ? Math.max(1, Math.ceil(result.total / PAGE_SIZE)) : 1;
   const filtered = FILTERS.some((key) => key !== "page" && query[key]);
+  // How many of the folding filters are on (the search box is always shown).
+  const activeFilters = FILTERS.filter((key) => key !== "page" && key !== "search" && query[key]).length;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Students</h1>
+      <PageHeader
+        title="Students"
+        action={
+          <Link to="/students/new" className={buttonClass("primary")}>
+            <PlusIcon size={18} />
+            Admit
+          </Link>
+        }
+      />
 
       <form role="search" onSubmit={submitSearch} className="flex gap-2">
         <label htmlFor="student-search" className="sr-only">
           Search
         </label>
-        <input
-          id="student-search"
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Name, email or room"
-          className={inputClass}
-        />
-        <button type="submit" className={primaryButton}>
+        <div className="relative flex-1">
+          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-faint">
+            <SearchIcon size={18} />
+          </span>
+          <input
+            id="student-search"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, email or room"
+            className={`${inputClass} pl-10`}
+          />
+        </div>
+        <button type="submit" className={buttonClass("strong")}>
           Search
         </button>
       </form>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Filter label="Building" value={query.buildingId} onChange={(v) => update({ buildingId: v })}>
+      <FilterPanel active={activeFilters} className="sm:grid-cols-3">
+        <SelectField label="Building" value={query.buildingId} onChange={(v) => update({ buildingId: v })}>
           <option value="">All buildings</option>
           {buildings.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
             </option>
           ))}
-        </Filter>
+        </SelectField>
         {floors.length > 0 && (
-          <Filter label="Floor" value={query.floorId} onChange={(v) => update({ floorId: v })}>
+          <SelectField label="Floor" value={query.floorId} onChange={(v) => update({ floorId: v })}>
             <option value="">All floors</option>
             {floors.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.number === 0 ? "Ground floor" : `Floor ${f.number}`}
               </option>
             ))}
-          </Filter>
+          </SelectField>
         )}
         {rooms.length > 0 && (
-          <Filter label="Room" value={query.roomId} onChange={(v) => update({ roomId: v })}>
+          <SelectField label="Room" value={query.roomId} onChange={(v) => update({ roomId: v })}>
             <option value="">All rooms</option>
             {rooms.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.roomNumber}
               </option>
             ))}
-          </Filter>
+          </SelectField>
         )}
-        <Filter label="Category" value={query.category} onChange={(v) => update({ category: v })}>
+        <SelectField label="Category" value={query.category} onChange={(v) => update({ category: v })}>
           <option value="">All categories</option>
           {Object.entries(categoryLabel).map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
           ))}
-        </Filter>
-        <Filter label="Show" value={query.status} onChange={(v) => update({ status: v })}>
+        </SelectField>
+        <SelectField label="Show" value={query.status} onChange={(v) => update({ status: v })}>
           <option value="">Current students</option>
           <option value="former">Former students</option>
           <option value="all">Everyone</option>
-        </Filter>
-      </div>
+        </SelectField>
+      </FilterPanel>
 
-      {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
 
       {result === null ? (
-        !error && <p className="text-sm text-slate-500">Loading…</p>
+        !error && <ListSkeleton label="Loading students…" />
       ) : result.total === 0 ? (
         filtered ? (
-          <p className="text-sm text-slate-600">No students match these filters.</p>
+          <EmptyState title="No students match these filters." tone="blue" icon={<SearchIcon />} />
         ) : (
-          <p className="text-sm text-slate-600">
-            No students yet.{" "}
-            <Link to="/students/new" className="font-medium text-indigo-700 underline">
-              Admit a student
-            </Link>
-          </p>
+          <EmptyState
+            title="No students yet."
+            tone="violet"
+            icon={<UsersIcon />}
+            action={
+              <Link to="/students/new" className={buttonClass("primary")}>
+                Admit a student
+              </Link>
+            }
+          />
         )
       ) : (
         <>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm font-semibold text-muted">
             {result.total} {result.total === 1 ? "student" : "students"}
           </p>
-          <ul
-            aria-label="Students"
-            className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-          >
+          <ul aria-label="Students" className={listClass}>
             {result.items.map((s) => (
-              <li key={s.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
-                <div className="min-w-0 flex-1">
-                  <Link
-                    to={`/students/${s.id}`}
-                    className="font-medium text-slate-900 hover:text-indigo-700 hover:underline"
-                  >
-                    {s.name}
-                  </Link>
-                  <p className="truncate text-sm text-slate-500">{s.email}</p>
+              <li key={s.id} className="relative flex items-center gap-3 px-4 py-3 hover:bg-soft">
+                <Avatar name={s.name} />
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    {/* The link covers the whole row, so a tap anywhere opens the profile. */}
+                    <Link
+                      to={`/students/${s.id}`}
+                      className="font-semibold text-ink after:absolute after:inset-0 after:content-[''] hover:underline"
+                    >
+                      {s.name}
+                    </Link>
+                    <p className="truncate text-sm text-muted">{s.email}</p>
+                  </div>
+                  <p className="text-sm font-medium text-ink sm:w-64">
+                    {s.place ? placeText(s.place) : "Left the hostel"}
+                  </p>
+                  <p className="text-xs text-muted sm:w-48 sm:text-sm">
+                    {categoryLabel[s.category]} · joined {formatDate(s.joiningDate)}
+                  </p>
                 </div>
-                <p className="text-sm text-slate-700 sm:w-64">
-                  {s.place ? placeText(s.place) : "Left the hostel"}
-                </p>
-                <p className="text-sm text-slate-500 sm:w-48">
-                  {categoryLabel[s.category]} · joined {formatDate(s.joiningDate)}
-                </p>
+                <span aria-hidden="true" className="text-faint">
+                  <ChevronRightIcon size={18} />
+                </span>
               </li>
             ))}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button type="button" className={pageButton} disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page >= pages}
-                onClick={() => goToPage(page + 1)}
-              >
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={goToPage} />
         </>
       )}
-    </div>
-  );
-}
-
-function Filter({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value?: string;
-  onChange: (value: string | undefined) => void;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || undefined)}
-        className={inputClass}
-      >
-        {children}
-      </select>
     </div>
   );
 }

@@ -96,16 +96,36 @@ describe("owner pages", () => {
   it("starts on the dashboard and moves between pages with the menu", async () => {
     const user = renderAt("/");
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+    // The redesign names the dashboard's tab "Home", like the students' first tab.
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
 
     await user.click(screen.getByRole("link", { name: "Admit student" }));
     expect(await screen.findByRole("heading", { name: "Admit a student" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Admit student" })).toHaveAttribute("aria-current", "page");
-    // Only the home page highlights Dashboard.
-    expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current");
+    // Only the home page highlights Home.
+    expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
 
-    await user.click(screen.getByRole("link", { name: "Dashboard" }));
+    await user.click(screen.getByRole("link", { name: "Home" }));
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("opens the other pages from More, as a menu that slides up on a phone", async () => {
+    const user = renderAt("/structure");
+    await screen.findByRole("heading", { name: "Buildings and rooms" });
+    await user.click(screen.getByRole("button", { name: "More" }));
+    const sheet = screen.getByRole("dialog", { name: "More pages" });
+    for (const name of ["Buildings", "Admit student", "Rejoin requests", "Announcements", "Return polls", "Food counts", "Settings"]) {
+      expect(within(sheet).getByRole("link", { name })).toBeInTheDocument();
+    }
+
+    await user.click(within(sheet).getByRole("link", { name: "Food counts" }));
+    expect(await screen.findByRole("heading", { name: "Food counts" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "More pages" })).not.toBeInTheDocument();
+  });
+
+  it("has Sign out in the header", async () => {
+    renderAt("/structure");
+    expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
   it("has a Students page in the menu", async () => {

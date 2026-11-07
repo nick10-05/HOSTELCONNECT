@@ -4,7 +4,10 @@ import { ApiError } from "../api/client";
 import { getComplaint, type StudentComplaintDetail } from "../api/complaints";
 import { ComplaintPhoto } from "../components/ComplaintPhoto";
 import { ComplaintTimeline } from "../components/ComplaintTimeline";
-import { categoryLabel, formatTime, StatusBadge } from "../components/complaintText";
+import { categoryLabel, categoryLook, formatTime, StatusBadge } from "../components/complaintText";
+import type { ComplaintCategory } from "../api/complaints";
+import { IconTile, Skeleton } from "../ui";
+import { backLinkClass } from "../ui/ListParts";
 
 // One of the student's complaints with its timeline (design doc, sections 4 and 9).
 // Students only read: no replies, updates or reopening. A complaint that does not exist
@@ -36,33 +39,36 @@ export function ComplaintDetailPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <Link to="/" className="text-sm font-medium text-indigo-700 hover:underline">
+      <Link to="/" className={backLinkClass}>
         ← My complaints
       </Link>
 
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       ) : !complaint ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <Skeleton label="Loading the complaint…" lines={5} />
       ) : (
         <>
           {created && (
-            <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
               Your complaint has been sent. The owner will see it on the dashboard.
             </p>
           )}
 
-          <section aria-labelledby="complaint-heading" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-2">
-              <h1 id="complaint-heading" className="text-xl font-semibold text-slate-900">
-                {categoryLabel[complaint.category]}
-              </h1>
+          <section aria-labelledby="complaint-heading" className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <CategoryTile category={complaint.category} />
+                <h1 id="complaint-heading" className="font-display text-2xl font-extrabold tracking-tight text-ink md:text-3xl">
+                  {categoryLabel[complaint.category]}
+                </h1>
+              </div>
               <StatusBadge status={complaint.status} />
             </div>
-            <p className="whitespace-pre-line break-words text-slate-800">{complaint.description}</p>
-            <p className="text-sm text-slate-500">
+            <p className="whitespace-pre-line break-words text-ink">{complaint.description}</p>
+            <p className="text-sm text-muted">
               Raised {formatTime(complaint.createdAt)}
               {complaint.resolvedAt && ` · resolved ${formatTime(complaint.resolvedAt)}`}
             </p>
@@ -73,5 +79,14 @@ export function ComplaintDetailPage() {
         </>
       )}
     </div>
+  );
+}
+
+function CategoryTile({ category }: { category: ComplaintCategory }) {
+  const { tone, Icon } = categoryLook[category];
+  return (
+    <IconTile tone={tone}>
+      <Icon />
+    </IconTile>
   );
 }

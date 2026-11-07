@@ -1,4 +1,6 @@
 import type { ComplaintCategory, ComplaintPriority, ComplaintStatus } from "../api/complaints";
+import type { Tone } from "../ui";
+import { BedIcon, BoltIcon, DropIcon, FoodIcon, HomeIcon, MessageIcon, WarningIcon, WifiIcon } from "../ui/icons";
 
 // Display helpers shared by the student's and the owner's complaint screens.
 
@@ -13,6 +15,18 @@ export const categoryLabel: Record<ComplaintCategory, string> = {
   other: "Other",
 };
 
+// Each kind of complaint gets its own icon and colour, so a list is quick to scan.
+export const categoryLook: Record<ComplaintCategory, { tone: Tone; Icon: typeof DropIcon }> = {
+  plumbing: { tone: "blue", Icon: DropIcon },
+  electrical: { tone: "amber", Icon: BoltIcon },
+  cleanliness: { tone: "green", Icon: HomeIcon },
+  internet: { tone: "violet", Icon: WifiIcon },
+  food: { tone: "orange", Icon: FoodIcon },
+  furniture: { tone: "pink", Icon: BedIcon },
+  security: { tone: "red", Icon: WarningIcon },
+  other: { tone: "violet", Icon: MessageIcon },
+};
+
 export const statusLabel: Record<ComplaintStatus, string> = {
   open: "Open",
   in_progress: "In progress",
@@ -21,15 +35,15 @@ export const statusLabel: Record<ComplaintStatus, string> = {
 };
 
 const statusColour: Record<ComplaintStatus, string> = {
-  open: "bg-amber-50 text-amber-800",
-  in_progress: "bg-indigo-50 text-indigo-700",
-  resolved: "bg-emerald-50 text-emerald-800",
-  rejected: "bg-slate-100 text-slate-700",
+  open: "hc-pill-amber",
+  in_progress: "hc-pill-violet",
+  resolved: "hc-pill-green",
+  rejected: "hc-pill-grey",
 };
 
 export function StatusBadge({ status }: { status: ComplaintStatus }) {
   return (
-    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColour[status]}`}>
+    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap ${statusColour[status]}`}>
       {statusLabel[status]}
     </span>
   );
@@ -43,14 +57,14 @@ export const priorityLabel: Record<ComplaintPriority, string> = {
 };
 
 const priorityColour: Record<ComplaintPriority, string> = {
-  high: "bg-red-50 text-red-700",
-  normal: "bg-slate-100 text-slate-700",
-  low: "bg-slate-50 text-slate-500",
+  high: "hc-pill-red",
+  normal: "hc-pill-grey",
+  low: "hc-pill-grey opacity-80",
 };
 
 export function PriorityBadge({ priority }: { priority: ComplaintPriority }) {
   return (
-    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityColour[priority]}`}>
+    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap ${priorityColour[priority]}`}>
       {priorityLabel[priority]}
     </span>
   );

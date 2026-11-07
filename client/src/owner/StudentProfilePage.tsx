@@ -8,6 +8,9 @@ import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeT
 import { MoveOutConfirm } from "./MoveOutConfirm";
 import { ReactivateForm } from "./ReactivateForm";
 import { ResetPasswordConfirm } from "./ResetPasswordConfirm";
+import { buttonClass, IconTile, Skeleton, type Tone } from "../ui";
+import { BedIcon, BuildingIcon, ClockIcon, MessageIcon } from "../ui/icons";
+import { Avatar, backLinkClass } from "../ui/ListParts";
 import { primaryButton, secondaryButton } from "./styles";
 import { TemporaryPassword } from "./TemporaryPassword";
 import { TransferForm } from "./TransferForm";
@@ -78,7 +81,7 @@ export function StudentProfilePage() {
   };
 
   const back = (
-    <Link to="/students" className="text-sm font-medium text-indigo-700 hover:underline">
+    <Link to="/students" className={backLinkClass}>
       ← All students
     </Link>
   );
@@ -87,31 +90,42 @@ export function StudentProfilePage() {
     return (
       <div className="space-y-4">
         {back}
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       </div>
     );
   }
-  if (!student) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!student) return <Skeleton label="Loading the student…" lines={5} />;
 
   const s = student;
   return (
     <div className="space-y-6">
       {back}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-semibold text-slate-900">{s.name}</h1>
-        {!s.isActive && <Badge tone="slate">Former student</Badge>}
-        {s.isActive && s.mustChangePassword && <Badge tone="amber">Must change password</Badge>}
+      <div className="rise bg-hero relative flex items-center gap-4 overflow-hidden rounded-[1.75rem] p-5 shadow-[var(--hc-hero-shadow)] md:p-6">
+        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 size-48 rounded-full bg-white/15 blur-2xl" />
+        <Avatar name={s.name} size="lg" />
+        <div className="relative min-w-0 space-y-1.5">
+          <h1 className="font-display text-2xl font-extrabold tracking-tight text-hero-ink md:text-3xl">{s.name}</h1>
+          <p className="text-sm text-hero-muted">
+            {s.currentStay ? placeText(s.currentStay, { withFloor: true }) : categoryLabel[s.category]}
+          </p>
+          {(!s.isActive || s.mustChangePassword) && (
+            <p className="flex flex-wrap gap-2">
+              {!s.isActive && <Badge tone="slate">Former student</Badge>}
+              {s.isActive && s.mustChangePassword && <Badge tone="amber">Must change password</Badge>}
+            </p>
+          )}
+        </div>
       </div>
 
-      <Card title="Contact">
+      <Card title="Contact" tone="violet" Icon={MessageIcon}>
         <Item label="Email">{s.email}</Item>
         <Item label="Mobile">{formatMobile(s.phone)}</Item>
         <Item label="Parent or guardian">{formatMobile(s.parentPhone)}</Item>
       </Card>
 
-      <Card title={categoryLabel[s.category]}>
+      <Card title={categoryLabel[s.category]} tone="blue" Icon={BuildingIcon}>
         {s.category === "college" && (
           <>
             <Item label="College">{s.collegeName}</Item>
@@ -128,7 +142,7 @@ export function StudentProfilePage() {
         {s.category === "other" && <Item label="Category">Other</Item>}
       </Card>
 
-      <Card title="Stay and fees">
+      <Card title="Stay and fees" tone="green" Icon={BedIcon}>
         <Item label="Lives in">
           {s.currentStay
             ? placeText(s.currentStay, { withFloor: true })
@@ -143,12 +157,12 @@ export function StudentProfilePage() {
       </Card>
 
       {notice && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {notice}
         </p>
       )}
       {refreshError && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {refreshError}
         </p>
       )}
@@ -156,12 +170,12 @@ export function StudentProfilePage() {
       {reactivated ? (
         <section
           aria-labelledby="reactivated-heading"
-          className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"
+          className="space-y-4 rounded-card border border-emerald-400/40 bg-surface p-4 shadow-card"
         >
-          <h2 id="reactivated-heading" className="text-sm font-semibold text-slate-700">
+          <h2 id="reactivated-heading" className="text-base font-bold text-ink">
             Student reactivated
           </h2>
-          <p className="text-slate-700">
+          <p className="text-muted">
             <strong>{reactivated.student.name}</strong> can log in again now; the new stay
             starts on {formatDate(reactivated.student.joiningDate)}.
           </p>
@@ -174,12 +188,12 @@ export function StudentProfilePage() {
       ) : resetPassword ? (
         <section
           aria-labelledby="password-reset-heading"
-          className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"
+          className="space-y-4 rounded-card border border-emerald-400/40 bg-surface p-4 shadow-card"
         >
-          <h2 id="password-reset-heading" className="text-sm font-semibold text-slate-700">
+          <h2 id="password-reset-heading" className="text-base font-bold text-ink">
             Password reset
           </h2>
-          <p className="text-slate-700">
+          <p className="text-muted">
             <strong>{s.name}</strong>&apos;s old password no longer works.
           </p>
           <TemporaryPassword password={resetPassword} />
@@ -249,7 +263,7 @@ export function StudentProfilePage() {
             </button>
           )}
           {s.isActive ? (
-            <button type="button" onClick={() => open("moveOut")} className={secondaryButton}>
+            <button type="button" onClick={() => open("moveOut")} className={buttonClass("danger")}>
               Move out
             </button>
           ) : (
@@ -260,15 +274,20 @@ export function StudentProfilePage() {
         </div>
       )}
 
-      <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 id="stay-history" className="text-sm font-semibold text-slate-700">
-          Stay history
-        </h2>
-        <ul aria-labelledby="stay-history" className="divide-y divide-slate-100">
+      <section className="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card md:p-5">
+        <div className="flex items-center gap-3">
+          <IconTile tone="orange" size="sm">
+            <ClockIcon size={18} />
+          </IconTile>
+          <h2 id="stay-history" className="text-base font-bold text-ink">
+            Stay history
+          </h2>
+        </div>
+        <ul aria-labelledby="stay-history" className="divide-y divide-line">
           {s.stays.map((stay) => (
             <li key={stay.id} className="flex flex-col py-2 sm:flex-row sm:justify-between sm:gap-4">
-              <span className="text-slate-900">{placeText(stay, { withFloor: true })}</span>
-              <span className="text-sm text-slate-500">
+              <span className="text-ink">{placeText(stay, { withFloor: true })}</span>
+              <span className="text-sm text-muted">
                 {formatDate(stay.startedOn)} – {stay.endedOn ? formatDate(stay.endedOn) : "now"}
               </span>
             </li>
@@ -279,10 +298,25 @@ export function StudentProfilePage() {
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({
+  title,
+  tone,
+  Icon,
+  children,
+}: {
+  title: string;
+  tone: Tone;
+  Icon: typeof BedIcon;
+  children: ReactNode;
+}) {
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+    <section className="rise space-y-4 rounded-card border border-line bg-surface p-4 shadow-card md:p-5">
+      <div className="flex items-center gap-3">
+        <IconTile tone={tone} size="sm">
+          <Icon size={18} />
+        </IconTile>
+        <h2 className="text-base font-bold text-ink">{title}</h2>
+      </div>
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">{children}</dl>
     </section>
   );
@@ -291,13 +325,13 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="text-slate-900">{children}</dd>
+      <dt className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</dt>
+      <dd className="mt-0.5 font-medium break-words text-ink">{children}</dd>
     </div>
   );
 }
 
 function Badge({ tone, children }: { tone: "slate" | "amber"; children: ReactNode }) {
-  const colours = tone === "amber" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-700";
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colours}`}>{children}</span>;
+  const colours = tone === "amber" ? "hc-pill-amber" : "hc-pill-grey";
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${colours}`}>{children}</span>;
 }

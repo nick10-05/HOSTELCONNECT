@@ -14,6 +14,8 @@ import {
   type Building,
   type Room,
 } from "../api/structure";
+import { IconTile, Skeleton } from "../ui";
+import { BuildingIcon } from "../ui/icons";
 
 // The owner's screen for buildings, floors, rooms and beds. Every change is sent to the
 // server and then the whole tree is loaded again: a little more traffic, but the
@@ -27,13 +29,13 @@ const errorText = (err: unknown) =>
 const floorLabel = (number: number) => (number === 0 ? "Ground floor" : `Floor ${number}`);
 
 const inputClass =
-  "block w-full rounded-lg border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none";
+  "block w-full min-h-11 rounded-xl border border-line bg-surface px-3.5 py-2 text-base text-ink placeholder:text-faint focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 focus:outline-none aria-invalid:border-red-400";
 const primaryButton =
-  "rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60";
+  "press inline-flex min-h-11 items-center justify-center rounded-xl bg-active px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
 const quietButton =
-  "rounded px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60";
+  "min-h-11 rounded-xl px-3 text-sm font-semibold text-muted hover:bg-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-60";
 const dangerButton =
-  "rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60";
+  "min-h-11 rounded-xl px-3 text-sm font-semibold text-danger hover:bg-soft disabled:cursor-not-allowed disabled:opacity-60";
 
 export function StructurePage() {
   const [buildings, setBuildings] = useState<Building[] | null>(null);
@@ -65,20 +67,20 @@ export function StructurePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Buildings and rooms</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Buildings and rooms</h1>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}
 
       {buildings === null ? (
-        !error && <p className="text-sm text-slate-500">Loading…</p>
+        !error && <Skeleton label="Loading buildings…" lines={4} />
       ) : (
         <>
           {buildings.length === 0 && (
-            <p className="text-sm text-slate-600">No buildings yet. Add your first building below.</p>
+            <p className="text-sm text-muted">No buildings yet. Add your first building below.</p>
           )}
           {buildings.map((b) => (
             <BuildingCard key={b.id} building={b} busy={busy} change={change} />
@@ -108,12 +110,17 @@ function BuildingCard({ building, busy, change }: CardProps) {
   return (
     <section
       aria-labelledby={headingId}
-      className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 id={headingId} className="text-lg font-semibold text-slate-900">
-          {building.name}
-        </h2>
+        <div className="flex min-w-0 items-center gap-3">
+          <IconTile tone="blue">
+            <BuildingIcon />
+          </IconTile>
+          <h2 id={headingId} className="truncate font-display text-xl font-extrabold tracking-tight text-ink">
+            {building.name}
+          </h2>
+        </div>
         <button
           type="button"
           onClick={remove}
@@ -147,7 +154,7 @@ function BuildingCard({ building, busy, change }: CardProps) {
               </button>
             }
           >
-            {floor.rooms.length === 0 && <p className="text-sm text-slate-500">No rooms yet.</p>}
+            {floor.rooms.length === 0 && <p className="text-sm text-muted">No rooms yet.</p>}
             {floor.rooms.map((room) => (
               <RoomRow key={room.id} room={room} busy={busy} change={change} />
             ))}
@@ -163,7 +170,7 @@ function BuildingCard({ building, busy, change }: CardProps) {
         </Group>
       )}
 
-      <div className="grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+      <div className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
         <FloorForm building={building} busy={busy} change={change} />
         <RoomForm building={building} busy={busy} change={change} />
       </div>
@@ -175,7 +182,7 @@ function Group({ title, action, children }: { title: string; action?: ReactNode;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">{title}</h3>
+        <h3 className="text-xs font-bold tracking-wider text-muted uppercase">{title}</h3>
         {action}
       </div>
       <div className="space-y-2">{children}</div>
@@ -186,9 +193,9 @@ function Group({ title, action, children }: { title: string; action?: ReactNode;
 function RoomRow({ room, busy, change }: { room: Room; busy: boolean; change: Change }) {
   const name = `room ${room.roomNumber}`;
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div className="rounded-2xl border border-line p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-slate-900">Room {room.roomNumber}</span>
+        <span className="font-medium text-ink">Room {room.roomNumber}</span>
         <button
           type="button"
           onClick={() => {
@@ -203,7 +210,7 @@ function RoomRow({ room, busy, change }: { room: Room; busy: boolean; change: Ch
       </div>
 
       {room.beds.length > 0 && (
-        <ul aria-label={`Beds in ${name}`} className="mt-2 divide-y divide-slate-100">
+        <ul aria-label={`Beds in ${name}`} className="mt-2 divide-y divide-line">
           {room.beds.map((bed) => (
             <BedRow key={bed.id} bed={bed} busy={busy} change={change} />
           ))}
@@ -227,15 +234,15 @@ function RoomRow({ room, busy, change }: { room: Room; busy: boolean; change: Ch
 function BedRow({ bed, busy, change }: { bed: Bed; busy: boolean; change: Change }) {
   const status = !bed.isActive ? "Retired" : bed.occupied ? "Occupied" : "Free";
   const badge = {
-    Retired: "bg-slate-100 text-slate-500",
-    Occupied: "bg-amber-50 text-amber-700",
-    Free: "bg-emerald-50 text-emerald-700",
+    Retired: "hc-pill-grey",
+    Occupied: "hc-pill-amber",
+    Free: "hc-pill-green",
   }[status];
 
   return (
     <li className="flex items-center justify-between gap-2 py-1.5">
       <span className="flex items-center gap-2">
-        <span className="text-sm text-slate-800">Bed {bed.bedNumber}</span>
+        <span className="text-sm text-ink">Bed {bed.bedNumber}</span>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge}`}>{status}</span>
       </span>
       {/* Someone sleeps in an occupied bed, so it cannot be retired (the server refuses too). */}
@@ -266,7 +273,7 @@ function FloorForm({ building, busy, change }: CardProps) {
   return (
     <form onSubmit={submit} className="flex items-end gap-2">
       <div className="flex-1">
-        <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+        <label htmlFor={id} className="block text-sm font-medium text-muted">
           Floor number
         </label>
         <input
@@ -306,7 +313,7 @@ function RoomForm({ building, busy, change }: CardProps) {
     <form onSubmit={submit} className="space-y-2">
       <div className="flex gap-2">
         <div className="flex-1">
-          <label htmlFor={numberId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={numberId} className="block text-sm font-medium text-muted">
             Room number
           </label>
           <input
@@ -319,7 +326,7 @@ function RoomForm({ building, busy, change }: CardProps) {
           />
         </div>
         <div className="flex-1">
-          <label htmlFor={floorSelectId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={floorSelectId} className="block text-sm font-medium text-muted">
             On floor
           </label>
           <select
@@ -367,7 +374,7 @@ function SingleFieldForm({ label, button, buttonLabel, busy, compact, onSubmit }
   return (
     <form onSubmit={submit} className="flex items-end gap-2">
       <label className="flex-1">
-        <span className={compact ? "sr-only" : "block text-sm font-medium text-slate-700"}>{label}</span>
+        <span className={compact ? "sr-only" : "block text-sm font-medium text-muted"}>{label}</span>
         <input
           required
           maxLength={100}

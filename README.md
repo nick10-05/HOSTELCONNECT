@@ -48,9 +48,21 @@ and a notification bell (announcements, polls, complaint updates, fee reminders)
 The app never touches money: students pay the owner's UPI directly, and he marks the fee
 paid after checking his bank.
 
+**Look and feel.** Built to feel like a phone app: a floating tab bar on phones (a sidebar
+from tablet width up), slide-up menus, frosted-glass bars, shimmer placeholders while
+loading and small press animations (switched off for people who ask their phone for less
+motion). Light mode ("Aurora") uses an orange → pink → violet gradient; dark mode
+("Midnight") is near-black with one soft lavender accent. It follows the phone's light or
+dark setting, and a switch in the top bar lets each person pick Automatic, Light or Dark
+(remembered on that device only). Text meets WCAG AA contrast in both modes and every
+button and link is at least 44px tall. The colours live as tokens in
+`client/src/index.css`; the shared parts (buttons, cards, lists, filters, sheets, toasts,
+icons) are in `client/src/ui/`.
+
 ## Screenshots
 
-All from a local development database with fake students and a demo UPI ID.
+All from a local development database with fake students and a demo UPI ID. They were
+taken before the redesign and still show the earlier look.
 
 **The owner's dashboard:** students per building, the open return poll, active complaints,
 rejoin requests, fees due and overdue, and storage and bandwidth use, in one request.
@@ -130,7 +142,7 @@ flowchart LR
 | | |
 |---|---|
 | Server | Node 24, Express 5, TypeScript, `pg` with plain SQL (no ORM), Zod 4, bcrypt |
-| Client | React 19, React Router 7, Tailwind CSS 4, Vite |
+| Client | React 19, React Router 7, Tailwind CSS 4, Vite, self-hosted Inter and Plus Jakarta Sans fonts |
 | Tests | Vitest, Supertest, Testing Library; server tests run against a real Postgres |
 | Hosting | Render (Docker), Supabase (Postgres and storage), GitHub Actions |
 
@@ -178,7 +190,7 @@ database each run) and in `client`.
 
 ```
 .github/workflows/  ci.yml, jobs.yml (hourly), backup.yml (nightly), migrate.yml (by hand)
-client/src/         api/, auth/, owner/, student/, components/
+client/src/         api/, auth/, owner/, student/, components/, ui/ (shared design parts)
 server/migrations/  numbered SQL files
 server/scripts/     migrate, seed-owner, import-students, seed-200-students, reset-owner-password
 server/src/         routes/, services/, middleware/, jobs/, lib/
