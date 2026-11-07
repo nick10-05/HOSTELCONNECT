@@ -925,4 +925,16 @@ migration and no new settings.
 - `docs/decisions.md` section 8 still lists this as not built (Nikhil's write-up).
 - The day 10 note above ("Also missing … editing a student's details") is now built, except
   the joining date.
-- Not deployed yet.
+- Deployed on 2026-11-07 (see "Deployment" below).
+
+### Deployment (2026-11-07, UTC)
+
+| Step | Evidence |
+|---|---|
+| Pushed on `edit-student` | `6073fe9` (code) and `d19a286` (docs), author nick10-05, no co-author line |
+| CI on the branch | Run #67 on `d19a286`: green |
+| Before the merge | No migration, so no backup-then-migrate step; no new Render or GitHub settings |
+| Merge into `main` | Through GitHub pull request #12, as merge commit `00eb601`, merged by Nikhil |
+| CI on `main` | Run #69 on `00eb601`: green at 09:14 |
+| Live site | `/api/health` 200. `PATCH /api/students/1` without a login answers 401, where a path the app does not have answers 404, so the new route is served. No student's data was touched: the login check refused it first |
+| Owner check | Not done yet: the Edit details and Reset password buttons on a current student's profile in production (look only, do not save or click on a real student) |

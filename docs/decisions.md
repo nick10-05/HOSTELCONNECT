@@ -64,16 +64,21 @@ Both restore drills passed on Day 10, which gives me confidence that the backups
 
 ## 8. Not built yet
 
-For the next improvements, I would prioritise them based on their impact on actual hostel operations. None of the features below exist in HostelConnect today.
+Since Day 10, the two improvements I ranked highest have been built and deployed:
 
-1. **Student password reset:** This should come first because a student who forgets their password currently has no way to recover their account, and the owner cannot reset it either. The owner should be able to securely reset it.
-2. **Edit student details and monthly fees:** The owner should be able to correct student information and update fees after admission without creating another account.
-3. **Content Security Policy (CSP):** Add this as an additional layer of browser-side security.
-4. **PWA support:** This would make HostelConnect easier to access and use like an installable app on phones.
-5. **Aadhaar:** I haven't decided whether this is necessary. I don't want to collect sensitive identity information without a clear operational reason.
-6. **Second production user:** Its identity and role remain unverified. This should be investigated before making assumptions about production data.
+- **Student password reset:** the owner can give a current student a new temporary password from their profile. It is shown once, and the student must change it at their next login.
+- **Edit student details and monthly fees:** the owner can correct a student's details after admission. A new fee applies only to fees created after the change, so fees already listed keep their amount. The joining date cannot be changed, because the database does not allow a stay's start date to move; I left that out for now.
 
-I would prioritise password recovery and student editing before convenience features. These are planned improvements, not features that currently exist.
+The second production user has also been checked: it was a test student, and it has been moved out.
+
+What remains, in order of their impact on actual hostel operations:
+
+1. **Content Security Policy (CSP):** Add this as an additional layer of browser-side security.
+2. **PWA support:** This would make HostelConnect easier to access and use like an installable app on phones.
+3. **Aadhaar:** I haven't decided whether this is necessary. I don't want to collect sensitive identity information without a clear operational reason.
+4. **Editing the joining date:** This would need a database change and rules for fees that already exist, so I would only add it if it is actually needed.
+
+These are planned improvements, not features that currently exist.
 
 ## How it was built
 
