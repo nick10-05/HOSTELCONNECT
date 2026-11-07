@@ -71,7 +71,7 @@ Since Day 10, the two improvements I ranked highest have been built and deployed
 
 The second production user has also been checked: it was a test student, and it has been moved out.
 
-The Content Security Policy, first on my list, is built too. It goes live in report-only mode first (browsers only warn), and is enforced once the live site shows no warnings.
+The Content Security Policy, first on my list, is built too, and it is enforced on the live site.
 
 What remains, in order of their impact on actual hostel operations:
 
@@ -80,6 +80,21 @@ What remains, in order of their impact on actual hostel operations:
 3. **Editing the joining date:** This would need a database change and rules for fees that already exist, so I would only add it if it is actually needed.
 
 These are planned improvements, not features that currently exist.
+
+## 9. From one hostel to a platform
+
+I decided to turn HostelConnect into a platform that any hostel owner can use: they sign up with their Google account, create their hostel, set up its buildings, floors, rooms and beds, and admit their own students. Every hostel's data must stay completely separate from every other hostel's. The hostel already in production becomes hostel #1, and none of its data is lost.
+
+The decisions I made before starting (2026-11-07):
+
+- **A free beta first.** It stays on the free Render and Supabase plans, and owners pay nothing. I move to paid hosting (about USD 30–35 a month) once real hostels depend on it. During the beta, the first visit after a quiet spell still takes about a minute.
+- **Limits per hostel:** 300 students, 20 buildings and one hostel per owner account. I can raise them for a hostel that needs more. Sign-up can be switched off at any time if it is abused.
+- **Students under 18.** When an owner admits a student marked under 18, they must confirm that they hold the guardian's consent, and the app records who confirmed it and when.
+- **Legal documents.** Claude drafts the Terms of Service, Privacy Policy and data processing agreement from what the app actually stores. A lawyer reviews them, and sign-up stays closed until then.
+- **The address** stays on onrender.com for the beta.
+- **Owners sign in with Google only**, including me: I link my Google account to the existing owner account and then drop its password. Students keep their email and temporary password, and sign in at their hostel's own address (`/h/<hostel>/login`).
+
+How the separation works: every table that belongs to a hostel has a `hostel_id`. The database refuses a row that points into another hostel or tries to move to another one, and in phase 2 row-level security makes Postgres itself hide other hostels' rows, so a forgotten filter in the code cannot leak data. The work is split into six phases, each deployed on its own while sign-up stays closed; the progress is recorded in `docs/progress.md`.
 
 ## How it was built
 

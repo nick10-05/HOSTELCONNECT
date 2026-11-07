@@ -1005,3 +1005,41 @@ fix, the Settings QR (`data:` image) shows, and a saved dark choice is applied f
   bucket) and the student pages. Check both on the live site during the report-only trial.
 - Rollout: deploy with `CSP_REPORT_ONLY=true` set in Render, check the live site's console,
   then delete the setting to enforce. No code change is needed to switch.
+
+### Deployment (2026-11-07)
+
+| Step | Evidence |
+|---|---|
+| Merge into `main` | Through GitHub pull request #15, as merge commit `2ac5d2b`, merged by Nikhil |
+| Enforced | The live page answers with `Content-Security-Policy` (not the report-only header), allowing images from the Supabase project's origin, plus HSTS, `nosniff`, `X-Frame-Options: DENY`, COOP and the Permissions-Policy. Checked with plain requests, no login |
+| Owner check | Production testing done by Nikhil, including his phone in light and dark |
+
+## Multi-tenant SaaS, phase 1: hostels in the schema (2026-11-07)
+
+HostelConnect becomes a platform for any hostel (decisions in `docs/decisions.md`, section
+9). Phase 1 is the "expand" step: migration `013_hostels.sql` adds hostels to the schema
+without changing what today's code does. Nothing is moved or deleted; every existing row
+becomes part of hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `hostels` table | Claude, at Nikhil's request | Done | Name, slug (for `/h/<slug>/login`, 3–40 lowercase letters, digits and single hyphens), status (active or suspended), the beta limits (300 students, 20 buildings), a per-hostel fee start date. Hostel #1, "HostelConnect", holds today's data. The app may create a hostel (name and slug only) and rename it; only the platform admin sets status and limits; the app can never delete one |
+| `hostel_id` on 15 tables | Claude | Done | `bigint NOT NULL DEFAULT 1`, so rows written by today's code land in hostel #1. `usage_counters` stays platform-wide until phase 5 |
+| No row points into another hostel | Claude | Done | Composite foreign keys on `(hostel_id, …)` from every row to its building, room, student, author, complaint or poll |
+| No row changes hostel | Claude | Done | The `hostel_id_fixed` trigger on all 15 tables |
+| Per-hostel unique rules | Claude | Done | Email, building name, one open poll and payment settings per hostel, next to today's global indexes, which phase 6 drops |
+| Google sign-in columns | Claude | Done | `users.google_sub` (owners only, unique); an owner with a Google account may have no password; students always have one |
+| Tests | Claude | Done | `tests/tenancyTables.test.ts`, 24 tests, written first and seen failing before the migration existed |
+
+Checks: server 1098 tests (1074 before) and typecheck clean. Rehearsal on a copy of the
+local demo database (104 users, 860 notifications, 217 fees), restored the way the restore
+drill restores a backup: 013 applied, every table kept its row count, every row in hostel
+#1, every new constraint validated; the copy was dropped afterwards.
+
+### Notes for later days
+
+- Moved to phase 2: "one owner per hostel". The tests create owners freely (`insertOwner`
+  in 301 places, often several in one test), so the rule waits until every test has its
+  own hostel.
+- Before merging: the same rehearsal on a restored production backup (restore drill with
+  `--keep`), then a backup and the Migrate workflow as for every migration.
