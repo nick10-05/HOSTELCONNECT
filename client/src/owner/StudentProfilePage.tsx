@@ -100,7 +100,7 @@ export function StudentProfilePage() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold text-slate-900">{s.name}</h1>
         {!s.isActive && <Badge tone="slate">Former student</Badge>}
-        {s.isActive && s.mustChangePassword && <Badge tone="amber">Has not logged in yet</Badge>}
+        {s.isActive && s.mustChangePassword && <Badge tone="amber">Must change password</Badge>}
       </div>
 
       <Card title="Contact">

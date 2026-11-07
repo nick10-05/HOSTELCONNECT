@@ -872,7 +872,9 @@ migration and no new settings.
 
 - After a reset the profile shows "Has not logged in yet" (the badge follows
   `must_change_password`), and the note under the temporary password says "when they first
-  log in". Both are worded for a new admission; left as they are for now.
+  log in". Both are worded for a new admission. Fixed afterwards on branch `reset-wording`:
+  the badge now says "Must change password" and the note "when they next log in", which fit
+  an admission, a reactivation and a reset alike.
 - `docs/decisions.md` section 8 still lists this as not built (Nikhil's write-up).
 - Deployed on 2026-11-07 (see "Deployment" below).
 

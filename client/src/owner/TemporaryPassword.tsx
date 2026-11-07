@@ -28,7 +28,7 @@ export function TemporaryPassword({ password }: { password: string }) {
       </div>
       <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
         It is shown only now and cannot be seen again. Give it to the student in person; they
-        must choose their own password when they first log in.
+        must choose their own password when they next log in.
       </p>
     </>
   );

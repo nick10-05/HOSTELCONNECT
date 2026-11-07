@@ -81,7 +81,7 @@ describe("StudentProfilePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Asha Rao" })).toBeInTheDocument();
     expect(requested).toEqual(["/api/students/7"]);
-    expect(screen.getByText("Has not logged in yet")).toBeInTheDocument();
+    expect(screen.getByText("Must change password")).toBeInTheDocument();
 
     expect(valueOf("Email")).toHaveTextContent("asha@example.com");
     expect(valueOf("Mobile")).toHaveTextContent("98765 43210");
@@ -127,7 +127,7 @@ describe("StudentProfilePage", () => {
     expect(valueOf("Monthly fee")).toHaveTextContent("Not set");
     expect(valueOf("Food")).toHaveTextContent("Non-Veg (veg on Tue, Sat)");
     expect(screen.queryByText("College", { selector: "dt" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Has not logged in yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Must change password")).not.toBeInTheDocument();
   });
 
   it("shows a former student without a place or a due date", async () => {
