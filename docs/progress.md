@@ -834,3 +834,44 @@ photo-expiry race test's photos committed; not proven.
 | CI on `main` | Run #48 at 07:23 on `f145494`: green |
 | Health | `/api/health` 200 `ok` at 07:24 (this alone does not show which version is served) |
 | "Run jobs" with the secret | Run #4 (id 42351315267) on `main` (`f145494`), started by hand, success. Per the run's log, as reported by Nikhil: `Status 200` with `expirePhotos`, `feeReminders`, `digest` and `pruned`, so the day 10 code is live |
+
+## After the plan: student password reset (2026-11-07)
+
+The first item of `docs/decisions.md` section 8: a student who forgot their password had no
+way back in, and the owner could not reset it (design doc section 5 planned
+`POST /api/students/:id/reset-password`; the day 10 notes found it missing). Branch
+`student-password-reset`, from `main` at `825982e`.
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| `resetStudentPassword` (`services/students.ts`) | Nikhil, against Claude's stub, contract and tests | Done | 7 tests in `resetStudentPassword.test.ts`: the new password works and the old one does not, stored hashed, `must_change_password` set, nothing else on the account changes; also for a student who never changed their first password; a different password each time, only the latest works; only that student changes; 404 for an unknown id and for the owner's id; 409 for a former student, changing nothing |
+| Review fix | Claude, with Nikhil's approval | Done | If the `UPDATE` changed no row but the follow-up `SELECT` found an active student (reactivated between the two), the function returned a password that was never saved. It now answers 409 `student_inactive` ("This student changed just now. Try again."). Not tested: it needs two connections timed exactly |
+| `POST /api/students/:id/reset-password` | Claude | Done | 5 tests in `studentsRoutes.test.ts` (owner only, the answer with `Cache-Control: no-store`, a bad id, the service's refusal, a cross-site request) and 1 end-to-end test in `resetPasswordFlow.test.ts` against the real database: the old password fails at once, an open session is held with `password_change_required`, the temporary password must be changed first, then everything works again; still active in the same bed |
+| Profile: **Reset password** for current students (`ResetPasswordConfirm.tsx`) | Claude | Done | 5 tests in `StudentProfilePage.test.tsx` (current students only, Cancel sends nothing, the password shown once and forgotten on Done, a refusal shown). In the local browser on the fake Demo Student: the question, `200`, the temporary password, Done |
+| README, `docs/RECOVERY.md` section 6 | Claude | Done | Both now say the owner resets a student's password from the profile |
+
+New tests were checked to fail against planted bugs, then the code was restored: in the
+service, not setting `must_change_password`, any role, former students too, storing the plain
+password, changing another column, updating other students; in the route, no `no-store`, no
+owner check; on the profile, the button for former students. Each failed at least one test.
+
+Checks: server 1022 tests (1009 before), client 322 (317 before), typecheck clean. No
+migration and no new settings.
+
+### Decisions
+
+- **Who writes:** Nikhil wrote the service function; Claude the stub, contract, tests, route,
+  screen and docs.
+- **Active students only:** a former student cannot log in anyway, and reactivation already
+  gives a new temporary password.
+- **No notification** to the student (they cannot log in to read it); open sessions are not
+  ended but held at the change-password screen, since `requireAuth` reads
+  `must_change_password` on every request.
+
+### Notes for later days
+
+- After a reset the profile shows "Has not logged in yet" (the badge follows
+  `must_change_password`), and the note under the temporary password says "when they first
+  log in". Both are worded for a new admission; left as they are for now.
+- `docs/decisions.md` section 8 still lists this as not built (Nikhil's write-up).
+- Not deployed yet.
