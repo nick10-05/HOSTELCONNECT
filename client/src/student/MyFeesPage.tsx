@@ -5,6 +5,9 @@ import { getMyFees, type MyFeeRow, type MyFees } from "../api/fees";
 import { getPaymentSettings, type PaymentSettings } from "../api/settings";
 import { PaymentDetails } from "../components/PaymentQr";
 import { formatDate, formatRupees } from "../owner/format";
+import { Alert, EmptyState, IconTile, Pill, type PillTone } from "../ui";
+import { CheckIcon, ChevronRightIcon, ClockIcon, RupeeIcon, WarningIcon } from "../ui/icons";
+import { listClass, ListSkeleton, PageHeader } from "../ui/ListParts";
 
 // A student's own fees (design doc, sections 3 and 9; day 9): what is to pay now (pending
 // fees due on or before today), what is overdue, the next due date, and every fee with its
@@ -36,45 +39,76 @@ function useMyFees() {
   return { fees, error };
 }
 
+// The lines under the amount: overdue, no amount set, the next due date. On the gradient
+// card (the page) or a plain one (the home card).
+function FeeNotes({ fees, onHero = false }: { fees: MyFees; onHero?: boolean }) {
+  const chip = onHero
+    ? "border border-[var(--hc-chip-line)] bg-[var(--hc-chip)] text-hero-ink"
+    : "bg-soft text-ink";
+  return (
+    <div className="flex flex-wrap gap-2">
+      {fees.overdue.length > 0 && (
+        <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${onHero ? chip : "hc-pill-red"}`}>
+          <WarningIcon size={14} />
+          {overdueText(fees.overdue.length)}
+        </p>
+      )}
+      {fees.amountNotSet > 0 && (
+        <p className={`rounded-full px-3 py-1 text-xs font-semibold ${onHero ? chip : "hc-pill-amber"}`}>
+          {notSetText(fees.amountNotSet)}
+        </p>
+      )}
+      {fees.nextDueDate && (
+        <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${chip}`}>
+          <ClockIcon size={14} />
+          Next due date: {formatDate(fees.nextDueDate)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function MyFeesPage() {
   const { fees, error } = useMyFees();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">My fees</h1>
+      <PageHeader title="My fees" />
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <Alert tone="error">{error}</Alert>
       ) : !fees ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading your fees…" rows={3} />
       ) : (
         <>
           <section
             aria-labelledby="fees-now"
-            className="space-y-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rise bg-hero relative space-y-3 overflow-hidden rounded-[1.75rem] p-5 shadow-[var(--hc-hero-shadow)] md:p-6"
           >
-            <h2 id="fees-now" className="text-sm font-semibold text-slate-700">
+            <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 size-48 rounded-full bg-white/15 blur-2xl" />
+            <h2 id="fees-now" className="relative text-sm font-semibold text-hero-muted">
               To pay now
             </h2>
             {nothingDue(fees) ? (
-              <p className="text-slate-700">Nothing to pay right now.</p>
+              <p className="relative flex items-center gap-2 font-display text-2xl font-extrabold text-hero-ink">
+                <CheckIcon />
+                Nothing to pay right now.
+              </p>
             ) : (
-              <p className="text-3xl font-semibold tabular-nums text-slate-900">{formatRupees(fees.pendingBalance)}</p>
+              <p className="relative font-display text-4xl font-extrabold tracking-tight tabular-nums text-hero-ink md:text-5xl">
+                {formatRupees(fees.pendingBalance)}
+              </p>
             )}
-            {fees.overdue.length > 0 && <p className="text-sm font-medium text-red-700">{overdueText(fees.overdue.length)}</p>}
-            {fees.amountNotSet > 0 && <p className="text-sm text-amber-800">{notSetText(fees.amountNotSet)}</p>}
-            {fees.nextDueDate && (
-              <p className="text-sm text-slate-600">Next due date: {formatDate(fees.nextDueDate)}</p>
-            )}
+            <div className="relative">
+              <FeeNotes fees={fees} onHero />
+            </div>
           </section>
 
           <PaymentDetails amount={fees.pendingBalance} />
 
           {fees.history.length === 0 ? (
-            <p className="text-sm text-slate-600">No fees yet.</p>
+            <EmptyState title="No fees yet." tone="green" icon={<RupeeIcon />} />
           ) : (
-            <ul aria-label="My fees" className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white shadow-sm">
+            <ul aria-label="My fees" className={listClass}>
               {fees.history.map((f) => (
                 <FeeItem key={f.id} fee={f} fees={fees} />
               ))}
@@ -88,33 +122,36 @@ export function MyFeesPage() {
 
 // A row's state, from the lists the server already split by India's today: a pending row
 // that is neither overdue nor upcoming is due today.
-function stateOf(fee: MyFeeRow, fees: MyFees): [string, string] {
-  if (fee.status === "paid") return ["Paid", "bg-emerald-50 text-emerald-700"];
-  if (fees.overdue.some((r) => r.id === fee.id)) return ["Overdue", "bg-red-50 text-red-700"];
-  if (fees.upcoming.some((r) => r.id === fee.id)) return ["Upcoming", "bg-slate-100 text-slate-600"];
-  return ["Due today", "bg-amber-50 text-amber-800"];
+function stateOf(fee: MyFeeRow, fees: MyFees): [string, PillTone] {
+  if (fee.status === "paid") return ["Paid", "green"];
+  if (fees.overdue.some((r) => r.id === fee.id)) return ["Overdue", "red"];
+  if (fees.upcoming.some((r) => r.id === fee.id)) return ["Upcoming", "grey"];
+  return ["Due today", "amber"];
 }
 
 function FeeItem({ fee, fees }: { fee: MyFeeRow; fees: MyFees }) {
-  const [label, badgeClass] = stateOf(fee, fees);
+  const [label, tone] = stateOf(fee, fees);
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <div>
-        <p className="font-medium text-slate-900">Due {formatDate(fee.dueDate)}</p>
+    <li className="flex items-center gap-3 px-4 py-3.5">
+      <IconTile tone={fee.status === "paid" ? "green" : tone === "red" ? "red" : "violet"} size="sm">
+        {fee.status === "paid" ? <CheckIcon size={18} /> : <RupeeIcon size={18} />}
+      </IconTile>
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold text-ink">Due {formatDate(fee.dueDate)}</p>
         {fee.paidOn && (
-          <p className="text-sm text-emerald-800">
+          <p className="text-sm font-medium text-success">
             Paid on {formatDate(fee.paidOn)}
             {fee.note && ` · ${fee.note}`}
           </p>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 flex-col items-end gap-1">
         {fee.amount === null ? (
-          <span className="text-sm text-amber-800">Amount not set</span>
+          <span className="text-sm font-semibold text-warn">Amount not set</span>
         ) : (
-          <span className="font-semibold tabular-nums text-slate-900">{formatRupees(fee.amount)}</span>
+          <span className="font-display font-extrabold tabular-nums text-ink">{formatRupees(fee.amount)}</span>
         )}
-        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badgeClass}`}>{label}</span>
+        <Pill tone={tone}>{label}</Pill>
       </div>
     </li>
   );
@@ -141,29 +178,35 @@ export function MyFeesCard() {
   return (
     <section
       aria-labelledby="my-fees-card"
-      className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="rise space-y-3 rounded-card border border-line bg-surface p-4 shadow-card md:p-5"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 id="my-fees-card" className="text-sm font-semibold text-slate-700">
-          My fees
-        </h2>
-        <Link to="/fees" className="text-sm font-medium text-indigo-700 hover:underline">
+        <div className="flex items-center gap-3">
+          <IconTile tone="green" size="sm">
+            <RupeeIcon size={18} />
+          </IconTile>
+          <h2 id="my-fees-card" className="text-base font-bold text-ink">
+            My fees
+          </h2>
+        </div>
+        <Link to="/fees" className="inline-flex min-h-11 items-center gap-0.5 text-sm font-semibold text-accent hover:underline">
           See my fees
+          <ChevronRightIcon size={16} />
         </Link>
       </div>
       {nothingDue(fees) ? (
-        <p className="text-slate-700">Nothing to pay right now.</p>
+        <p className="font-semibold text-ink">Nothing to pay right now.</p>
       ) : (
         <dl>
-          <dt className="text-sm text-slate-600">To pay now</dt>
-          <dd className="text-2xl font-semibold tabular-nums text-slate-900">{formatRupees(fees.pendingBalance)}</dd>
+          <dt className="text-sm text-muted">To pay now</dt>
+          <dd className="font-display text-3xl font-extrabold tracking-tight tabular-nums text-ink">
+            {formatRupees(fees.pendingBalance)}
+          </dd>
         </dl>
       )}
-      {fees.overdue.length > 0 && <p className="text-sm font-medium text-red-700">{overdueText(fees.overdue.length)}</p>}
-      {fees.amountNotSet > 0 && <p className="text-sm text-amber-800">{notSetText(fees.amountNotSet)}</p>}
-      {fees.nextDueDate && <p className="text-sm text-slate-600">Next due date: {formatDate(fees.nextDueDate)}</p>}
+      <FeeNotes fees={fees} />
       {payment?.upiId && (
-        <p className="text-sm break-all text-slate-600">
+        <p className="rounded-xl bg-soft px-3 py-2 text-sm font-medium break-all text-ink">
           Pay to {payment.upiId}
           {payment.upiPayeeName && ` (${payment.upiPayeeName})`}
         </p>

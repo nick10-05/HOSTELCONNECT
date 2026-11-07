@@ -20,19 +20,24 @@ function eventText(e: ComplaintEvent, viewer: TimelineViewer): string {
 
 export function ComplaintTimeline({ events, viewer }: { events: ComplaintEvent[]; viewer: TimelineViewer }) {
   return (
-    <section aria-labelledby="timeline-heading" className="space-y-3">
-      <h2 id="timeline-heading" className="text-sm font-semibold text-slate-700">
+    <section aria-labelledby="timeline-heading" className="space-y-4 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
+      <h2 id="timeline-heading" className="text-base font-bold text-ink">
         Timeline
       </h2>
       {events.length === 0 ? (
-        <p className="text-sm text-slate-500">Nothing yet.</p>
+        <p className="text-sm text-muted">Nothing yet.</p>
       ) : (
-        <ol className="space-y-3 border-l-2 border-slate-200 pl-4">
+        <ol className="relative space-y-5 pl-6 before:absolute before:top-1.5 before:bottom-1.5 before:left-[5px] before:w-0.5 before:rounded-full before:bg-line">
           {events.map((e, i) => (
-            <li key={i} className="space-y-1">
-              <p className="text-sm font-medium text-slate-800">{eventText(e, viewer)}</p>
-              {e.note && <p className="whitespace-pre-line break-words text-sm text-slate-700">{e.note}</p>}
-              <p className="text-xs text-slate-500">{formatTime(e.createdAt)}</p>
+            <li key={i} className="relative space-y-1">
+              {/* A dot on the line; the newest is coloured. */}
+              <span
+                aria-hidden="true"
+                className={`absolute top-1 -left-6 size-3 rounded-full ring-4 ring-[var(--hc-surface)] ${i === events.length - 1 ? "bg-active" : "bg-faint"}`}
+              />
+              <p className="text-sm font-semibold text-ink">{eventText(e, viewer)}</p>
+              {e.note && <p className="rounded-xl bg-soft px-3 py-2 text-sm whitespace-pre-line break-words text-ink">{e.note}</p>}
+              <p className="text-xs text-muted">{formatTime(e.createdAt)}</p>
             </li>
           ))}
         </ol>

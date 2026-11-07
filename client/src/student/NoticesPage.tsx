@@ -3,6 +3,9 @@ import { Link, useSearchParams } from "react-router";
 import { listAnnouncements, type Announcement } from "../api/announcements";
 import { ApiError } from "../api/client";
 import { NoticeCard } from "../components/NoticeCard";
+import { EmptyState } from "../ui";
+import { MegaphoneIcon } from "../ui/icons";
+import { ListSkeleton, PageHeader, Pager } from "../ui/ListParts";
 
 // The owner's notices, as a student reads them (design doc, sections 2 and 9): pinned
 // first, then newest, urgent ones highlighted. Students only read; nothing here changes
@@ -12,9 +15,6 @@ const PAGE_SIZE = 20; // the server's default page size
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
-
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function NoticesPage() {
   const [params, setParams] = useSearchParams();
@@ -37,15 +37,15 @@ export function NoticesPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Notices</h1>
+      <PageHeader title="Notices" subtitle="Pinned first, then the newest" />
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       ) : !result ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading notices…" rows={3} />
       ) : result.total === 0 ? (
-        <p className="text-sm text-slate-600">No notices yet.</p>
+        <EmptyState title="No notices yet." description="Notices from the hostel will show up here." tone="pink" icon={<MegaphoneIcon />} />
       ) : (
         <>
           <ul aria-label="Notices" className="space-y-3">
@@ -55,29 +55,7 @@ export function NoticesPage() {
               </li>
             ))}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page <= 1}
-                onClick={() => setParams(page - 1 > 1 ? { page: String(page - 1) } : {})}
-              >
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page >= pages}
-                onClick={() => setParams({ page: String(page + 1) })}
-              >
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={(n) => setParams(n > 1 ? { page: String(n) } : {})} />
         </>
       )}
     </div>
@@ -105,10 +83,10 @@ export function ImportantNotices() {
   return (
     <section aria-labelledby="important-notices" className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="important-notices" className="text-sm font-semibold text-slate-700">
+        <h2 id="important-notices" className="text-lg font-extrabold text-ink">
           Important notices
         </h2>
-        <Link to="/notices" className="text-sm font-medium text-indigo-700 hover:underline">
+        <Link to="/notices" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent hover:underline">
           See all notices
         </Link>
       </div>

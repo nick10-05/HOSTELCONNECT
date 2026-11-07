@@ -12,6 +12,7 @@ import {
 import { PaymentQr } from "../components/PaymentQr";
 import { prepareQr, QrError } from "./prepareQr";
 import { inputClass, primaryButton } from "./styles";
+import { Skeleton } from "../ui";
 
 // The owner's payment details (design doc, sections 3 and 9; day 9): the UPI ID, the payee
 // name and a QR picture, which students see on their fees. At least one of the UPI ID or
@@ -90,25 +91,25 @@ export function SettingsPage() {
 
   if (loadError) {
     return (
-      <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+      <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
         {loadError}
       </p>
     );
   }
-  if (!saved) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!saved) return <Skeleton label="Loading settings…" lines={4} />;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-slate-900">Payment settings</h1>
-        <p className="text-sm text-slate-600">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Payment settings</h1>
+        <p className="text-sm text-muted">
           Students see these with their fees. Saving a change notifies every current student.
         </p>
       </div>
 
-      <form onSubmit={submit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <form onSubmit={submit} className="space-y-5 rounded-card border border-line bg-surface p-4 shadow-card">
         <div className="space-y-1">
-          <label htmlFor={upiFieldId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={upiFieldId} className="block text-sm font-medium text-muted">
             UPI ID
           </label>
           <input
@@ -121,7 +122,7 @@ export function SettingsPage() {
             aria-describedby={upiHintId}
             className={inputClass}
           />
-          <p id={upiHintId} className={`text-xs ${upiInvalid ? "text-red-600" : "text-slate-500"}`}>
+          <p id={upiHintId} className={`text-xs ${upiInvalid ? "text-danger" : "text-muted"}`}>
             {upiTooLong
               ? `At most ${UPI_ID_MAX} characters.`
               : upiInvalid
@@ -131,7 +132,7 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-1">
-          <label htmlFor={nameFieldId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={nameFieldId} className="block text-sm font-medium text-muted">
             Payee name (optional)
           </label>
           <input
@@ -143,19 +144,19 @@ export function SettingsPage() {
             aria-describedby={nameHintId}
             className={inputClass}
           />
-          <p id={nameHintId} className={`text-xs ${nameInvalid ? "text-red-600" : "text-slate-500"}`}>
+          <p id={nameHintId} className={`text-xs ${nameInvalid ? "text-danger" : "text-muted"}`}>
             {nameInvalid ? `At most ${PAYEE_NAME_MAX} characters.` : "Shown to students and filled in by their UPI app."}
           </p>
         </div>
 
         <section aria-labelledby={qrHeadingId} className="space-y-3">
-          <h2 id={qrHeadingId} className="text-sm font-medium text-slate-700">
+          <h2 id={qrHeadingId} className="text-sm font-medium text-muted">
             QR image
           </h2>
           {saved.qrUrl ? (
             <>
               <PaymentQr settings={saved} />
-              <label htmlFor={removeId} className="flex items-center gap-2 text-sm text-slate-700">
+              <label htmlFor={removeId} className="flex min-h-11 items-center gap-2 text-sm text-muted">
                 <input
                   id={removeId}
                   type="checkbox"
@@ -173,12 +174,12 @@ export function SettingsPage() {
             </>
           ) : (
             <>
-              <p className="text-sm text-slate-600">No image uploaded. Students see a QR code drawn from the UPI ID.</p>
+              <p className="text-sm text-muted">No image uploaded. Students see a QR code drawn from the UPI ID.</p>
               <PaymentQr settings={saved} />
             </>
           )}
           <div className="space-y-1">
-            <label htmlFor={fileFieldId} className="block text-sm font-medium text-slate-700">
+            <label htmlFor={fileFieldId} className="block text-sm font-medium text-muted">
               Upload a new QR picture
             </label>
             <input
@@ -190,14 +191,14 @@ export function SettingsPage() {
                 setFile(e.target.files?.[0] ?? null);
                 setRemoveQr(false);
               }}
-              className="block w-full text-sm text-slate-700"
+              className="block w-full rounded-2xl border-2 border-dashed border-line bg-soft/50 p-3 text-sm text-muted file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-surface file:px-4 file:text-sm file:font-semibold file:text-ink file:shadow-card"
             />
-            <p className="text-xs text-slate-500">A screenshot of your UPI app's QR code works well.</p>
+            <p className="text-xs text-muted">A screenshot of your UPI app's QR code works well.</p>
           </div>
         </section>
 
         {error && (
-          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
             {error}
           </p>
         )}
@@ -207,7 +208,7 @@ export function SettingsPage() {
       </form>
 
       {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {message}
         </p>
       )}

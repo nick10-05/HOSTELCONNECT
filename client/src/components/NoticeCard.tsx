@@ -10,25 +10,25 @@ export function NoticeCard({ notice, children }: { notice: Announcement; childre
   return (
     <article
       aria-labelledby={titleId}
-      className={`space-y-2 rounded-xl border bg-white p-4 shadow-sm ${
-        notice.isUrgent ? "border-red-300 ring-1 ring-red-200" : "border-slate-200"
+      className={`rise relative space-y-2 overflow-hidden rounded-card border bg-surface p-4 shadow-card md:p-5 ${
+        notice.isUrgent ? "border-rose-400/50 ring-1 ring-rose-400/30" : "border-line"
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id={titleId} className="font-semibold break-words text-slate-900">
+        <h2 id={titleId} className="text-base font-bold break-words text-ink">
           {notice.title}
         </h2>
         <div className="flex gap-2">
           {notice.isUrgent && (
-            <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">Urgent</span>
+            <span className="hc-pill-red rounded-full px-2.5 py-0.5 text-xs font-bold">Urgent</span>
           )}
           {notice.isPinned && (
-            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Pinned</span>
+            <span className="hc-pill-violet rounded-full px-2.5 py-0.5 text-xs font-bold">Pinned</span>
           )}
         </div>
       </div>
-      <p className="whitespace-pre-line break-words text-sm text-slate-800">{notice.body}</p>
-      <p className="text-xs text-slate-500">
+      <p className="whitespace-pre-line break-words text-sm text-ink">{notice.body}</p>
+      <p className="text-xs text-muted">
         Posted {formatTime(notice.createdAt)}
         {edited && ` · edited ${formatTime(notice.updatedAt)}`}
       </p>

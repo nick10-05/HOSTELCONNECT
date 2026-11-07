@@ -6,6 +6,8 @@ import { getStructure, type Building } from "../api/structure";
 import { formatTime } from "../components/complaintText";
 import { PollStatusBadge } from "./ReturnPollsPage";
 import { inputClass, secondaryButton } from "./styles";
+import { Skeleton } from "../ui";
+import { backLinkClass } from "../ui/ListParts";
 
 // One return poll's results (design doc, section 9; day 9): who has returned, who has not
 // yet and who has not answered, among the students who are active now, for all buildings
@@ -74,42 +76,42 @@ export function ReturnPollPage() {
   if (error) {
     return (
       <div className="mx-auto max-w-2xl space-y-4">
-        <Link to="/return-polls" className="text-sm font-medium text-indigo-700 hover:underline">
+        <Link to="/return-polls" className={backLinkClass}>
           ← Return polls
         </Link>
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       </div>
     );
   }
-  if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!data) return <Skeleton label="Loading the poll…" lines={4} />;
 
   const { poll, counts } = data;
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Link to="/return-polls" className="text-sm font-medium text-indigo-700 hover:underline">
+      <Link to="/return-polls" className={backLinkClass}>
         ← Return polls
       </Link>
 
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-semibold text-slate-900">{poll.title}</h1>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">{poll.title}</h1>
           <PollStatusBadge status={poll.status} />
         </div>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Started {formatTime(poll.createdAt)}
           {poll.closedAt && ` · closed ${formatTime(poll.closedAt)}`}
         </p>
       </div>
 
       {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {message}
         </p>
       )}
       {actionError && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {actionError}
         </p>
       )}
@@ -117,7 +119,7 @@ export function ReturnPollPage() {
       <div className="flex flex-wrap items-end gap-3">
         {buildings.length > 0 && (
           <div className="space-y-1">
-            <label htmlFor={buildingId} className="block text-sm font-medium text-slate-700">
+            <label htmlFor={buildingId} className="block text-sm font-medium text-muted">
               Building
             </label>
             <select
@@ -146,8 +148,8 @@ export function ReturnPollPage() {
       </div>
 
       {confirming && (
-        <div role="group" aria-label="Confirm close" className="space-y-2 rounded-lg bg-amber-50 p-3">
-          <p className="text-sm text-amber-900">
+        <div role="group" aria-label="Confirm close" className="hc-pill-amber space-y-2 rounded-2xl p-3">
+          <p className="text-sm">
             Students can no longer answer once it is closed. This cannot be undone.
           </p>
           <div className="flex gap-2">
@@ -155,7 +157,7 @@ export function ReturnPollPage() {
               type="button"
               disabled={busy}
               onClick={() => void close()}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
+              className="press inline-flex min-h-10 items-center justify-center rounded-xl bg-strong px-3 text-sm font-semibold text-strong-ink disabled:opacity-60"
             >
               Yes, close it
             </button>
@@ -184,23 +186,23 @@ function StudentList({
 }) {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 id={headingId} className="text-sm font-semibold text-slate-700">
+    <section aria-labelledby={headingId} className="space-y-2 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 id={headingId} className="text-base font-bold text-ink">
         {title} ({count})
       </h2>
       {students.length === 0 ? (
-        <p className="text-sm text-slate-500">Nobody.</p>
+        <p className="text-sm text-muted">Nobody.</p>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line">
           {students.map((s) => (
             <li key={s.studentId} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2">
               <span>
-                <Link to={`/students/${s.studentId}`} className="font-medium text-slate-900 hover:underline">
+                <Link to={`/students/${s.studentId}`} className="-my-3 inline-flex min-h-11 items-center font-medium text-ink hover:underline">
                   {s.name}
                 </Link>
-                <span className="block text-sm text-slate-500">{placeText(s)}</span>
+                <span className="block text-sm text-muted">{placeText(s)}</span>
               </span>
-              {s.respondedAt && <span className="text-xs text-slate-500">{formatTime(s.respondedAt)}</span>}
+              {s.respondedAt && <span className="text-xs text-muted">{formatTime(s.respondedAt)}</span>}
             </li>
           ))}
         </ul>

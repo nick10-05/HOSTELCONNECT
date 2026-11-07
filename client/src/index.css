@@ -1,1 +1,378 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/plus-jakarta-sans";
+
+/* HostelConnect design tokens.
+   Light mode is "Aurora": soft glows, white cards, an orange → pink → violet gradient.
+   Dark mode is "Midnight": near-black, low colour, one soft lavender accent.
+   Dark mode follows the phone's own setting unless the person picks Light or Dark. */
+
+:root {
+  color-scheme: light;
+  --hc-bg: #fafafb;
+  --hc-glow:
+    radial-gradient(120% 50% at 0% 0%, rgb(251 146 60 / 0.22), rgb(251 146 60 / 0) 45%),
+    radial-gradient(90% 45% at 100% 0%, rgb(168 85 247 / 0.24), rgb(168 85 247 / 0) 50%),
+    radial-gradient(80% 35% at 55% 0%, rgb(244 114 182 / 0.16), rgb(244 114 182 / 0) 55%);
+  --hc-surface: #ffffff;
+  --hc-line: #eeeef2;
+  --hc-divider: #f4f4f5;
+  --hc-ink: #0a0a0f;
+  --hc-muted: #52525b;
+  --hc-faint: #a1a1aa;
+  --hc-soft: #f4f4f5;
+  --hc-shadow: 0 1px 2px rgb(10 10 15 / 0.04), 0 14px 34px -16px rgb(10 10 15 / 0.16);
+  --hc-glass: rgb(255 255 255 / 0.72);
+  --hc-glass-line: rgb(255 255 255 / 0.9);
+  --hc-hero: linear-gradient(135deg, #c2410c 0%, #be185d 48%, #6d28d9 100%);
+  --hc-hero-line: transparent;
+  --hc-hero-shadow: 0 26px 44px -22px rgb(109 40 217 / 0.6);
+  --hc-hero-ink: #ffffff;
+  --hc-hero-muted: rgb(255 255 255 / 0.9);
+  --hc-chip: rgb(255 255 255 / 0.15);
+  --hc-chip-line: rgb(255 255 255 / 0.24);
+  --hc-ring: #ffffff;
+  --hc-track: rgb(255 255 255 / 0.24);
+  --hc-title: linear-gradient(90deg, #c2410c, #be185d 50%, #6d28d9);
+  --hc-accent: #6d28d9;
+  --hc-active: linear-gradient(135deg, #c2410c, #be185d 55%, #6d28d9);
+  --hc-active-ink: #ffffff;
+  --hc-active-shadow: 0 8px 20px -8px rgb(190 24 93 / 0.7);
+  --hc-strong: #0a0a0f;
+  --hc-strong-ink: #ffffff;
+  --hc-scrim: rgb(10 10 15 / 0.32);
+  --hc-danger: #be123c;
+  --hc-success: #047857;
+  --hc-warn: #b45309;
+}
+
+/* Dark: when the person picks Dark, or when the phone is dark and they have not picked
+   Light (src/ui/theme.tsx sets data-theme on <html>). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --hc-bg: #09090c;
+    --hc-glow:
+      radial-gradient(90% 35% at 100% 0%, rgb(139 92 246 / 0.1), rgb(139 92 246 / 0) 70%),
+      radial-gradient(80% 30% at 0% 0%, rgb(59 130 246 / 0.07), rgb(59 130 246 / 0) 70%);
+    --hc-surface: #131318;
+    --hc-line: rgb(255 255 255 / 0.07);
+    --hc-divider: rgb(255 255 255 / 0.06);
+    --hc-ink: #ededf0;
+    --hc-muted: #9b9ba5;
+    --hc-faint: #6e6e78;
+    --hc-soft: rgb(255 255 255 / 0.05);
+    --hc-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 20px 40px -24px rgb(0 0 0 / 0.9);
+    --hc-glass: rgb(22 22 28 / 0.74);
+    --hc-glass-line: rgb(255 255 255 / 0.08);
+    --hc-hero: linear-gradient(160deg, #1c1c25 0%, #131318 65%);
+    --hc-hero-line: rgb(255 255 255 / 0.08);
+    --hc-hero-shadow: 0 30px 50px -30px rgb(0 0 0 / 0.9);
+    --hc-hero-ink: #ededf0;
+    --hc-hero-muted: #9b9ba5;
+    --hc-chip: rgb(255 255 255 / 0.035);
+    --hc-chip-line: rgb(255 255 255 / 0.07);
+    --hc-ring: #a78bfa;
+    --hc-track: rgb(255 255 255 / 0.08);
+    --hc-title: linear-gradient(90deg, #ededf0, #9b9ba5);
+    --hc-accent: #b4a2f8;
+    --hc-active: rgb(167 139 250 / 0.14);
+    --hc-active-ink: #d4cbfd;
+    --hc-active-shadow: inset 0 0 0 1px rgb(167 139 250 / 0.22);
+    --hc-strong: #ededf0;
+    --hc-strong-ink: #0a0a0d;
+    --hc-scrim: rgb(0 0 0 / 0.6);
+    --hc-danger: #fda4af;
+    --hc-success: #6ee7b7;
+    --hc-warn: #fcd34d;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --hc-bg: #09090c;
+  --hc-glow:
+    radial-gradient(90% 35% at 100% 0%, rgb(139 92 246 / 0.1), rgb(139 92 246 / 0) 70%),
+    radial-gradient(80% 30% at 0% 0%, rgb(59 130 246 / 0.07), rgb(59 130 246 / 0) 70%);
+  --hc-surface: #131318;
+  --hc-line: rgb(255 255 255 / 0.07);
+  --hc-divider: rgb(255 255 255 / 0.06);
+  --hc-ink: #ededf0;
+  --hc-muted: #9b9ba5;
+  --hc-faint: #6e6e78;
+  --hc-soft: rgb(255 255 255 / 0.05);
+  --hc-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 20px 40px -24px rgb(0 0 0 / 0.9);
+  --hc-glass: rgb(22 22 28 / 0.74);
+  --hc-glass-line: rgb(255 255 255 / 0.08);
+  --hc-hero: linear-gradient(160deg, #1c1c25 0%, #131318 65%);
+  --hc-hero-line: rgb(255 255 255 / 0.08);
+  --hc-hero-shadow: 0 30px 50px -30px rgb(0 0 0 / 0.9);
+  --hc-hero-ink: #ededf0;
+  --hc-hero-muted: #9b9ba5;
+  --hc-chip: rgb(255 255 255 / 0.035);
+  --hc-chip-line: rgb(255 255 255 / 0.07);
+  --hc-ring: #a78bfa;
+  --hc-track: rgb(255 255 255 / 0.08);
+  --hc-title: linear-gradient(90deg, #ededf0, #9b9ba5);
+  --hc-accent: #b4a2f8;
+  --hc-active: rgb(167 139 250 / 0.14);
+  --hc-active-ink: #d4cbfd;
+  --hc-active-shadow: inset 0 0 0 1px rgb(167 139 250 / 0.22);
+  --hc-strong: #ededf0;
+  --hc-strong-ink: #0a0a0d;
+  --hc-scrim: rgb(0 0 0 / 0.6);
+  --hc-danger: #fda4af;
+  --hc-success: #6ee7b7;
+  --hc-warn: #fcd34d;
+}
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  /* The pages written before the redesign use slate and indigo. Pointing those at the
+     new neutrals and the brand violet gives every page the new colours at once. */
+  --color-slate-50: #fafafb;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #27272a;
+  --color-slate-900: #0a0a0f;
+  --color-indigo-50: #f5f3ff;
+  --color-indigo-100: #ede9fe;
+  --color-indigo-200: #ddd6fe;
+  --color-indigo-300: #c4b5fd;
+  --color-indigo-400: #a78bfa;
+  --color-indigo-500: #8b5cf6;
+  --color-indigo-600: #7c3aed;
+  --color-indigo-700: #6d28d9;
+  --color-indigo-800: #5b21b6;
+  --color-indigo-900: #4c1d95;
+
+  --radius-card: 1.5rem;
+
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pulse-dot: pulse-dot 1.8s infinite;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(225 29 72 / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgb(225 29 72 / 0);
+    }
+  }
+}
+
+/* Used by name in arbitrary animate-[…] classes, so they sit outside @theme and are
+   always in the stylesheet. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+/* The dashboard's ring fills from empty; --ring-full is the circle's length. */
+@keyframes ring-fill {
+  from {
+    stroke-dashoffset: var(--ring-full);
+  }
+}
+@keyframes island {
+  0% {
+    transform: scaleX(0.3) scaleY(0.8);
+    opacity: 0;
+  }
+  55% {
+    transform: scaleX(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* The tokens as Tailwind colours: bg-surface, text-ink, border-line, … They follow
+   light and dark mode by themselves. */
+@theme inline {
+  --color-bg: var(--hc-bg);
+  --color-surface: var(--hc-surface);
+  --color-line: var(--hc-line);
+  --color-divider: var(--hc-divider);
+  --color-ink: var(--hc-ink);
+  --color-muted: var(--hc-muted);
+  --color-faint: var(--hc-faint);
+  --color-soft: var(--hc-soft);
+  --color-accent: var(--hc-accent);
+  --color-danger: var(--hc-danger);
+  --color-success: var(--hc-success);
+  --color-warn: var(--hc-warn);
+  --color-strong: var(--hc-strong);
+  --color-strong-ink: var(--hc-strong-ink);
+  --color-hero-ink: var(--hc-hero-ink);
+  --color-hero-muted: var(--hc-hero-muted);
+  --shadow-card: var(--hc-shadow);
+  --shadow-hero: var(--hc-hero-shadow);
+}
+
+@layer base {
+  body {
+    background: var(--hc-bg);
+    color: var(--hc-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--hc-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* The page background: soft glows over the base colour. */
+@utility bg-app {
+  background: var(--hc-glow), var(--hc-bg);
+}
+/* The big gradient card (a calm dark card in dark mode). */
+@utility bg-hero {
+  background: var(--hc-hero);
+  color: var(--hc-hero-ink);
+  border: 1px solid var(--hc-hero-line);
+}
+/* The selected tab, the logo and the main call to action. */
+@utility bg-active {
+  background: var(--hc-active);
+  color: var(--hc-active-ink);
+  box-shadow: var(--hc-active-shadow);
+}
+/* Gradient text for page greetings. */
+@utility text-title {
+  background: var(--hc-title);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Frosted glass, for the top bar, the tab bar and slide-up menus. */
+@utility glass {
+  background: var(--hc-glass);
+  border: 1px solid var(--hc-glass-line);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+}
+/* Shrinks a little when pressed and springs back, like a phone app. */
+@utility press {
+  transition:
+    transform 0.35s cubic-bezier(0.3, 1.5, 0.5, 1),
+    box-shadow 0.3s,
+    background-color 0.2s;
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+}
+/* A loading placeholder that shimmers. */
+@utility skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, var(--hc-soft) 25%, var(--hc-line) 50%, var(--hc-soft) 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Coloured icon tiles and status pills: bright in light mode, a faint tint in dark mode. */
+@layer components {
+  .hc-tile-violet { background: linear-gradient(135deg, #a78bfa, #6d28d9); box-shadow: 0 8px 18px -8px rgb(109 40 217 / 0.7); }
+  .hc-tile-pink { background: linear-gradient(135deg, #f472b6, #be185d); box-shadow: 0 8px 18px -8px rgb(190 24 93 / 0.7); }
+  .hc-tile-orange { background: linear-gradient(135deg, #fb923c, #c2410c); box-shadow: 0 8px 18px -8px rgb(194 65 12 / 0.7); }
+  .hc-tile-green { background: linear-gradient(135deg, #34d399, #047857); box-shadow: 0 8px 18px -8px rgb(4 120 87 / 0.7); }
+  .hc-tile-blue { background: linear-gradient(135deg, #60a5fa, #4f46e5); box-shadow: 0 8px 18px -8px rgb(79 70 229 / 0.7); }
+  .hc-tile-red { background: linear-gradient(135deg, #fb7185, #e11d48); box-shadow: 0 8px 18px -8px rgb(225 29 72 / 0.7); }
+  .hc-tile-amber { background: linear-gradient(135deg, #fbbf24, #ea580c); box-shadow: 0 8px 18px -8px rgb(234 88 12 / 0.7); }
+  [class*="hc-tile-"] { color: #ffffff; }
+
+  .hc-pill-red { background: #ffe4e6; color: #be123c; }
+  .hc-pill-amber { background: #fef3c7; color: #92400e; }
+  .hc-pill-green { background: #d1fae5; color: #065f46; }
+  .hc-pill-violet { background: #ede9fe; color: #5b21b6; }
+  .hc-pill-blue { background: #e0f2fe; color: #075985; }
+  .hc-pill-grey { background: #f4f4f5; color: #3f3f46; }
+
+  /* Big number tiles (food counts): deep enough for white text to stay readable. */
+  .hc-stat-veg { background: linear-gradient(135deg, #047857, #065f46); color: #ffffff; box-shadow: 0 14px 28px -14px rgb(4 120 87 / 0.7); }
+  .hc-stat-nonveg { background: linear-gradient(135deg, #be123c, #9f1239); color: #ffffff; box-shadow: 0 14px 28px -14px rgb(190 18 60 / 0.7); }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .hc-tile-violet { background: rgb(167 139 250 / 0.1); color: #c4b5fd; box-shadow: inset 0 0 0 1px rgb(167 139 250 / 0.16); }
+    :root:not([data-theme="light"]) .hc-tile-pink { background: rgb(244 114 182 / 0.09); color: #f9a8d4; box-shadow: inset 0 0 0 1px rgb(244 114 182 / 0.15); }
+    :root:not([data-theme="light"]) .hc-tile-orange { background: rgb(251 146 60 / 0.09); color: #fdba74; box-shadow: inset 0 0 0 1px rgb(251 146 60 / 0.15); }
+    :root:not([data-theme="light"]) .hc-tile-green { background: rgb(52 211 153 / 0.09); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.15); }
+    :root:not([data-theme="light"]) .hc-tile-blue { background: rgb(96 165 250 / 0.09); color: #93c5fd; box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.15); }
+    :root:not([data-theme="light"]) .hc-tile-red { background: rgb(251 113 133 / 0.1); color: #fda4af; box-shadow: inset 0 0 0 1px rgb(251 113 133 / 0.16); }
+    :root:not([data-theme="light"]) .hc-tile-amber { background: rgb(251 191 36 / 0.09); color: #fcd34d; box-shadow: inset 0 0 0 1px rgb(251 191 36 / 0.15); }
+    :root:not([data-theme="light"]) .hc-pill-red { background: rgb(251 113 133 / 0.12); color: #fda4af; }
+    :root:not([data-theme="light"]) .hc-pill-amber { background: rgb(251 191 36 / 0.1); color: #fcd34d; }
+    :root:not([data-theme="light"]) .hc-pill-green { background: rgb(52 211 153 / 0.1); color: #6ee7b7; }
+    :root:not([data-theme="light"]) .hc-pill-violet { background: rgb(167 139 250 / 0.12); color: #c4b5fd; }
+    :root:not([data-theme="light"]) .hc-pill-blue { background: rgb(96 165 250 / 0.1); color: #93c5fd; }
+    :root:not([data-theme="light"]) .hc-pill-grey { background: rgb(255 255 255 / 0.06); color: #d4d4d8; }
+    :root:not([data-theme="light"]) .hc-stat-veg { background: rgb(52 211 153 / 0.09); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.15); }
+    :root:not([data-theme="light"]) .hc-stat-nonveg { background: rgb(251 113 133 / 0.1); color: #fda4af; box-shadow: inset 0 0 0 1px rgb(251 113 133 / 0.16); }
+  }
+  :root[data-theme="dark"] .hc-tile-violet { background: rgb(167 139 250 / 0.1); color: #c4b5fd; box-shadow: inset 0 0 0 1px rgb(167 139 250 / 0.16); }
+  :root[data-theme="dark"] .hc-tile-pink { background: rgb(244 114 182 / 0.09); color: #f9a8d4; box-shadow: inset 0 0 0 1px rgb(244 114 182 / 0.15); }
+  :root[data-theme="dark"] .hc-tile-orange { background: rgb(251 146 60 / 0.09); color: #fdba74; box-shadow: inset 0 0 0 1px rgb(251 146 60 / 0.15); }
+  :root[data-theme="dark"] .hc-tile-green { background: rgb(52 211 153 / 0.09); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.15); }
+  :root[data-theme="dark"] .hc-tile-blue { background: rgb(96 165 250 / 0.09); color: #93c5fd; box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.15); }
+  :root[data-theme="dark"] .hc-tile-red { background: rgb(251 113 133 / 0.1); color: #fda4af; box-shadow: inset 0 0 0 1px rgb(251 113 133 / 0.16); }
+  :root[data-theme="dark"] .hc-tile-amber { background: rgb(251 191 36 / 0.09); color: #fcd34d; box-shadow: inset 0 0 0 1px rgb(251 191 36 / 0.15); }
+  :root[data-theme="dark"] .hc-pill-red { background: rgb(251 113 133 / 0.12); color: #fda4af; }
+  :root[data-theme="dark"] .hc-pill-amber { background: rgb(251 191 36 / 0.1); color: #fcd34d; }
+  :root[data-theme="dark"] .hc-pill-green { background: rgb(52 211 153 / 0.1); color: #6ee7b7; }
+  :root[data-theme="dark"] .hc-pill-violet { background: rgb(167 139 250 / 0.12); color: #c4b5fd; }
+  :root[data-theme="dark"] .hc-pill-blue { background: rgb(96 165 250 / 0.1); color: #93c5fd; }
+  :root[data-theme="dark"] .hc-pill-grey { background: rgb(255 255 255 / 0.06); color: #d4d4d8; }
+  :root[data-theme="dark"] .hc-stat-veg { background: rgb(52 211 153 / 0.09); color: #6ee7b7; box-shadow: inset 0 0 0 1px rgb(52 211 153 / 0.15); }
+  :root[data-theme="dark"] .hc-stat-nonveg { background: rgb(251 113 133 / 0.1); color: #fda4af; box-shadow: inset 0 0 0 1px rgb(251 113 133 / 0.16); }
+
+}
+
+/* People who ask their phone for less motion get none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

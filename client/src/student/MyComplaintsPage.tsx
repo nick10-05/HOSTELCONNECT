@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError } from "../api/client";
 import { listMyComplaints, type ComplaintList } from "../api/complaints";
-import { primaryButton } from "../owner/styles";
-import { categoryLabel, formatTime, StatusBadge } from "../components/complaintText";
+import { categoryLabel, categoryLook, formatTime, StatusBadge } from "../components/complaintText";
+import { Alert, buttonClass, EmptyState, IconTile } from "../ui";
+import { ChevronRightIcon, MessageIcon, PlusIcon, WarningIcon } from "../ui/icons";
+import { ListSkeleton, Pager } from "../ui/ListParts";
 
 // The student's complaints (design doc, section 9): newest first, each opening its
 // timeline, and a "New complaint" button that is disabled with the reason shown when the
@@ -13,9 +15,6 @@ const PAGE_SIZE = 20; // the server's default page size
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
-
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function MyComplaintsPage() {
   const [params, setParams] = useSearchParams();
@@ -44,72 +43,75 @@ export function MyComplaintsPage() {
   const canRaise = result?.canRaise;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">My complaints</h1>
+        <h1 className="font-display text-2xl font-extrabold tracking-tight text-ink">My complaints</h1>
         {canRaise?.allowed && (
-          <Link to="/complaints/new" className={primaryButton}>
+          <Link to="/complaints/new" className={buttonClass("primary")}>
+            <PlusIcon size={18} />
             New complaint
           </Link>
         )}
         {canRaise && !canRaise.allowed && (
-          <button type="button" disabled aria-describedby="new-complaint-reason" className={primaryButton}>
+          <button type="button" disabled aria-describedby="new-complaint-reason" className={buttonClass("primary")}>
+            <PlusIcon size={18} />
             New complaint
           </button>
         )}
       </div>
 
       {canRaise && !canRaise.allowed && (
-        <p id="new-complaint-reason" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p id="new-complaint-reason" className="hc-pill-amber flex items-start gap-2.5 rounded-2xl px-3.5 py-3 text-sm font-medium">
+          <WarningIcon size={18} className="mt-px shrink-0" />
           {canRaise.reason}
         </p>
       )}
 
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+        <Alert tone="error">{error}</Alert>
       ) : !result ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading your complaints…" rows={3} />
       ) : result.total === 0 ? (
-        <p className="text-sm text-slate-600">You have not raised any complaints.</p>
+        <EmptyState
+          title="You have not raised any complaints."
+          description="If something in your room needs fixing, tell the hostel here."
+          tone="violet"
+          icon={<MessageIcon />}
+        />
       ) : (
         <>
           <ul className="space-y-3">
-            {result.items.map((c) => {
+            {result.items.map((c, i) => {
               const titleId = `complaint-${c.id}`;
+              const { tone, Icon } = categoryLook[c.category];
               return (
-                <li key={c.id} aria-labelledby={titleId}>
+                <li key={c.id} aria-labelledby={titleId} className="rise" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
                   <Link
                     to={`/complaints/${c.id}`}
-                    className="block space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-indigo-300"
+                    className="press flex items-start gap-3 rounded-card border border-line bg-surface p-4 shadow-card hover:bg-soft"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span id={titleId} className="font-medium text-slate-900">
-                        {categoryLabel[c.category]}
-                      </span>
-                      <StatusBadge status={c.status} />
+                    <IconTile tone={tone} size="sm">
+                      <Icon size={18} />
+                    </IconTile>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <span id={titleId} className="font-semibold text-ink">
+                          {categoryLabel[c.category]}
+                        </span>
+                        <StatusBadge status={c.status} />
+                      </div>
+                      <p className="line-clamp-2 text-sm break-words text-ink">{c.description}</p>
+                      <p className="text-xs text-muted">Raised {formatTime(c.createdAt)}</p>
                     </div>
-                    <p className="line-clamp-2 text-sm break-words text-slate-700">{c.description}</p>
-                    <p className="text-xs text-slate-500">Raised {formatTime(c.createdAt)}</p>
+                    <span aria-hidden="true" className="self-center text-faint">
+                      <ChevronRightIcon size={18} />
+                    </span>
                   </Link>
                 </li>
               );
             })}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button type="button" className={pageButton} disabled={page <= 1} onClick={() => goTo(page - 1)}>
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button type="button" className={pageButton} disabled={page >= pages} onClick={() => goTo(page + 1)}>
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={goTo} />
         </>
       )}
     </div>

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
 import type { FeeList, OwnerFeeRow } from "../api/fees";
 import { jsonResponse, mockFetch } from "../test/fetch";
+import { ToastProvider } from "../ui/Toast";
 import { FeesPage } from "./FeesPage";
 
 const row = (r: Partial<OwnerFeeRow>): OwnerFeeRow => ({
@@ -49,7 +50,7 @@ function Address() {
 
 type Call = { url: string; method: string; body: unknown };
 
-function renderPage(answer: (call: Call) => Response, at = "/fees") {
+function renderPage(answer: (call: Call) => Response, at = "/fees", { withToast = false } = {}) {
   const calls: Call[] = [];
   mockFetch(async (url, init) => {
     if (url === "/api/structure") return jsonResponse(200, { buildings });
@@ -58,14 +59,15 @@ function renderPage(answer: (call: Call) => Response, at = "/fees") {
     return answer(call);
   });
   const user = userEvent.setup();
-  render(
+  const page = (
     <MemoryRouter initialEntries={[at]}>
       <Routes>
         <Route path="/fees" element={<FeesPage />} />
       </Routes>
       <Address />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  render(withToast ? <ToastProvider>{page}</ToastProvider> : page);
   return { calls, user };
 }
 
@@ -113,7 +115,7 @@ describe("FeesPage", () => {
 
     fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2032-06" } });
     expect(await screen.findByTestId("address")).toHaveTextContent("/fees?month=2032-06");
-    await user.selectOptions(screen.getByLabelText("Show"), "Overdue");
+    await user.click(screen.getByRole("radio", { name: "Overdue" }));
     expect(await screen.findByTestId("address")).toHaveTextContent("/fees?month=2032-06&status=overdue");
     await user.selectOptions(await screen.findByLabelText("Building"), "Block B");
     expect(await screen.findByTestId("address")).toHaveTextContent("/fees?month=2032-06&status=overdue&building=2");
@@ -128,14 +130,28 @@ describe("FeesPage", () => {
     await rowOf("Asha Rao");
     expect(calls[0].url).toBe("/api/fees?month=2032-05&status=paid&buildingId=1&page=1");
     expect(screen.getByLabelText("Month")).toHaveValue("2032-05");
-    expect(screen.getByLabelText("Show")).toHaveValue("paid");
+    expect(screen.getByRole("radio", { name: "Paid" })).toBeChecked();
   });
 
   it("ignores a state in the address that is not one of the three", async () => {
     const { calls } = renderPage(() => jsonResponse(200, july), "/fees?status=late");
     await rowOf("Asha Rao");
     expect(calls[0].url).toBe("/api/fees?page=1");
-    expect(screen.getByLabelText("Show")).toHaveValue("");
+    expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
+  });
+
+  it("says it in the pop-up at the top of the screen when the app has one", async () => {
+    const { user } = renderPage(
+      (call) => (call.method === "POST" ? jsonResponse(200, { ...overdue, status: "paid" }) : jsonResponse(200, july)),
+      "/fees",
+      { withToast: true },
+    );
+    await user.click(within(await rowOf("Asha Rao")).getByRole("button", { name: "Mark paid" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // Only one message: the pop-up, not a second one in the page.
+    await screen.findByText("Marked paid. Asha Rao has been notified.");
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Marked paid. Asha Rao has been notified.");
   });
 
   it("does not claim a student who moved out was notified", async () => {

@@ -12,6 +12,7 @@ import { formatDate } from "./format";
 import { ReactivateForm } from "./ReactivateForm";
 import { primaryButton, secondaryButton } from "./styles";
 import { TemporaryPassword } from "./TemporaryPassword";
+import { ListSkeleton, Pager } from "../ui/ListParts";
 
 // The owner's review of requests from former students (design doc, sections 5 and 9).
 // Pending requests wait oldest first; approving reactivates the student (a joining date
@@ -24,12 +25,10 @@ const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
 const dangerButton =
-  "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60";
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+  "press inline-flex min-h-11 items-center justify-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60";
 const tabClass = (active: boolean) =>
-  `rounded-lg px-3 py-1.5 text-sm font-medium ${
-    active ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+  `press min-h-11 rounded-full px-4 text-sm font-semibold ${
+    active ? "hc-pill-violet" : "text-muted hover:bg-soft hover:text-ink"
   }`;
 
 type Open = { id: number; kind: "approve" | "reject" };
@@ -78,7 +77,7 @@ export function RejoinRequestsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Rejoin requests</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Rejoin requests</h1>
 
       <div role="group" aria-label="Show" className="flex gap-1">
         <button type="button" aria-pressed={status === "pending"} className={tabClass(status === "pending")} onClick={() => show({ status: "pending" })}>
@@ -92,12 +91,12 @@ export function RejoinRequestsPage() {
       {approved && (
         <section
           aria-labelledby="request-approved-heading"
-          className="space-y-4 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm"
+          className="space-y-4 rounded-card border border-emerald-400/40 bg-surface p-4 shadow-card"
         >
-          <h2 id="request-approved-heading" className="text-sm font-semibold text-slate-700">
+          <h2 id="request-approved-heading" className="text-base font-bold text-ink">
             Request approved
           </h2>
-          <p className="text-slate-700">
+          <p className="text-muted">
             <strong>{approved.student.name}</strong> can log in again now; the new stay starts on{" "}
             {formatDate(approved.student.joiningDate)}.
           </p>
@@ -110,24 +109,24 @@ export function RejoinRequestsPage() {
       )}
 
       {notice && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {notice}
         </p>
       )}
 
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       ) : !result ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading requests…" rows={3} />
       ) : result.total === 0 ? (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted">
           {status === "pending" ? "No requests are waiting." : "No requests have been decided yet."}
         </p>
       ) : (
         <>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             {result.total} {status === "pending" ? "waiting" : "decided"}
           </p>
           <ul className="space-y-3">
@@ -149,19 +148,7 @@ export function RejoinRequestsPage() {
               />
             ))}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button type="button" className={pageButton} disabled={page <= 1} onClick={() => show({ page: page - 1 })}>
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button type="button" className={pageButton} disabled={page >= pages} onClick={() => show({ page: page + 1 })}>
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={(n) => show({ page: n })} />
         </>
       )}
     </div>
@@ -185,14 +172,14 @@ function RequestCard({
 }) {
   const nameId = `rejoin-request-${r.id}`;
   return (
-    <li aria-labelledby={nameId} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <li aria-labelledby={nameId} className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <Link id={nameId} to={`/students/${r.student.id}`} className="font-medium text-indigo-700 hover:underline">
+          <Link id={nameId} to={`/students/${r.student.id}`} className="font-medium text-accent hover:underline">
             {r.student.name}
           </Link>
-          <p className="text-sm text-slate-600">{r.student.email}</p>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">{r.student.email}</p>
+          <p className="text-sm text-muted">
             {r.student.leftOn ? `Left on ${formatDate(r.student.leftOn)} · asked` : "Asked"} on{" "}
             {formatDate(r.requestedOn)}
           </p>
@@ -200,7 +187,7 @@ function RequestCard({
         {r.status !== "pending" && (
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              r.status === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"
+              r.status === "approved" ? "hc-pill-green" : "hc-pill-grey"
             }`}
           >
             {r.status === "approved" ? "Approved" : "Rejected"}
@@ -208,12 +195,12 @@ function RequestCard({
         )}
       </div>
 
-      <p className={r.message ? "whitespace-pre-line text-slate-800" : "text-sm text-slate-500"}>
+      <p className={r.message ? "whitespace-pre-line text-ink" : "text-sm text-muted"}>
         {r.message ?? "No message."}
       </p>
 
       {r.status !== "pending" ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Decided on {formatDate(r.decidedOn!)}
           {r.decidedByName ? ` by ${r.decidedByName}` : ""}
         </p>
@@ -268,10 +255,10 @@ function RejectConfirm({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-red-200 p-3">
-      <p className="text-slate-700">{`Reject the request from ${r.student.name}? Nothing else changes.`}</p>
+    <div className="space-y-3 rounded-2xl border border-red-400/40 p-3">
+      <p className="text-muted">{`Reject the request from ${r.student.name}? Nothing else changes.`}</p>
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}

@@ -77,9 +77,9 @@ describe("ComplaintDetailPage", () => {
 
   it("confirms a complaint that was just sent", async () => {
     renderAt("/complaints/42", { created: true });
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Your complaint has been sent. The owner will see it on the dashboard.",
-    );
+    expect(
+      await screen.findByText("Your complaint has been sent. The owner will see it on the dashboard."),
+    ).toHaveAttribute("role", "status");
   });
 
   it("shows no confirmation when opened from the list", async () => {

@@ -39,16 +39,16 @@ export function ResetPasswordConfirm({
   return (
     <section
       aria-labelledby="reset-password-heading"
-      className="space-y-4 rounded-xl border border-amber-200 bg-white p-4 shadow-sm"
+      className="space-y-4 rounded-card border border-amber-400/40 bg-surface p-4 shadow-card"
     >
-      <h2 id="reset-password-heading" className="text-sm font-semibold text-slate-700">
+      <h2 id="reset-password-heading" className="text-base font-bold text-ink">
         Reset password
       </h2>
-      <p className="text-slate-700">
+      <p className="text-muted">
         {`Reset ${name}'s password? Their current password stops working at once, and they must choose a new one when they next log in.`}
       </p>
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}

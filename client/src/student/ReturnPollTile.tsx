@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { answerPoll, listMyOpenPolls, type MyOpenPoll, type PollResponse } from "../api/returnPolls";
 import { formatTime } from "../components/complaintText";
+import { Alert } from "../ui";
+import { CheckIcon, ReturnIcon } from "../ui/icons";
 
 // The open return poll on the student's home (design doc, section 9: "an open return poll
 // with two buttons"; day 9). The student answers, and may change the answer while the poll
@@ -59,18 +61,28 @@ function PollCard({ poll }: { poll: MyOpenPoll }) {
     }
   };
 
+  // The poll is the one thing on the home page that asks something: the gradient card.
   return (
     <section
       aria-labelledby={headingId}
-      className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm"
+      className="rise bg-hero relative space-y-4 overflow-hidden rounded-[1.75rem] p-5 shadow-[var(--hc-hero-shadow)]"
     >
-      <div>
-        <h2 id={headingId} className="font-semibold text-slate-900">
-          {poll.title}
-        </h2>
-        <p className="text-sm text-slate-600">Let the hostel know whether you are back.</p>
+      <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 size-48 rounded-full bg-white/15 blur-2xl" />
+      <div className="relative flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--hc-chip-line)] bg-[var(--hc-chip)] text-hero-ink"
+        >
+          <ReturnIcon />
+        </span>
+        <div className="min-w-0">
+          <h2 id={headingId} className="font-display text-lg font-extrabold break-words text-hero-ink">
+            {poll.title}
+          </h2>
+          <p className="text-sm text-hero-muted">Let the hostel know whether you are back.</p>
+        </div>
       </div>
-      <div className="flex gap-2">
+      <div className="relative flex gap-2">
         {ANSWERS.map(([value, label]) => {
           const chosen = answer.response === value;
           return (
@@ -80,28 +92,25 @@ function PollCard({ poll }: { poll: MyOpenPoll }) {
               disabled={busy}
               aria-pressed={chosen}
               onClick={() => void send(value)}
-              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-60 ${
+              className={`press inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold disabled:opacity-60 ${
                 chosen
-                  ? "bg-indigo-600 text-white"
-                  : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  ? "bg-strong text-strong-ink shadow-[0_10px_24px_-12px_rgb(0_0_0/0.6)]"
+                  : "border border-[var(--hc-chip-line)] bg-[var(--hc-chip)] text-hero-ink"
               }`}
             >
+              {chosen && <CheckIcon size={18} />}
               {label}
             </button>
           );
         })}
       </div>
       {answer.response && answer.respondedAt && (
-        <p className="text-sm text-slate-600">
+        <p className="relative text-sm text-hero-muted">
           Your answer: {answerLabel(answer.response)} ({formatTime(answer.respondedAt)}). You can change it while the
           poll is open.
         </p>
       )}
-      {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
     </section>
   );
 }

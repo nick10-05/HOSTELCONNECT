@@ -14,6 +14,7 @@ import {
 import { ApiError } from "../api/client";
 import { NoticeCard } from "../components/NoticeCard";
 import { inputClass, primaryButton, secondaryButton } from "./styles";
+import { ListSkeleton, Pager } from "../ui/ListParts";
 
 // The owner's notices (design doc, sections 2, 8 and 9): post one with an optional Urgent
 // and Pin, then edit, pin or unpin, mark urgent or not, or delete it. Posting notifies
@@ -25,10 +26,8 @@ const PAGE_SIZE = 20; // the server's default page size
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-const pageButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 const smallButton =
-  "rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+  "press inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-ink shadow-card hover:bg-soft disabled:cursor-not-allowed disabled:opacity-50";
 
 export function AnnouncementsPage() {
   const [params, setParams] = useSearchParams();
@@ -77,7 +76,7 @@ export function AnnouncementsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Announcements</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Announcements</h1>
 
       <PostForm
         busy={busy}
@@ -85,24 +84,24 @@ export function AnnouncementsPage() {
       />
 
       {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
           {message}
         </p>
       )}
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       )}
 
       {loadError ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {loadError}
         </p>
       ) : !result ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <ListSkeleton label="Loading notices…" rows={3} />
       ) : result.total === 0 ? (
-        <p className="text-sm text-slate-600">No notices yet.</p>
+        <p className="text-sm text-muted">No notices yet.</p>
       ) : (
         <>
           <ul aria-label="Notices" className="space-y-3">
@@ -124,15 +123,15 @@ export function AnnouncementsPage() {
                 ) : (
                   <NoticeCard notice={n}>
                     {confirmingDelete === n.id ? (
-                      <div role="group" aria-label="Confirm delete" className="space-y-2 rounded-lg bg-red-50 p-3">
-                        <p className="text-sm text-red-800">
+                      <div role="group" aria-label="Confirm delete" className="hc-pill-red space-y-2 rounded-2xl p-3">
+                        <p className="text-sm text-danger">
                           Delete this notice? It also disappears from every student's notifications.
                         </p>
                         <div className="flex gap-2">
                           <button
                             type="button"
                             disabled={busy}
-                            className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+                            className="press inline-flex min-h-10 items-center justify-center rounded-xl bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
                             onClick={async () => {
                               const ok = await run(
                                 () => deleteAnnouncement(n.id),
@@ -205,29 +204,7 @@ export function AnnouncementsPage() {
               </li>
             ))}
           </ul>
-          {pages > 1 && (
-            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page <= 1}
-                onClick={() => setParams(page - 1 > 1 ? { page: String(page - 1) } : {})}
-              >
-                Previous
-              </button>
-              <span className="text-sm text-slate-600">
-                Page {page} of {pages}
-              </span>
-              <button
-                type="button"
-                className={pageButton}
-                disabled={page >= pages}
-                onClick={() => setParams({ page: String(page + 1) })}
-              >
-                Next
-              </button>
-            </nav>
-          )}
+          <Pager page={page} pages={pages} onPage={(n) => setParams(n > 1 ? { page: String(n) } : {})} />
         </>
       )}
     </div>
@@ -253,7 +230,7 @@ function TextField({
   const tooLong = length > max;
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="block text-sm font-medium text-muted">
         {label}
       </label>
       {multiline ? (
@@ -274,7 +251,7 @@ function TextField({
           className={inputClass}
         />
       )}
-      <p className={`text-xs ${tooLong ? "text-red-700" : "text-slate-500"}`}>
+      <p className={`text-xs ${tooLong ? "text-danger" : "text-muted"}`}>
         {length} / {max}
       </p>
     </div>
@@ -311,25 +288,25 @@ function PostForm({
     <form
       onSubmit={submit}
       aria-labelledby="post-heading"
-      className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
+      className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card sm:p-6"
     >
-      <h2 id="post-heading" className="text-sm font-semibold text-slate-700">
+      <h2 id="post-heading" className="text-base font-bold text-ink">
         Post a notice
       </h2>
       <TextField label="Title" value={title} max={TITLE_MAX} onChange={setTitle} />
       <TextField label="Notice" value={body} max={BODY_MAX} multiline onChange={setBody} />
       <div className="flex flex-wrap gap-4">
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={isUrgent} onChange={(e) => setUrgent(e.target.checked)} />
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink">
+          <input type="checkbox" className="size-4 accent-violet-700" checked={isUrgent} onChange={(e) => setUrgent(e.target.checked)} />
           Urgent
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" checked={isPinned} onChange={(e) => setPinned(e.target.checked)} />
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink">
+          <input type="checkbox" className="size-4 accent-violet-700" checked={isPinned} onChange={(e) => setPinned(e.target.checked)} />
           Pin to the top
         </label>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">Every current student gets a notification.</p>
+        <p className="text-xs text-muted">Every current student gets a notification.</p>
         <button type="submit" disabled={!canPost} className={primaryButton}>
           Post
         </button>
@@ -367,11 +344,11 @@ function EditForm({
     <form
       onSubmit={submit}
       aria-label={`Edit ${notice.title}`}
-      className="space-y-3 rounded-xl border border-indigo-200 bg-white p-4 shadow-sm"
+      className="space-y-3 rounded-card border border-indigo-400/40 bg-surface p-4 shadow-card"
     >
       <TextField label="Title" value={title} max={TITLE_MAX} onChange={setTitle} />
       <TextField label="Notice" value={body} max={BODY_MAX} multiline onChange={setBody} />
-      <p className="text-xs text-slate-500">Editing does not notify students again.</p>
+      <p className="text-xs text-muted">Editing does not notify students again.</p>
       <div className="flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onCancel}>
           Cancel

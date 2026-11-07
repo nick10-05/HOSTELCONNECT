@@ -5,6 +5,7 @@ import { getFoodCounts, type FoodCount, type FoodCounts } from "../api/food";
 import { listPolls, type PollWithCounts } from "../api/returnPolls";
 import { formatDate } from "./format";
 import { inputClass, secondaryButton } from "./styles";
+import { Skeleton } from "../ui";
 
 // The cook's counts (design doc, sections 2 and 9; day 8): how many eat veg and non-veg on
 // a date, for all buildings and for each one. Today (India's) unless a date is picked;
@@ -63,11 +64,11 @@ export function FoodCountsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Food counts</h1>
+      <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Food counts</h1>
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <label htmlFor={dateId} className="block text-sm font-medium text-slate-700">
+          <label htmlFor={dateId} className="block text-sm font-medium text-muted">
             Date
           </label>
           <input
@@ -83,7 +84,7 @@ export function FoodCountsPage() {
         </button>
         {polls.length > 0 && (
           <div className="space-y-1">
-            <label htmlFor={countId} className="block text-sm font-medium text-slate-700">
+            <label htmlFor={countId} className="block text-sm font-medium text-muted">
               Count
             </label>
             <select
@@ -105,11 +106,11 @@ export function FoodCountsPage() {
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
         </p>
       ) : !data ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <Skeleton label="Loading food counts…" lines={4} />
       ) : (
         <Counts data={data} pollTitle={polls.find((p) => p.id === data.pollId)?.title} />
       )}
@@ -122,12 +123,12 @@ function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
   return (
     <div className="space-y-4">
       <div>
-        <p className="font-medium text-slate-900">
+        <p className="font-medium text-ink">
           {weekday}, {formatDate(data.date)}
         </p>
-        <p className="text-sm text-slate-500">Non-veg students who eat veg on {weekday}s are counted as veg.</p>
+        <p className="text-sm text-muted">Non-veg students who eat veg on {weekday}s are counted as veg.</p>
         {data.pollId !== null && (
-          <p className="text-sm font-medium text-indigo-700">
+          <p className="text-sm font-medium text-accent">
             Only students who answered "I'm back" to {pollTitle ?? "the chosen poll"}.
           </p>
         )}
@@ -135,9 +136,9 @@ function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
 
       <section
         aria-labelledby="food-overall"
-        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card"
       >
-        <h2 id="food-overall" className="text-sm font-semibold text-slate-700">
+        <h2 id="food-overall" className="text-base font-bold text-ink">
           All buildings
         </h2>
         <Totals count={data.overall} />
@@ -145,15 +146,15 @@ function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
 
       <section
         aria-labelledby="food-buildings"
-        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="space-y-3 rounded-card border border-line bg-surface p-4 shadow-card"
       >
-        <h2 id="food-buildings" className="text-sm font-semibold text-slate-700">
+        <h2 id="food-buildings" className="text-base font-bold text-ink">
           By building
         </h2>
         {data.buildings.length === 0 ? (
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-muted">
             No buildings yet. Add one on{" "}
-            <Link to="/structure" className="font-medium text-indigo-700 underline">
+            <Link to="/structure" className="font-medium text-accent underline">
               Buildings and rooms
             </Link>
             .
@@ -161,7 +162,7 @@ function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-slate-500">
+              <tr className="text-left text-muted">
                 <th scope="col" className="py-1 font-medium">
                   Building
                 </th>
@@ -176,15 +177,15 @@ function Counts({ data, pollTitle }: { data: FoodCounts; pollTitle?: string }) {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {data.buildings.map((b) => (
                 <tr key={b.buildingId}>
-                  <th scope="row" className="py-2 text-left font-medium text-slate-900">
+                  <th scope="row" className="py-3 text-left font-semibold text-ink">
                     {b.buildingName}
                   </th>
-                  <td className="py-2 text-right tabular-nums text-slate-900">{b.veg}</td>
-                  <td className="py-2 text-right tabular-nums text-slate-900">{b.nonVeg}</td>
-                  <td className="py-2 text-right tabular-nums text-slate-600">{b.total}</td>
+                  <td className="py-3 text-right font-semibold tabular-nums text-success">{b.veg}</td>
+                  <td className="py-3 text-right font-semibold tabular-nums text-danger">{b.nonVeg}</td>
+                  <td className="py-3 text-right font-bold tabular-nums text-ink">{b.total}</td>
                 </tr>
               ))}
             </tbody>
@@ -200,14 +201,14 @@ function Totals({ count }: { count: FoodCount }) {
     <dl className="grid grid-cols-3 gap-3 text-center">
       {(
         [
-          ["Veg", count.veg],
-          ["Non-veg", count.nonVeg],
-          ["Total", count.total],
+          ["Veg", count.veg, "hc-stat-veg"],
+          ["Non-veg", count.nonVeg, "hc-stat-nonveg"],
+          ["Total", count.total, "bg-hero shadow-hero"],
         ] as const
-      ).map(([label, n]) => (
-        <div key={label} className="rounded-lg bg-slate-50 py-2">
-          <dt className="text-sm text-slate-600">{label}</dt>
-          <dd className="text-2xl font-semibold tabular-nums text-slate-900">{n}</dd>
+      ).map(([label, n, look]) => (
+        <div key={label} className={`rounded-2xl px-2 py-3.5 ${look}`}>
+          <dt className="text-sm font-semibold opacity-90">{label}</dt>
+          <dd className="mt-0.5 font-display text-3xl font-extrabold tracking-tight tabular-nums">{n}</dd>
         </div>
       ))}
     </dl>
