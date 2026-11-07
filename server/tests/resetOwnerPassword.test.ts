@@ -1,6 +1,11 @@
 import type { PoolClient } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { isLocalDatabase, resetOwnerPassword } from "../scripts/resetOwnerPassword";
+import {
+  confirmationMatches,
+  isLocalDatabase,
+  resetOwnerPassword,
+  resetTargetProblem,
+} from "../scripts/resetOwnerPassword";
 import { hashPassword, verifyPassword } from "../src/lib/password";
 import { TEMP_PASSWORD_ALPHABET, TEMP_PASSWORD_LENGTH } from "../src/lib/tempPassword";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
@@ -110,5 +115,55 @@ describe("isLocalDatabase", () => {
   it("refuses something that is not a URL at all", () => {
     expect(isLocalDatabase("")).toBe(false);
     expect(isLocalDatabase("not a url")).toBe(false);
+  });
+});
+
+// Day 10: --production, for the owner's password in production (docs/RECOVERY.md).
+describe("resetTargetProblem", () => {
+  const LOCAL = "postgres://hostel_app:pw@localhost:5432/hostelconnect";
+  const POOLER = "postgres://hostel_app.ref:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres";
+
+  it("allows a local database without --production, and refuses any other", () => {
+    expect(resetTargetProblem({ production: false, url: LOCAL })).toBeNull();
+    expect(resetTargetProblem({ production: false, url: POOLER })).toBe(
+      "DATABASE_URL points at a database on another machine. This script only resets the " +
+        "local owner unless you add --production. Nothing was changed.",
+    );
+  });
+
+  it("allows another machine's database with --production, and refuses a local one", () => {
+    expect(resetTargetProblem({ production: true, url: POOLER })).toBeNull();
+    for (const url of [LOCAL, "postgres://u:pw@127.0.0.1:5432/x", "postgres://u:pw@[::1]:5432/x"]) {
+      expect(resetTargetProblem({ production: true, url })).toBe(
+        "--production was given, but DATABASE_URL points at this machine. Set it to the " +
+          "production database first (docs/RECOVERY.md). Nothing was changed.",
+      );
+    }
+  });
+
+  it("never names the host or repeats the URL", () => {
+    for (const production of [true, false]) {
+      for (const url of [LOCAL, POOLER]) {
+        const problem = resetTargetProblem({ production, url }) ?? "";
+        expect(problem).not.toContain("pooler.supabase.com");
+        expect(problem).not.toContain("localhost");
+        expect(problem).not.toContain(":pw@");
+      }
+    }
+  });
+});
+
+describe("confirmationMatches", () => {
+  const EMAIL = "Owner@Example.com";
+
+  it("matches the same email, whatever its letter case or the spaces around it", () => {
+    expect(confirmationMatches("Owner@Example.com", EMAIL)).toBe(true);
+    expect(confirmationMatches("  owner@example.COM \r\n", EMAIL)).toBe(true);
+  });
+
+  it("refuses anything else, and an empty answer", () => {
+    for (const typed of ["", "   ", "y", "yes", "owner@example.co", "owner@example.com.", "other@example.com"]) {
+      expect(confirmationMatches(typed, EMAIL), JSON.stringify(typed)).toBe(false);
+    }
   });
 });

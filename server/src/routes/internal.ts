@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Db } from "../db";
+import { sendDailyDigest } from "../jobs/digest";
 import { expirePhotos } from "../jobs/expirePhotos";
+import { sendFeeReminders } from "../jobs/feeReminders";
 import { createDueFeeRows } from "../jobs/feeRows";
+import { pruneNotifications } from "../jobs/pruneNotifications";
 import { hostelToday } from "../lib/dates";
 import { sendError } from "../lib/http";
 import type { PhotoStorage } from "../lib/storage";
@@ -21,10 +24,12 @@ export type InternalRouteDeps = {
 // called a few minutes past every hour by .github/workflows/jobs.yml with the secret
 // header. No session: GitHub has none. Every job is idempotent and works on what is due,
 // so a late, repeated or replayed call does no harm. The jobs run one after another:
-// expiring photos (day 8), then fee rows (day 9; only with FEES_START_DATE, else feeRows
-// is null). Any failure answers 500 (decided on day 9), and GitHub emails about the failed
-// run. Reminders, the digest and pruning come on day 10. The answer holds counts only,
-// never a path or a link.
+// expiring photos (day 8), fee rows (day 9; only with FEES_START_DATE, else feeRows is
+// null), then fee reminders, the owner's daily digest and pruning old notifications
+// (day 10). Reminders come after fee rows, so a row created in this call is reminded in it;
+// they run without FEES_START_DATE too, as they only look at rows that exist. Pruning comes
+// last. Any failure answers 500 (decided on day 9), and GitHub emails about the failed run.
+// The answer holds counts only, never a path or a link.
 export function internalRouter(deps: InternalRouteDeps): Router {
   const { db, jobSecret, feesStartDate, storage, clock } = deps;
   const router = Router();
@@ -46,10 +51,12 @@ export function internalRouter(deps: InternalRouteDeps): Router {
     res.set("Cache-Control", "no-store");
     const now = clock();
     const expired = await expirePhotos(db, storage, { now });
-    const feeRows = feesStartDate
-      ? await createDueFeeRows(db, { today: hostelToday(now), startDate: feesStartDate })
-      : null;
-    res.json({ expirePhotos: expired, feeRows });
+    const today = hostelToday(now);
+    const feeRows = feesStartDate ? await createDueFeeRows(db, { today, startDate: feesStartDate }) : null;
+    const feeReminders = await sendFeeReminders(db, { today });
+    const digest = await sendDailyDigest(db, { now });
+    const pruned = await pruneNotifications(db, { now });
+    res.json({ expirePhotos: expired, feeRows, feeReminders, digest, pruned });
   });
 
   return router;

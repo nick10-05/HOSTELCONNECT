@@ -2,9 +2,9 @@ name: Run jobs
 
 # Calls the app's scheduled jobs a few minutes past every hour (design doc, section 10):
 # first /api/health, which also wakes the sleeping free Render server, then
-# POST /api/internal/run-jobs with the job secret. On day 8 the only job is deleting
-# complaint photos whose 48 hours are over; days 9 and 10 add fee rows, reminders, the
-# owner's digest and pruning, behind the same call.
+# POST /api/internal/run-jobs with the job secret. That one call deletes complaint photos
+# whose 48 hours are over (day 8), creates fee rows (day 9), and sends fee reminders and
+# the owner's daily digest and prunes notifications older than 60 days (day 10).
 #
 # A failed run (site down, database paused, wrong secret) makes GitHub email the
 # repository owner. Every job only does what is due, so a late, skipped or repeated run

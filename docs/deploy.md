@@ -135,6 +135,9 @@ nightly runs after 60 days without a commit (it emails first; re-enable in Actio
 
 ## Recovery: the database is lost or damaged
 
+The full recovery guide (the site down, a paused database, one bad change, the owner's lost
+password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost database:
+
 1. Create a new Supabase project (step 1) and update the three URL secrets (step 2).
 2. Run **Migrate production database** on the commit that matches the backup, so the
    empty schema has the same migrations as the backup.

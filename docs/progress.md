@@ -212,8 +212,8 @@ Found in review and fixed on the day:
 - Tests share one database and files run in parallel: a test that notifies all active students
   must run in a rolled-back transaction, and tests that count a person's notifications should
   use people no broadcast can reach.
-- The day 8 job prunes notifications older than 60 days; the owner's daily digest (day 10)
-  includes pending rejoin requests.
+- The day 10 job prunes notifications older than 60 days (this line said "day 8" until day 10);
+  the owner's daily digest (day 10) includes pending rejoin requests.
 - Local development data now includes 3 sample notifications for the owner and transfer, move-out
   and rejoin history for fake seed students (Aarav Gupta, Sana Kapoor, Siddharth Pillai).
 
@@ -722,3 +722,97 @@ worker crash (see day 5); the file it stopped on passed when run alone.
 | Owner check | Signed in on production (Nikhil signed in; as reported by him): the dashboard loads, the Return poll card says "No poll open." and the Fees card "No fees pending."; the owner menu includes Return polls, Fees and Settings. The Fees and Payment settings pages themselves not opened yet; nothing was submitted |
 | "Run jobs" with the secret | No runs at all by 19:23: none scheduled (17:07, 18:07, 19:07) and a first manual try did not start. Then "Run jobs" run #1 (id 42280462858) at 19:32 on `main` (`bf899b3`), started by hand, success; per the run's log, as reported by Nikhil, `Status 200: {"expirePhotos":{"deleted":0,"failed":0},"feeRows":null}` (`feeRows` is null because `FEES_START_DATE` is unset) |
 | CI on `main` after this record's first part | Run #38 on `bf899b3` (pull request #3, merge commit of `day-9-record`): green |
+
+## Day 10 — fees part 2, recovery guide, README (2026-11-07)
+
+Done when: reminders appear once each and the daily digest works; `docs/RECOVERY.md` is
+written and a second restore drill passes on seeded data; the README has screenshots and an
+architecture diagram; you can demo and explain it in 2 minutes. So far: reminders, the digest
+and the recovery guide are met in tests on the local database; both restore drills with the
+real key passed (seeded data and the newest production backup); the README has its diagrams
+and four screenshots. Not deployed yet (see "Notes for later days").
+
+| Task | Who | Status | How verified |
+|---|---|---|---|
+| Fee reminders (`jobs/feeReminders.ts`) | Claude, at Nikhil's request (section 12 lists "reminder timing" under "You write"); stub, contract and tests first | Done | 29 tests in `feeReminders.test.ts`: every day from 30 before to 60 after a due date gives the right stage or none; one reminder per fee and stage over a fee's whole life, also when runs come late; the days left in the title; nothing for a paid fee, a fee of ₹0 or a moved-out student; "Your fee" with no amount; Indian grouping (₹1,25,000); each pending fee separately |
+| The owner's daily digest (`jobs/digest.ts`) and `hostelHour` (`lib/dates.ts`) | Claude, at Nikhil's request ("digest content" is also "You write"); stub, contract and tests first | Done | 15 tests in `digest.test.ts`: the four counts by the dashboard's rules (compared before and after each test's own rows, in one snapshot), the text naming only counts that are not zero, nothing before 8 am India time, one per day by India's date, none for an inactive owner or a student; 1 in `dates.test.ts` |
+| Pruning (`jobs/pruneNotifications.ts`) | Claude | Done | 4 tests in `pruneNotifications.test.ts`: more than 60 days old goes, read or not, everyone's; exactly 60 days stays |
+| The three jobs in `POST /api/internal/run-jobs`, after photos and fee rows | Claude | Done | 5 new tests in `jobsRoutes.test.ts` (a fee row reminded in the call that created it, reminders without `FEES_START_DATE`, the digest at 08:30 and not at 07:00, pruning by the app's clock); the existing ones now expect `feeReminders`, `digest` and `pruned` in the answer |
+| Production owner-password reset (`reset-owner-password --production`) | Claude | Done | 5 new tests in `resetOwnerPassword.test.ts` (`resetTargetProblem`, `confirmationMatches`). By hand with fake URLs only, every run exiting 1: no `DATABASE_URL` in the window (`.env` ignored), a local URL with `--production`, another machine's URL without it, a wrong or empty retyped email, and the right one (which then tried to connect and failed on the fake host). Not run against production |
+| `docs/RECOVERY.md` | Claude | Done | Every script, file and option it names exists. The seeded-data drill (section 9) rehearsed end to end with a throwaway key, since deleted: the local database (215 users, 217 stays, 104 beds, migration 012) dumped as the nightly backup does, encrypted, restored by `ops/restore-drill.sh`, "Drill passed" |
+| README: the problem, features, architecture (two Mermaid diagrams), stack, security, running it locally | Claude | Done | Facts checked against the code (16 tables, 60-second photo links, the `_test` database, the `/api` proxy); "installable as a PWA" removed, as there is no manifest yet; "password resets" removed from the owner's list, as students' passwords cannot be reset yet. The diagrams have not been seen rendered |
+| Screenshots for the README (`docs/screenshots/`: owner dashboard, owner complaints, student home, student fees) | Nikhil | Done | Taken from the local database only. A fake "Demo Student" was admitted locally; its joining date was corrected to 2025-01-14 in the local database (there is no edit screen), and its fee rows (14 Sep, 14 Oct, 14 Nov 2026, ₹6,500 each) came from a local `run-jobs` call with `FEES_START_DATE=2026-09-01`. A demo UPI ID (`hostelconnect.demo@upi`), an urgent notice and a return poll were set up locally. All four checked by Claude: fake names and the demo UPI ID only, no phone numbers or emails |
+| Restore drill on seeded data, with the real key | Nikhil (needs the private key) | Passed (2026-11-07) | `docs/RECOVERY.md` section 9: the local database dumped as the nightly backup does, encrypted to the real key, restored by `ops/restore-drill.sh`, "Drill passed". Row counts not recorded |
+| Restore drill on the newest production backup, `hostelconnect-2026-11-07T0105Z.dump.age` | Nikhil | Passed (2026-11-07) | "Drill passed"; users 2, stays 2, 12 migrations, the last `012_polls_fees_settings.sql` (the newest file in `server/migrations/`); `restore_drill` dropped and the downloaded backup deleted. Expected 1 user; the second is unverified (see "Notes for later days") |
+| "Decisions and trade-offs" write-up, in his own words (`docs/decisions.md`) | Nikhil; Claude made the headings and added his points at his request | Done | Eight sections and "How it was built". Claude checked the facts against the code (the security measures, the bed index `stays_one_current_per_bed`, the test counts) and corrected, with his approval: that the owner cannot reset a student's password either, that Nikhil (not the owner) restores backups, that complaint photos are not backed up, and that planted bugs were per piece of work, not one per test |
+
+New tests were checked to fail against planted bugs, then the code was restored. Not caught:
+including moved-out students in the reminders query, or inactive owners in the digest, as
+`notify()` already skips inactive people (the filters only save work); and taking the
+digest's day from UTC instead of India, which cannot differ from 8 am India time onwards
+(02:30 UTC).
+
+Checks: server 1009 tests (950 on day 9), client 317 (unchanged), typecheck clean. Full
+server runs still hit the known Windows worker crash now and then (see day 5). One full run
+also failed 2 tests in `jobsRoutes.test.ts` (the photo count it expected), alongside a worker
+crash; it did not come back in the next 10 full runs. Probably a crashed worker leaving the
+photo-expiry race test's photos committed; not proven.
+
+### Decisions made on day 10
+
+- **"You write" items:** Nikhil asked Claude to write both (reminder timing, digest content),
+  stub, contract and failing tests first. The "decisions and trade-offs" write-up stays his.
+- **Reminder windows:** "before" from 3 to 1 days before the due date, "due" from the due date
+  to 2 days after, "overdue" from 3 to 9 days after, each once per fee (key
+  `fee:<fee id>:<stage>`). A late run still sends the stage for its own day, never an earlier
+  one it missed. The windows are closed because pruning deletes the dedup keys after 60 days.
+- **Reminders:** pending fees of active students only, none for a fee of ₹0, "Your fee" when
+  no amount is set. They run without `FEES_START_DATE` too, since they only look at existing
+  rows (none exist in production yet).
+- **Digest:** from 8 am India time, once a day per active owner (key `digest:<date>`), counted
+  as the dashboard counts. Nothing when all four counts are zero; a day that was all zeros at
+  8 am still gets one from a later run that day if something becomes pending.
+- **Pruning:** notifications more than 60 days old, read or not.
+- **Production owner reset:** a `--production` flag on the existing laptop script, not a
+  workflow, whose log anyone could read in this public repository. `DATABASE_URL` comes from
+  the window only, the database must be on another machine, and the owner's email is typed
+  again first.
+- **GitHub's schedule, accepted for now:** "Run jobs" ran on schedule only twice in about
+  9 hours (#2 at 21:59 and #3 at 01:45 UTC, both green), and backup run #11 started at 01:05
+  UTC instead of 21:30. Reminders tolerate gaps of days; the digest may come late in the day
+  and photos may outlive their 48 hours by some hours (no link is issued after them). No
+  external cron for now (it would hold `JOB_SECRET` in one more account); watch for a week.
+
+### Notes for later days
+
+- **Correction:** the day 5 notes said "the day 8 job prunes notifications". Pruning was
+  added on day 10.
+- **Correction:** the first versions of the README and `docs/RECOVERY.md` (this branch)
+  said the owner can reset a student's password in the app. No such action or endpoint
+  exists (`POST /api/students/:id/reset-password` in design doc section 5 was never built);
+  both now say so.
+- **Also missing, found while taking the screenshots:** editing a student's details after
+  admission (`PATCH /api/students/:id`, design doc section 5). Neither the route nor a
+  screen exists, so a wrong joining date or monthly fee can only be fixed in the database.
+- **Seen in the screenshots:** the student's fee list writes September as "Sept" (the
+  browser's date format); the server's reminder text writes "Sep".
+- **Unverified second production user:** the production backup of 2026-11-07 01:05 UTC has
+  2 users where the records expect only the owner (made on day 3; "no students yet" up to
+  day 8). No script can have made it: `seed:owner` refuses a second owner, and
+  `import-students` and `seed:students` refuse any database not on this machine. Only an
+  admission, a transfer or a reactivation in the app inserts stays, always for a student, and
+  the backup has 2, so it is most likely a student admitted in the app (then transferred or
+  moved out and reactivated) between the day 9 deploy and the backup. Not checked: the
+  backup was deleted after the drill, and production was not queried. To settle it later,
+  without touching production: the owner's Students page, or the next drill with `--keep`
+  and a query of role, `is_active` and `created_at` only. If it is a test student, move it
+  out in the app (no deletes); if a real one, nothing to do.
+- **Before the merge:** nothing left. No migration, so no backup-then-migrate step; no new
+  Render or GitHub settings.
+- **After the merge:** a "Run jobs" run answers 200 with `feeReminders`, `digest` and
+  `pruned`; the owner gets a digest the next morning if anything is pending.
+- **Still open, unchanged:** changing a student's monthly fee after admission, a full browser
+  check of the day 9 screens (the screenshots covered the dashboard cards, the poll tile and
+  My fees locally), opening the Fees and Payment settings pages on production, student
+  password reset, Aadhaar, helmet/CSP, the Supabase certificate, the "Recent notices" card,
+  rotation of a real phone-camera photo, a PWA manifest.
