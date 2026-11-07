@@ -8,6 +8,9 @@ export const SESSION_COOKIE = "hc_session";
 
 export type AuthUser = {
   id: number;
+  // The user's hostel, from their row in the database (never from the token or the
+  // request). Every query about hostel data runs inside withHostel(db, hostelId, ...).
+  hostelId: number;
   role: Role;
   mustChangePassword: boolean;
 };
@@ -59,22 +62,21 @@ export function requireAuth(
       }
 
       // 3. Load current user from database
+      // Through auth_user_by_id (migration 014): the session names a user, not a hostel,
+      // so this lookup sees past the hostel boundary, and returns nothing else.
       const result = await deps.db.query<{
         id: number;
+        hostel_id: number;
         role: Role;
         must_change_password: boolean;
         is_active: boolean;
-      }>(
-        `SELECT id, role, must_change_password, is_active
-         FROM users
-         WHERE id = $1`,
-        [claims.userId]
-      );
+        hostel_active: boolean;
+      }>("SELECT * FROM auth_user_by_id($1)", [claims.userId]);
 
       const user = result.rows[0];
 
-      // 4. Check user exists and is active
-      if (!user || !user.is_active) {
+      // 4. Check the user exists and is active, in a hostel that is not suspended
+      if (!user || !user.is_active || !user.hostel_active) {
         res.status(401).json({
           error: {
             code: "unauthenticated",
@@ -101,6 +103,7 @@ export function requireAuth(
       // 6. Attach database user to request
       req.user = {
         id: user.id,
+        hostelId: user.hostel_id,
         role: user.role,
         mustChangePassword: user.must_change_password,
       };

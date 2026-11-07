@@ -29,3 +29,40 @@ export function createPool(connectionString: string): Db {
   });
   return pool;
 }
+
+// Runs one request's work in one transaction marked with its hostel (multi-tenant phase
+// 2a; tests/withHostel.test.ts). From phase 2d, row-level security shows a query only the
+// rows of the hostel named here, so every query that touches a hostel's data runs inside.
+//
+// - The mark is set with set_config(..., true), which is SET LOCAL: it ends with the
+//   transaction. Pooled connections are reused by other hostels' requests, so a mark that
+//   outlived its transaction would hand one hostel's rows to the next.
+// - Commits when fn succeeds; rolls back and passes the error on when it throws, so the
+//   connection goes back to the pool clean either way.
+// - The hostel id comes from the signed-in user's row (requireAuth), never from the
+//   request; anything but a positive whole number is refused before connecting.
+export async function withHostel<T>(db: Db, hostelId: number, fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  if (!Number.isSafeInteger(hostelId) || hostelId < 1) {
+    throw new Error(`withHostel: the hostel id must be a positive whole number, got ${hostelId}`);
+  }
+  const client = await db.connect();
+  // Set when even ROLLBACK fails (a dropped connection): the pool then discards the
+  // connection instead of handing it, in an unknown state, to the next request.
+  let broken: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.hostel_id', $1, true)", [String(hostelId)]);
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      broken = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+    }
+    throw err;
+  } finally {
+    client.release(broken);
+  }
+}

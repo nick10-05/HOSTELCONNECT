@@ -38,6 +38,10 @@ function publicUser(row: UserRow) {
   return { id: row.id, name: row.name, role: row.role, mustChangePassword: row.must_change_password };
 }
 
+// Until phase 3 gives each hostel its own sign-in page, password sign-in is for hostel #1,
+// where every existing account is. Owners of new hostels sign in with Google (phase 3).
+const PASSWORD_SIGN_IN_HOSTEL = 1;
+
 // A hash of a random password nobody knows, made once. Login compares against it when
 // the email is unknown, so "no such email" takes as long as "wrong password" and the
 // response time does not reveal who has an account.
@@ -75,19 +79,20 @@ export function authRouter(deps: AuthRouteDeps): Router {
       const body = parseBody(loginSchema, req, res);
       if (!body) return;
 
-      // lower(email) matches the unique index, so this is an index lookup.
-      const { rows } = await db.query<UserRow & { password_hash: string; is_active: boolean }>(
-        `SELECT id, name, role, must_change_password, password_hash, is_active
-         FROM users WHERE lower(email) = lower($1)`,
-        [body.email],
-      );
+      // Through auth_user_by_email (migration 014), which finds the account in one hostel
+      // before anything else about the request is known. Until students sign in on their
+      // hostel's own page (phase 3), every password account is in hostel #1.
+      const { rows } = await db.query<
+        UserRow & { password_hash: string | null; is_active: boolean; hostel_active: boolean }
+      >("SELECT * FROM auth_user_by_email($1, $2)", [PASSWORD_SIGN_IN_HOSTEL, body.email]);
       const user = rows[0];
       const passwordOk = await verifyPassword(
         body.password,
         user?.password_hash ?? (await getDummyHash()),
       );
-      // One answer for unknown email, wrong password and deactivated account alike.
-      if (!user || !passwordOk || !user.is_active) {
+      // One answer for unknown email, wrong password, deactivated account and suspended
+      // hostel alike.
+      if (!user || !passwordOk || !user.is_active || !user.hostel_active) {
         sendError(res, 401, "invalid_credentials", "Email or password is incorrect.");
         return;
       }

@@ -1043,3 +1043,30 @@ drill restores a backup: 013 applied, every table kept its row count, every row 
   own hostel.
 - Before merging: the same rehearsal on a restored production backup (restore drill with
   `--keep`), then a backup and the Migrate workflow as for every migration.
+
+## Multi-tenant SaaS, phase 2a: hostel context and sign-in lookups (2026-11-07)
+
+Phase 2 makes each hostel's data invisible to every other hostel, in four steps: 2a the
+hostel context, 2b every query scoped, 2c the two-hostel isolation tests, 2d row-level
+security. 2a lays the ground; what the app does does not change, since every account is
+still in hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `withHostel(db, hostelId, fn)` in `src/db.ts` | Claude, at Nikhil's request | Done | One transaction marked with the hostel (`set_config('app.hostel_id', …, true)`, i.e. `SET LOCAL`); commits or rolls back; a connection whose rollback fails is discarded, not reused; a hostel id that is not a positive whole number is refused before connecting. 7 tests in `withHostel.test.ts` |
+| Sign-in lookups, migration `014_auth_lookups.sql` | Claude | Done | `auth_user_by_id` (the session check, never the password hash) and `auth_user_by_email(hostel, email)` (sign-in in one hostel only), `SECURITY DEFINER` with a fixed `search_path`, callable by the app only. 12 tests in `authLookups.test.ts` |
+| `requireAuth` | Claude | Done | Reads the user through `auth_user_by_id`; `req.user.hostelId` comes from the database, never the token; everyone of a suspended hostel is refused (401) |
+| Login | Claude | Done | Reads the account through `auth_user_by_email`, in hostel #1 until each hostel has its own sign-in page (phase 3); a suspended hostel gets the same answer as a wrong password |
+
+Checks: server 1119 tests (1098 before), typecheck clean. Two planted bugs were caught and
+then removed: a hostel mark that outlived its transaction (`set_config(…, false)`), and
+`requireAuth` ignoring a suspended hostel.
+
+### Notes for later days
+
+- 2b runs every route's queries inside `withHostel`. The 15 service functions that open
+  their own transactions (`db.connect()` and `BEGIN`) will run inside the request's
+  transaction instead.
+- 2d must keep the nightly backup working: it dumps as `hostel_app`, and `pg_dump` refuses
+  tables whose rows row-level security would hide. The backup needs its own role that may
+  read every row, or a policy exemption.
