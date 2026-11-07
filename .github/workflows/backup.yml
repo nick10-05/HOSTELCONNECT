@@ -7,7 +7,7 @@ name: Backup database
 # That matters because this repository is public: anyone signed in to GitHub can
 # download its artifacts.
 #
-# Restore drill (do it after the first backup and then monthly): docs/deploy.md.
+# Restore drill and restoring a backup: docs/RECOVERY.md (sections 5 and 9).
 # GitHub turns off scheduled workflows in a public repository after 60 days without
 # any commit; it emails a warning first. Re-enable it from the Actions tab.
 on:

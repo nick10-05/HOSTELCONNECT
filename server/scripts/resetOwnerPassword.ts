@@ -4,7 +4,7 @@ import { generateTemporaryPassword } from "../src/lib/tempPassword";
 
 // The owner's password reset (design doc, sections 6 and 11): the owner has no one to
 // ask, so the developer runs a script. It gives the owner a new one-time temporary
-// password, exactly like an admission or a student reset. Used by
+// password, exactly like an admission or a student reset (docs/RECOVERY.md, section 6). Used by
 // scripts/reset-owner-password.ts; kept apart so tests can call it without a command line.
 
 // Sets a new temporary password for the owner with this email (any letter case) and
