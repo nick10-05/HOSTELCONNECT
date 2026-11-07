@@ -392,14 +392,28 @@ describe("per-hostel rules, next to today's global ones", () => {
       expect(defs.hostel_settings_hostel_key).toMatch(/UNIQUE INDEX .* \(hostel_id\)/);
     }));
 
-  it("keeps today's global rules until phase 2 (one email, one building name, one open poll overall)", () =>
+  // Migration 017 dropped the global rules: what one hostel may do, another may too.
+  it("lets two hostels share an email and a building name, and each have an open poll", () =>
     inRollback(db, async (c) => {
+      const { rows: left } = await c.query(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+           AND indexname IN ('users_email_lower_key', 'buildings_name_lower_key', 'return_polls_one_open')`,
+      );
+      expect(left).toEqual([]);
+
       const other = await newHostel(c);
+      const email = `shared-${other}@test.local`;
       await c.query("INSERT INTO buildings (name) VALUES ('Shared Name')");
-      expect(await pgError(c, "INSERT INTO buildings (hostel_id, name) VALUES ($1, 'shared name')", [other])).toMatchObject({
-        code: UNIQUE_VIOLATION,
-        constraint: "buildings_name_lower_key",
-      });
+      await c.query("INSERT INTO users (role, name, email, password_hash) VALUES ('owner', 'One', $1, 'x')", [email]);
+      await c.query("INSERT INTO return_polls (title, created_by) VALUES ('Open in #1', $1)", [await insertOwner(c)]);
+      await c.query(`SET LOCAL app.hostel_id = '${other}'`);
+      await c.query("INSERT INTO buildings (name) VALUES ('shared name')");
+      await c.query("INSERT INTO users (role, name, email, password_hash) VALUES ('owner', 'Two', $1, 'x')", [
+        email.toUpperCase(),
+      ]);
+      await c.query("INSERT INTO return_polls (title, created_by) VALUES ('Open in the other', $1)", [
+        await insertOwner(c),
+      ]);
     }));
 });
 

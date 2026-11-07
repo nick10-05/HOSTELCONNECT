@@ -1135,3 +1135,32 @@ when matched to this hostel's rooms; their filters stay.
 - The untracked local demo seed (`npm run seed:demo`) now fails on its first insert: it
   needs to run inside `withHostel(db, 1, …)`. Its test still passes, because test pool
   connections start in hostel #1.
+
+## Multi-tenant SaaS, phase 2c: two hostels through the routes (2026-11-07)
+
+2c tests isolation the way a signed-in user meets it: through the routes, with the hostel
+taken from the account. It found one real cross-hostel bug, fixed here.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Route-level two-hostel tests | Claude, at Nikhil's request | Done | `hostelIsolationRoutes.test.ts` (3 tests): two new hostels with one of everything; the app's hostel mark is cleared before every request, so a route without `withHostel` fails. Each owner's and student's 14 lists and counts show exactly their own rows; 28 routes given the other hostel's ids answer 404 in both directions and change nothing; each hostel's payment details stay its own |
+| Payment details, one row per hostel (migration `017_per_hostel_uniques.sql`) | Claude | Done, bug fixed | `hostel_settings.id` was always 1, so a second hostel saving its UPI details would have overwritten the first hostel's row. The id now comes from a sequence and saving upserts on `hostel_id` |
+| Per-hostel rules only (migration 017) | Claude | Done | Dropped the global unique indexes on email, building name and the one open poll; the per-hostel ones from migration 013 stay. Google accounts stay unique across hostels. Code that recognises a taken email knows both index names, for the deploy window |
+| Owner password reset script | Claude | Done | Limited to hostel #1, the only hostel with password owners, now that an email may exist in two hostels |
+| `run-jobs` with a failing hostel | Claude | Done | `jobsPerHostel.test.ts`: the failing hostel's work is rolled back, the hostel after it still runs, the failure is logged with the hostel's id, and the call answers 500 |
+| Shared two-hostel fixtures | Claude | Done | `tests/helpers/hostels.ts`, used by the service-level and route-level tests |
+
+Checks: server 1133 tests (1129 before), typecheck clean. Eight planted bugs: seven
+caught. The one not caught is the status change's UPDATE without its hostel filter,
+which the scoped lookup before it already stops with a 404.
+
+### Notes for later days
+
+- Deployment order, extended: back up, apply 013 to 015, deploy the code, then apply 016
+  and 017.
+- On this Windows machine the full run sometimes loses a test file to a worker crash
+  (exit code 0xC0000409, in a different file each time); the files pass alone, and the full
+  run passes with `npx vitest run --maxWorkers=4`. CI runs on Linux.
+- 2d (row-level security) remains: policies on all 15 tables reading
+  `current_hostel_id()`, a way for the nightly backup to read every row, and one owner per
+  hostel.

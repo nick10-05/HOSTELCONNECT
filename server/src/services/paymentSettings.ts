@@ -105,7 +105,7 @@ export async function savePaymentSettings(db: Db, change: PaymentChange): Promis
     await c.query(
       `INSERT INTO hostel_settings (upi_id, upi_payee_name, qr_image, qr_mime, updated_at)
        VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (id) DO UPDATE
+       ON CONFLICT (hostel_id) DO UPDATE
          SET upi_id = EXCLUDED.upi_id,
              upi_payee_name = EXCLUDED.upi_payee_name,
              qr_image = EXCLUDED.qr_image,

@@ -31,6 +31,7 @@ import {
   updateStudent,
 } from "../src/services/students";
 import { inRollback, insertOwner, insertStructure, insertStudent, testPool } from "./helpers/db";
+import { asHostel, fillHostel, fillHostelB, rowsOfHostel } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // Multi-tenant phase 2b-2: every service query is scoped to the transaction's hostel
@@ -46,93 +47,6 @@ afterAll(() => db.end());
 
 const TODAY = hostelToday();
 const MONTH = TODAY.slice(0, 7);
-
-const asHostel = (c: PoolClient, id: number) => c.query(`SET LOCAL app.hostel_id = '${id}'`);
-
-type HostelB = Awaited<ReturnType<typeof fillHostelB>>;
-
-// A new hostel B with one of everything.
-async function fillHostelB(c: PoolClient) {
-  const hostel = (
-    await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Hostel B') RETURNING id")
-  ).rows[0].id;
-  await asHostel(c, hostel);
-  return { hostel, ...(await fillHostel(c)) };
-}
-
-// One of everything in the transaction's hostel, written straight to the tables.
-async function fillHostel(c: PoolClient) {
-  const id = async (sql: string, params: unknown[] = []) => (await c.query<{ id: number }>(sql, params)).rows[0].id;
-
-  const owner = await insertOwner(c);
-  const place = await insertStructure(c);
-  const spareFloor = await id("INSERT INTO floors (building_id, number) VALUES ($1, 9) RETURNING id", [place.building]);
-  const spareRoom = await id("INSERT INTO rooms (building_id, room_number) VALUES ($1, 'B-SPARE') RETURNING id", [
-    place.building,
-  ]);
-  const emptyBuilding = await id("INSERT INTO buildings (name) VALUES ($1) RETURNING id", [`B empty ${randomUUID()}`]);
-
-  const student = await insertStudent(c);
-  await c.query(
-    `INSERT INTO stays (student_id, building_id, room_id, bed_id, started_on, created_by)
-     VALUES ($1, $2, $3, $4, '2026-01-14', $5)`,
-    [student, place.building, place.room, place.bed1, owner],
-  );
-  const former = await insertStudent(c, { isActive: false });
-  const formerEmail = (await c.query<{ email: string }>("SELECT email FROM users WHERE id = $1", [former])).rows[0]
-    .email;
-  const rejoin = await id("INSERT INTO rejoin_requests (student_id, message) VALUES ($1, 'Back please') RETURNING id", [
-    former,
-  ]);
-  // A former student with no request yet.
-  const quietFormer = await insertStudent(c, { isActive: false });
-  const quietFormerEmail = (await c.query<{ email: string }>("SELECT email FROM users WHERE id = $1", [quietFormer]))
-    .rows[0].email;
-
-  const complaint = await id(
-    `INSERT INTO complaints (student_id, category, description, priority)
-     VALUES ($1, 'plumbing', 'The tap in hostel B leaks.', 'high') RETURNING id`,
-    [student],
-  );
-  await c.query("INSERT INTO complaint_events (complaint_id, actor_id, kind) VALUES ($1, $2, 'created')", [
-    complaint,
-    student,
-  ]);
-  const announcement = await id(
-    "INSERT INTO announcements (author_id, title, body) VALUES ($1, 'B notice', 'Only for hostel B.') RETURNING id",
-    [owner],
-  );
-  const poll = await id("INSERT INTO return_polls (title, created_by) VALUES ('B poll', $1) RETURNING id", [owner]);
-  await c.query("INSERT INTO return_poll_responses (poll_id, student_id, response) VALUES ($1, $2, 'returned')", [
-    poll,
-    student,
-  ]);
-  const fee = await id("INSERT INTO fees (student_id, due_date, amount) VALUES ($1, $2, 4000) RETURNING id", [
-    student,
-    `${MONTH}-01`,
-  ]);
-  const notification = await id(
-    "INSERT INTO notifications (user_id, type, title) VALUES ($1, 'announcement', 'B only') RETURNING id",
-    [student],
-  );
-  return {
-    owner, ...place, spareFloor, spareRoom, emptyBuilding, student, former, formerEmail, quietFormerEmail, rejoin,
-    complaint, announcement, poll, fee, notification,
-  };
-}
-
-// Everything of hostel B's, read with its hostel named explicitly (not through the
-// services), so "nothing of B's changed" does not depend on the code under test.
-async function rowsOfB(c: PoolClient, b: HostelB) {
-  const out: Record<string, unknown[]> = {};
-  for (const table of [
-    "users", "buildings", "floors", "rooms", "beds", "stays", "rejoin_requests", "notifications",
-    "complaints", "complaint_events", "announcements", "return_polls", "return_poll_responses", "fees",
-  ]) {
-    out[table] = (await c.query(`SELECT * FROM ${table} WHERE hostel_id = $1 ORDER BY 1, 2`, [b.hostel])).rows;
-  }
-  return out;
-}
 
 // What hostel #1's owner and lists see: every list, count and total in one object.
 async function hostelOneView(tx: Db, student: number) {
@@ -189,7 +103,7 @@ describe("two hostels: hostel #1 never sees or touches hostel B", () => {
          VALUES ($1, $2, $3, NULL, '2026-01-14', $4)`,
         [student, place.building, place.room, owner],
       );
-      const untouched = await rowsOfB(c, b);
+      const untouched = await rowsOfHostel(c, b.hostel);
 
       const refusals: [string, () => Promise<unknown>][] = [
         ["getStudent", () => getStudent(tx, b.student, TODAY)],
@@ -247,6 +161,6 @@ describe("two hostels: hostel #1 never sees or touches hostel B", () => {
       expect(await notify(tx, "active_students", { type: "announcement", title: "Hostel #1 only" })).toBeGreaterThan(0);
       expect(await notify(tx, [b.student], { type: "announcement", title: "Not for B" })).toBe(0);
 
-      expect(await rowsOfB(c, b)).toEqual(untouched);
+      expect(await rowsOfHostel(c, b.hostel)).toEqual(untouched);
     }));
 });

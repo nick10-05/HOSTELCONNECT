@@ -70,6 +70,10 @@ export type Admission = {
 //   (users_email_lower_key, stays_one_current_per_bed), so you can tell which one.
 //   That stays right when two admissions race for the same bed.
 // - No foreign key looks at beds.is_active, so the retired check is yours to write.
+// The unique index that refuses an email already in use: each hostel's own from migration
+// 017 (users_hostel_email_lower_key), the whole database's before it.
+const EMAIL_TAKEN_INDEXES = ["users_email_lower_key", "users_hostel_email_lower_key"];
+
 export async function admitStudent(
   db: Db,
   ownerId: number,
@@ -126,7 +130,7 @@ export async function admitStudent(
     const pgError = err as { code?: string; constraint?: string };
 
     if (pgError.code === "23505") {
-      if (pgError.constraint === "users_email_lower_key") {
+      if (EMAIL_TAKEN_INDEXES.includes(pgError.constraint ?? "")) {
         throw new HttpError(409, "email_taken", "This email address already belongs to an account.");
       }
 
@@ -843,7 +847,7 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
     } catch (err) {
       // The unique index on lower(email) has the last word, as at admission.
       const pgError = err as { code?: string; constraint?: string };
-      if (pgError.code === "23505" && pgError.constraint === "users_email_lower_key") {
+      if (pgError.code === "23505" && EMAIL_TAKEN_INDEXES.includes(pgError.constraint ?? "")) {
         throw new HttpError(409, "email_taken", "This email address already belongs to an account.");
       }
       throw err;

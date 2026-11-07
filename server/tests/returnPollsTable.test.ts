@@ -101,7 +101,7 @@ describe("return_polls", () => {
       const first = await poll(c, owner);
 
       const err = await pgError(c, OPEN, ["Second poll", owner]);
-      expect(err).toMatchObject({ code: UNIQUE_VIOLATION, constraint: "return_polls_one_open" });
+      expect(err).toMatchObject({ code: UNIQUE_VIOLATION, constraint: "return_polls_one_open_per_hostel" });
 
       await c.query(`UPDATE return_polls SET status = 'closed', closed_at = now() WHERE id = $1`, [first]);
       await poll(c, owner, OPEN, "Second poll");
