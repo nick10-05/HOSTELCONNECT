@@ -938,3 +938,32 @@ migration and no new settings.
 | CI on `main` | Run #69 on `00eb601`: green at 09:14 |
 | Live site | `/api/health` 200. `PATCH /api/students/1` without a login answers 401, where a path the app does not have answers 404, so the new route is served. No student's data was touched: the login check refused it first |
 | Owner check | Not done yet: the Edit details and Reset password buttons on a current student's profile in production (look only, do not save or click on a real student) |
+
+## UI/UX redesign (2026-11-07)
+
+Every owner and student page, form, detail view and the sign-in pages, redesigned on the
+branch `redesign-foundations`. UI only: no API, server or database change.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Design tokens, fonts, icons (`index.css`, `ui/icons.tsx`) | Claude | Done | Light "Aurora" and dark "Midnight" tokens; self-hosted Inter and Plus Jakarta Sans; own line icons, no icon library |
+| Shared parts (`client/src/ui/`) | Claude | Done | Buttons, cards, pills, skeletons, empty states, page header, pager, filter panel, segmented control, avatars, bottom sheet, toast, sign-in frame; tests in `ui.test.tsx`, `listParts.test.tsx`, `overlays.test.tsx` |
+| App frame | Claude | Done | Glass top bar; floating tab bar on phones (Home, Students, Complaints, Fees, More) and a sidebar from `md`; the rest of the owner's pages in a "More pages" sheet |
+| Owner pages | Claude | Done | Dashboard (occupancy ring, needs-attention list, quick actions), Students, Complaints, Fees, profiles, complaint detail, Buildings, Admit, Rejoin requests, Announcements, Return polls, Food counts, Settings |
+| Student pages and sign-in | Claude | Done | New home with a greeting, notices, the return poll, complaints and a fees card; complaint form and detail, notices, fees; sign in, request access, choose a password |
+| Dark mode and the switch (`ui/theme.tsx`) | Claude | Done | Follows the phone by default; Automatic, Light or Dark in the top bar, kept in `localStorage` (`hc-theme`) on that device only and applied before the first paint by a small script in `index.html`; 11 tests in `theme.test.tsx` |
+| Loading, accessibility | Claude | Done | Shimmer placeholders replace every "Loading…" (screen readers still hear a label); every button and link at least 44px tall; reduced motion respected |
+| README | Claude | Done | "Look and feel" paragraph; `ui/` in the layout |
+
+Checks: client 378 tests (367 before the switch, 328 before the redesign), typecheck clean,
+build clean. In the local browser at 375px wide, all 14 owner pages measured in light and
+dark: no text below WCAG AA contrast (4.5:1, 3:1 for large text), no tap target under 44px,
+no sideways scrolling, no console errors. The student and sign-in pages were measured the
+same way through a temporary page with made-up data (deleted afterwards), because the local
+browser is signed in as the owner.
+
+### Notes for later days
+
+- The README screenshots still show the earlier look; retake them after deploying.
+- Not checked on a real phone yet (only the browser's phone-size view).
+- Deployed: not yet.
