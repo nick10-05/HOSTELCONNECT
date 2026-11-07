@@ -874,4 +874,16 @@ migration and no new settings.
   `must_change_password`), and the note under the temporary password says "when they first
   log in". Both are worded for a new admission; left as they are for now.
 - `docs/decisions.md` section 8 still lists this as not built (Nikhil's write-up).
-- Not deployed yet.
+- Deployed on 2026-11-07 (see "Deployment" below).
+
+### Deployment (2026-11-07, UTC)
+
+| Step | Evidence |
+|---|---|
+| Pushed on `student-password-reset` | `f204f0e` (code) and `e1b8d05` (docs), author nick10-05, no co-author line |
+| CI on the branch | Run #58 on `e1b8d05`: green |
+| Before the merge | No migration, so no backup-then-migrate step; no new Render or GitHub settings |
+| Merge into `main` | Through GitHub pull request #9, as merge commit `c2fb446`, merged by Nikhil |
+| CI on `main` | Run #60 on `c2fb446`: green at 08:23 |
+| Live site | `/api/health` 200. `POST /api/students/1/reset-password` without a login answers 401, where a path the app does not have answers 404, so the new route is served. No student's data was touched: the login check refused it first |
+| Owner check | Not done yet: the Reset password button on a current student's profile in production (look only, do not click it on a real student) |
