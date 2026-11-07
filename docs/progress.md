@@ -744,7 +744,7 @@ and four screenshots. Not deployed yet (see "Notes for later days").
 | Screenshots for the README (`docs/screenshots/`: owner dashboard, owner complaints, student home, student fees) | Nikhil | Done | Taken from the local database only. A fake "Demo Student" was admitted locally; its joining date was corrected to 2025-01-14 in the local database (there is no edit screen), and its fee rows (14 Sep, 14 Oct, 14 Nov 2026, ₹6,500 each) came from a local `run-jobs` call with `FEES_START_DATE=2026-09-01`. A demo UPI ID (`hostelconnect.demo@upi`), an urgent notice and a return poll were set up locally. All four checked by Claude: fake names and the demo UPI ID only, no phone numbers or emails |
 | Restore drill on seeded data, with the real key | Nikhil (needs the private key) | Passed (2026-11-07) | `docs/RECOVERY.md` section 9: the local database dumped as the nightly backup does, encrypted to the real key, restored by `ops/restore-drill.sh`, "Drill passed". Row counts not recorded |
 | Restore drill on the newest production backup, `hostelconnect-2026-11-07T0105Z.dump.age` | Nikhil | Passed (2026-11-07) | "Drill passed"; users 2, stays 2, 12 migrations, the last `012_polls_fees_settings.sql` (the newest file in `server/migrations/`); `restore_drill` dropped and the downloaded backup deleted. Expected 1 user; the second is unverified (see "Notes for later days") |
-| "Decisions and trade-offs" write-up, in his own words | Nikhil | To do | |
+| "Decisions and trade-offs" write-up, in his own words (`docs/decisions.md`) | Nikhil; Claude made the headings and added his points at his request | Done | Eight sections and "How it was built". Claude checked the facts against the code (the security measures, the bed index `stays_one_current_per_bed`, the test counts) and corrected, with his approval: that the owner cannot reset a student's password either, that Nikhil (not the owner) restores backups, that complaint photos are not backed up, and that planted bugs were per piece of work, not one per test |
 
 New tests were checked to fail against planted bugs, then the code was restored. Not caught:
 including moved-out students in the reminders query, or inactive owners in the digest, as
@@ -807,8 +807,8 @@ photo-expiry race test's photos committed; not proven.
   without touching production: the owner's Students page, or the next drill with `--keep`
   and a query of role, `is_active` and `created_at` only. If it is a test student, move it
   out in the app (no deletes); if a real one, nothing to do.
-- **Before the merge:** the write-up. No migration, so no
-  backup-then-migrate step; no new Render or GitHub settings.
+- **Before the merge:** nothing left. No migration, so no backup-then-migrate step; no new
+  Render or GitHub settings.
 - **After the merge:** a "Run jobs" run answers 200 with `feeReminders`, `digest` and
   `pruned`; the owner gets a digest the next morning if anything is pending.
 - **Still open, unchanged:** changing a student's monthly fee after admission, a full browser
