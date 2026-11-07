@@ -10,18 +10,22 @@ import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // POST /api/internal/run-jobs (design doc, sections 5, 8 and 10): called every hour by
-// GitHub Actions with a secret header; it runs the expire-photos job (day 8) and the
-// fee-rows job (day 9, only when FEES_START_DATE is set). Each
-// test builds its own app (the rate limit lives in the app) on rollbackDb, with a clock
-// fixed in 1999, so the job sees this test's photos only and everything is rolled back.
-// Photos another file commits (expirePhotos.test.ts's race test, all due before 1999)
-// are kept out by the photo-job lock (tests/helpers/db.ts).
+// GitHub Actions with a secret header; it runs the expire-photos job (day 8), the
+// fee-rows job (day 9, only when FEES_START_DATE is set), and fee reminders, the owner's
+// digest and pruning (day 10). Each test builds its own app (the rate limit lives in the
+// app) on rollbackDb, with a clock fixed in 1999, so the job sees this test's photos only
+// and everything is rolled back. Photos another file commits (expirePhotos.test.ts's race
+// test, all due before 1999) are kept out by the photo-job lock (tests/helpers/db.ts).
 const db = testPool();
 afterAll(() => db.end());
 
 const SECRET = "test-secret-that-is-at-least-32-characters";
 const JOB_SECRET = "job-secret-for-tests-" + "j".repeat(20);
-const NOW = new Date("1999-02-10T06:30:00Z");
+// 07:00 on 10 February in India: before the digest's hour, so only the tests that move the
+// clock see one (the digest counts the whole database, so its number is not exact).
+const NOW = new Date("1999-02-10T01:30:00Z");
+// What run-jobs answers for the day-10 jobs when none has anything to do.
+const NOTHING_DAY_10 = { feeReminders: { created: 0 }, digest: { created: 0 }, pruned: { deleted: 0 } };
 const PATH = "/api/internal/run-jobs";
 
 type Ctx = { c: PoolClient; storage: FakeStorage; app: ReturnType<typeof createApp> };
@@ -65,7 +69,7 @@ describe("POST /api/internal/run-jobs", () => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 }, feeRows: null });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 }, feeRows: null, ...NOTHING_DAY_10 });
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(storage.objects.has(photo.path)).toBe(false);
       expect(await deletedAt(c, photo.id)).toEqual(NOW);
@@ -130,7 +134,7 @@ describe("POST /api/internal/run-jobs", () => {
     withApp({ storage: null }, async ({ app }) => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: null });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: null, ...NOTHING_DAY_10 });
     }));
 
   it("takes at most 10 calls per 15 minutes from all callers together, right secret or not", () =>
@@ -180,7 +184,7 @@ describe("POST /api/internal/run-jobs: fee rows", () => {
       const s = await joinedOn(c, "1999-01-15"); // due 15 February, within 7 days of 10 February
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: { created: 1 } });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: { created: 1 }, ...NOTHING_DAY_10 });
       expect(await feeDates(c, s)).toEqual(["1999-02-15"]);
     }));
 
@@ -206,6 +210,81 @@ describe("POST /api/internal/run-jobs: fee rows", () => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.body.feeRows).toEqual({ created: 0 });
       expect(await feeDates(c, s)).toEqual([]);
+    }));
+
+  // Day 10: reminders run after the fee rows, so a row created in this call is reminded in it.
+  it("reminds about a fee row it has just created, in the same call", () =>
+    withApp({ feesStartDate: "1999-01-01" }, async ({ c, app }) => {
+      const s = await joinedOn(c, "1999-01-13"); // due 13 February: 3 days after 10 February
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.body.feeRows).toEqual({ created: 1 });
+      expect(res.body.feeReminders).toEqual({ created: 1 });
+      expect(await kindsTo(c, s)).toEqual([["fee_reminder", "Fee due in 3 days"]]);
+    }));
+});
+
+const kindsTo = async (c: PoolClient, user: number) =>
+  (await c.query<{ type: string; title: string }>(`SELECT type, title FROM notifications WHERE user_id = $1 ORDER BY id`, [user])).rows.map(
+    (n) => [n.type, n.title],
+  );
+
+// The day-10 jobs inside run-jobs. Their rules are in tests/feeReminders.test.ts,
+// tests/digest.test.ts and tests/pruneNotifications.test.ts; here: they run, from the
+// app's clock, and the answer says what each did.
+describe("POST /api/internal/run-jobs: reminders, digest and pruning", () => {
+  it("sends fee reminders from India's today, without FEES_START_DATE too", () =>
+    withApp({}, async ({ c, app }) => {
+      const s = await insertStudent(c);
+      await c.query(`INSERT INTO fees (student_id, due_date, amount) VALUES ($1, '1999-02-07', 5000)`, [s]);
+
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+
+      expect(res.status).toBe(200);
+      expect(res.body.feeReminders).toEqual({ created: 1 });
+      expect(await kindsTo(c, s)).toEqual([["fee_reminder", "Fee overdue"]]);
+    }));
+
+  it("creates the owner's digest from 8 am India time", () =>
+    withApp({ clock: () => new Date("1999-02-10T03:00:00Z") }, async ({ c, app }) => {
+      // 08:30 in India.
+      const owner = await insertOwner(c);
+      await c.query(
+        `INSERT INTO complaints (student_id, category, description)
+         VALUES ($1, 'plumbing', 'The tap in room 101 keeps dripping.')`,
+        [await insertStudent(c)],
+      );
+
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+
+      expect(res.status).toBe(200);
+      expect(res.body.digest.created).toBeGreaterThanOrEqual(1);
+      expect(await kindsTo(c, owner)).toEqual([["daily_digest", "Your daily summary"]]);
+    }));
+
+  it("creates no digest before 8 am India time", () =>
+    withApp({}, async ({ c, app }) => {
+      const owner = await insertOwner(c);
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.body.digest).toEqual({ created: 0 });
+      expect(await kindsTo(c, owner)).toEqual([]);
+    }));
+
+  it("prunes notifications more than 60 days before the clock", () =>
+    withApp({}, async ({ c, app }) => {
+      const s = await insertStudent(c);
+      const { rows } = await c.query<{ id: number }>(
+        `INSERT INTO notifications (user_id, type, title, created_at)
+         VALUES ($1, 'announcement', 'Old notice', '1998-12-01T00:00:00Z'),
+                ($1, 'announcement', 'Recent notice', '1999-01-01T00:00:00Z')
+         RETURNING id`,
+        [s],
+      );
+
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+
+      expect(res.body.pruned).toEqual({ deleted: 1 });
+      expect(await kindsTo(c, s)).toEqual([["announcement", "Recent notice"]]);
+      expect(rows).toHaveLength(2);
     }));
 });
 

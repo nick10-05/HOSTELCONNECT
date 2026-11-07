@@ -10,6 +10,13 @@ export function hostelToday(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: HOSTEL_TIME_ZONE }).format(now);
 }
 
+// The hour (0 to 23) on the hostel's clock at `now`.
+export function hostelHour(now: Date = new Date()): number {
+  // h23 counts midnight as 0, not 24.
+  const hour = new Intl.DateTimeFormat("en-GB", { timeZone: HOSTEL_TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(now);
+  return Number(hour);
+}
+
 // The day `days` days after `day` (negative goes back). Done in UTC, where every day
 // is exactly 24 hours, so no daylight-saving shift can skip or repeat a day.
 export function addDays(day: string, days: number): string {
