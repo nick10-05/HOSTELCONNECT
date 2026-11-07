@@ -1,4 +1,4 @@
-import type { Db } from "../src/db";
+import { markHostel, type Db } from "../src/db";
 import { addDays } from "../src/lib/dates";
 import type { StudentDetails } from "../src/routes/students";
 import { insertStudentWithStay } from "../src/services/students";
@@ -173,6 +173,8 @@ export async function seedStudents(
   let broken = false;
   try {
     await c.query("BEGIN");
+    // Hostel #1, where every account is until new hostels can sign up (phase 4).
+    await markHostel(c, 1);
     const already = await c.query("SELECT 1 FROM users WHERE email LIKE $1 LIMIT 1", [`%@${SEED_EMAIL_DOMAIN}`]);
     if (already.rowCount) {
       throw new Error("Seeded students already exist. Nothing was changed.");

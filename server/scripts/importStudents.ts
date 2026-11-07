@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
-import type { Db } from "../src/db";
+import { markHostel, type Db } from "../src/db";
 import { hashPassword } from "../src/lib/password";
 import { generateTemporaryPassword } from "../src/lib/tempPassword";
 import { studentDetailsSchema, type StudentDetails } from "../src/routes/students";
@@ -229,6 +229,8 @@ export async function importStudents(
   let broken = false;
   try {
     await c.query("BEGIN");
+    // Hostel #1, where every account is until new hostels can sign up (phase 4).
+    await markHostel(c, 1);
     const problems: ImportProblem[] = [];
     const placed: { buildingId: number; roomId: number | null; bedId: number | null; text: string }[] = [];
 

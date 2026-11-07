@@ -1070,3 +1070,34 @@ then removed: a hostel mark that outlived its transaction (`set_config(…, fals
 - 2d must keep the nightly backup working: it dumps as `hostel_app`, and `pg_dump` refuses
   tables whose rows row-level security would hide. The backup needs its own role that may
   read every row, or a policy exemption.
+
+## Multi-tenant SaaS, phase 2b-1: every request in its hostel's transaction (2026-11-07)
+
+2b is split in two. 2b-1 (this part) runs everything that touches a hostel's data inside
+`withHostel`; 2b-2 adds `hostel_id = current_hostel_id()` to every service query and names
+the hostel on every insert. What the app does still does not change: every account is in
+hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `current_hostel_id()`, migration `015_current_hostel.sql` | Claude, at Nikhil's request | Done | The hostel the transaction is marked with; fails (instead of returning NULL) outside `withHostel`; `STABLE`; callable by the app only. 4 tests in `currentHostel.test.ts` |
+| Services' own transactions as savepoints | Claude | Done | `src/lib/savepoints.ts`, shared by `withHostel` and the tests' `rollbackDb`: a service's `BEGIN`/`COMMIT`/`ROLLBACK` becomes a savepoint inside the request's transaction, so its rollback undoes only its part. 1 new test in `withHostel.test.ts` |
+| Routes | Claude | Done | `hostelWork(db)` next to `requireAuth` gives each router `inHostel(req, tx => …)`, with the hostel from the signed-in user. All 12 routers with sessions use it, `/me` and change-password included (bcrypt runs between two short transactions, never inside one). Calls that ran side by side (`Promise.all`) now run one after the other, as they share one connection. Route tests with mocked services check the service got a transaction, not the pool (`hostelTx` in `tests/helpers/db.ts`) |
+| Public "Request access" form | Claude | Done | Runs in hostel #1 until each hostel has its own pages (phase 3), like password sign-in |
+| Scheduled jobs (`run-jobs`) | Claude | Done | Run for every hostel in turn, each in its own transactions; counts are added up. A hostel whose jobs fail is logged and skipped, the others still run, and the call answers 500 at the end. `FEES_START_DATE` is hostel #1's only until phase 5 reads `hostels.fees_start_date`. `expirePhotos` takes the hostel and handles only its photos (1 new test) |
+| Import and seed scripts | Claude | Done | `markHostel(c, 1)` right after their own `BEGIN` |
+
+Checks: server 1125 tests (1119 before), typecheck clean. Two planted bugs were caught and
+then removed: `expirePhotos` without its hostel filter, and a route calling a service with
+the bare pool.
+
+### Notes for later days
+
+- The untracked local demo seed (`scripts/demoSeed.ts`) calls services directly. It passes
+  today, but fails from 2b-2 on, when the services read `current_hostel_id()`: it needs to
+  run inside `withHostel(db, 1, …)`.
+- A failing hostel inside `run-jobs` has no test of its own yet; 2c's two-hostel tests
+  should add one.
+- Inside a test's rollback transaction, `withHostel` becomes a savepoint, and its hostel
+  mark lasts until the test's transaction ends. Tests that run more than one hostel in one
+  transaction (2c) must name the hostel again afterwards, or use separate transactions.

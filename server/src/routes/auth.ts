@@ -5,7 +5,7 @@ import { z } from "zod";
 import { parseBody, sendError } from "../lib/http";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { SESSION_TTL_SECONDS, signSession, type Role } from "../lib/token";
-import { requireAuth, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
 
 export type AuthRouteDeps = AuthDeps & {
   // true in production (HTTPS): the browser then sends the cookie only over HTTPS.
@@ -63,6 +63,7 @@ function failedAttemptLimiter(message: string) {
 
 export function authRouter(deps: AuthRouteDeps): Router {
   const { db, jwtSecret, secureCookies } = deps;
+  const inHostel = hostelWork(db);
   const router = Router();
 
   const cookieOptions: CookieOptions = {
@@ -112,9 +113,8 @@ export function authRouter(deps: AuthRouteDeps): Router {
   });
 
   router.get("/me", requireAuth(deps, { allowTemporaryPassword: true }), async (req, res) => {
-    const { rows } = await db.query<UserRow>(
-      "SELECT id, name, role, must_change_password FROM users WHERE id = $1",
-      [req.user!.id],
+    const { rows } = await inHostel(req, (tx) =>
+      tx.query<UserRow>("SELECT id, name, role, must_change_password FROM users WHERE id = $1", [req.user!.id]),
     );
     res.json({ user: publicUser(rows[0]) });
   });
@@ -132,9 +132,9 @@ export function authRouter(deps: AuthRouteDeps): Router {
       }
 
       const userId = req.user!.id;
-      const current = await db.query<{ password_hash: string }>(
-        "SELECT password_hash FROM users WHERE id = $1",
-        [userId],
+      // Two short transactions, not one: no connection is held while bcrypt works.
+      const current = await inHostel(req, (tx) =>
+        tx.query<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = $1", [userId]),
       );
       if (!(await verifyPassword(body.currentPassword, current.rows[0].password_hash))) {
         // 400, not 401: the session is fine, only this form field is wrong.
@@ -142,11 +142,14 @@ export function authRouter(deps: AuthRouteDeps): Router {
         return;
       }
 
-      const { rows } = await db.query<UserRow>(
-        `UPDATE users SET password_hash = $1, must_change_password = false
-         WHERE id = $2
-         RETURNING id, name, role, must_change_password`,
-        [await hashPassword(body.newPassword), userId],
+      const newHash = await hashPassword(body.newPassword);
+      const { rows } = await inHostel(req, (tx) =>
+        tx.query<UserRow>(
+          `UPDATE users SET password_hash = $1, must_change_password = false
+           WHERE id = $2
+           RETURNING id, name, role, must_change_password`,
+          [newHash, userId],
+        ),
       );
       res.json({ user: publicUser(rows[0]) });
     },

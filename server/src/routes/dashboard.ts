@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { hostelToday } from "../lib/dates";
 import type { PhotoStorage } from "../lib/storage";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import { getDashboard } from "../services/dashboard";
 import { getUsage, type UsageLimits } from "../services/usage";
 
@@ -23,15 +23,17 @@ export function dashboardRouter(deps: DashboardRouteDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
-  router.get("/dashboard", auth, isOwner, async (_req, res) => {
+  router.get("/dashboard", auth, isOwner, async (req, res) => {
     // Counts change with every admission and request: the browser must always ask again.
     res.set("Cache-Control", "no-store");
     const now = clock();
-    const [dashboard, usage] = await Promise.all([
-      getDashboard(db, hostelToday(now)),
-      getUsage(db, usageLimits, now),
-    ]);
+    // One after the other: both run on the request's one connection.
+    const { dashboard, usage } = await inHostel(req, async (tx) => ({
+      dashboard: await getDashboard(tx, hostelToday(now)),
+      usage: await getUsage(tx, usageLimits, now),
+    }));
     res.json({ ...dashboard, usage: { ...usage, photosConfigured: storage !== null } });
   });
 

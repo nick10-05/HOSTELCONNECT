@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { idParam, parseBody } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import * as structure from "../services/structure";
 
 // Owner-only endpoints for buildings, floors, rooms and beds. This file only checks
@@ -26,21 +26,22 @@ export function structureRouter(deps: AuthDeps): Router {
   // the plain 404 instead of a 401.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
-  router.get("/structure", auth, isOwner, async (_req, res) => {
-    res.json({ buildings: await structure.listStructure(db) });
+  router.get("/structure", auth, isOwner, async (req, res) => {
+    res.json({ buildings: await inHostel(req, (tx) => structure.listStructure(tx)) });
   });
 
   router.post("/buildings", auth, isOwner, async (req, res) => {
     const body = parseBody(buildingSchema, req, res);
     if (!body) return;
-    res.status(201).json({ building: await structure.createBuilding(db, body.name) });
+    res.status(201).json({ building: await inHostel(req, (tx) => structure.createBuilding(tx, body.name)) });
   });
 
   router.delete("/buildings/:id", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await structure.deleteBuilding(db, id);
+    await inHostel(req, (tx) => structure.deleteBuilding(tx, id));
     res.status(204).end();
   });
 
@@ -49,13 +50,13 @@ export function structureRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(floorSchema, req, res);
     if (!body) return;
-    res.status(201).json({ floor: await structure.addFloor(db, id, body.number) });
+    res.status(201).json({ floor: await inHostel(req, (tx) => structure.addFloor(tx, id, body.number)) });
   });
 
   router.delete("/floors/:id", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await structure.deleteFloor(db, id);
+    await inHostel(req, (tx) => structure.deleteFloor(tx, id));
     res.status(204).end();
   });
 
@@ -64,13 +65,13 @@ export function structureRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(roomSchema, req, res);
     if (!body) return;
-    res.status(201).json({ room: await structure.addRoom(db, id, body) });
+    res.status(201).json({ room: await inHostel(req, (tx) => structure.addRoom(tx, id, body)) });
   });
 
   router.delete("/rooms/:id", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await structure.deleteRoom(db, id);
+    await inHostel(req, (tx) => structure.deleteRoom(tx, id));
     res.status(204).end();
   });
 
@@ -79,19 +80,19 @@ export function structureRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(bedSchema, req, res);
     if (!body) return;
-    res.status(201).json({ bed: await structure.addBed(db, id, body.bedNumber) });
+    res.status(201).json({ bed: await inHostel(req, (tx) => structure.addBed(tx, id, body.bedNumber)) });
   });
 
   router.post("/beds/:id/retire", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    res.json({ bed: await structure.retireBed(db, id) });
+    res.json({ bed: await inHostel(req, (tx) => structure.retireBed(tx, id)) });
   });
 
   router.post("/beds/:id/reactivate", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    res.json({ bed: await structure.reactivateBed(db, id) });
+    res.json({ bed: await inHostel(req, (tx) => structure.reactivateBed(tx, id)) });
   });
 
   return router;

@@ -5,7 +5,7 @@ import { HttpError } from "../src/lib/http";
 import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import * as structure from "../src/services/structure";
-import { insertOwner, insertStudent, testPool } from "./helpers/db";
+import { hostelTx, insertOwner, insertStudent, testPool } from "./helpers/db";
 
 // The HTTP layer only: who may call, input checks, status codes and answer shapes.
 // The service functions are replaced by mocks here; tests/structure.test.ts checks the
@@ -69,7 +69,7 @@ describe("structure endpoints for the owner", () => {
       .send({ name: "  Block A " });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ building: { id: 1, name: "Block A" } });
-    expect(service.createBuilding).toHaveBeenCalledWith(db, "Block A");
+    expect(service.createBuilding).toHaveBeenCalledWith(hostelTx(db), "Block A");
   });
 
   it("refuses a blank or missing name before reaching the service", async () => {
@@ -102,7 +102,7 @@ describe("structure endpoints for the owner", () => {
       .send({ number: 0 });
     expect(res.status).toBe(201);
     expect(res.body.floor.number).toBe(0);
-    expect(service.addFloor).toHaveBeenCalledWith(db, 1, 0);
+    expect(service.addFloor).toHaveBeenCalledWith(hostelTx(db), 1, 0);
   });
 
   it("refuses a floor number that is not a whole number", async () => {
@@ -120,7 +120,7 @@ describe("structure endpoints for the owner", () => {
       .set("Cookie", await asOwner())
       .send({ roomNumber: "G1" });
     expect(res.status).toBe(201);
-    expect(service.addRoom).toHaveBeenCalledWith(db, 1, { roomNumber: "G1", floorId: null });
+    expect(service.addRoom).toHaveBeenCalledWith(hostelTx(db), 1, { roomNumber: "G1", floorId: null });
   });
 
   it("POST /api/rooms/:id/beds adds a bed", async () => {
@@ -131,7 +131,7 @@ describe("structure endpoints for the owner", () => {
       .send({ bedNumber: "A" });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ bed });
-    expect(service.addBed).toHaveBeenCalledWith(db, 2, "A");
+    expect(service.addBed).toHaveBeenCalledWith(hostelTx(db), 2, "A");
   });
 
   it("POST /api/beds/:id/retire and /reactivate return the bed", async () => {
@@ -151,9 +151,9 @@ describe("structure endpoints for the owner", () => {
       const res = await request(app).delete(path).set("Cookie", cookie);
       expect(res.status, path).toBe(204);
     }
-    expect(service.deleteBuilding).toHaveBeenCalledWith(db, 1);
-    expect(service.deleteFloor).toHaveBeenCalledWith(db, 4);
-    expect(service.deleteRoom).toHaveBeenCalledWith(db, 2);
+    expect(service.deleteBuilding).toHaveBeenCalledWith(hostelTx(db), 1);
+    expect(service.deleteFloor).toHaveBeenCalledWith(hostelTx(db), 4);
+    expect(service.deleteRoom).toHaveBeenCalledWith(hostelTx(db), 2);
   });
 
   it("answers 404 for an id that is not a positive whole number", async () => {

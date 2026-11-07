@@ -4,8 +4,9 @@ import { z } from "zod";
 import { idParam, parseBody, parseQuery, sendError } from "../lib/http";
 import { detectPhotoType } from "../lib/photoType";
 import type { PhotoStorage } from "../lib/storage";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import { photoUpload } from "../middleware/photoUpload";
+import type { Db } from "../db";
 import { getComplaintPhoto, photoView, studentPhotoView } from "../services/photos";
 import { getUsage, type UsageLimits } from "../services/usage";
 import {
@@ -133,13 +134,14 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
   // been found for this reader, so a link is never issued for someone else's complaint.
   // Every call may issue a link, which counts as egress, so only the detail answers ask
   // for it: not the lists, and not the create answer (the form then opens the detail).
-  const photoFor = async (complaintId: number) =>
-    photoView(db, storage, await getComplaintPhoto(db, complaintId), { now: clock(), seconds: photoLinkSeconds });
+  const photoFor = async (tx: Db, complaintId: number) =>
+    photoView(tx, storage, await getComplaintPhoto(tx, complaintId), { now: clock(), seconds: photoLinkSeconds });
   const router = Router();
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isStudent = requireRole("student");
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
   const refusalsPerIp = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -166,12 +168,15 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
       }
       photo = { bytes: req.file.buffer, type };
     }
-    const { id } = await createComplaint(db, req.user!.id, { ...body, photo }, limits, {
-      storage,
-      usageLimits,
-      now: clock(),
+    const created = await inHostel(req, async (tx) => {
+      const { id } = await createComplaint(tx, req.user!.id, { ...body, photo }, limits, {
+        storage,
+        usageLimits,
+        now: clock(),
+      });
+      return getMyComplaint(tx, req.user!.id, id);
     });
-    res.status(201).json(await getMyComplaint(db, req.user!.id, id));
+    res.status(201).json(created);
   });
 
   // The owner: every complaint, filtered and in section 5's order. A student: their own
@@ -184,16 +189,17 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
       if (!query) return;
       // Student names in the answer: no browser or proxy may keep a copy.
       res.set("Cache-Control", "no-store");
-      res.json(await listOwnerComplaints(db, query));
+      res.json(await inHostel(req, (tx) => listOwnerComplaints(tx, query)));
       return;
     }
     const query = parseQuery(complaintListSchema, req, res);
     if (!query) return;
-    const [list, canRaise, photoUploadsAllowed] = await Promise.all([
-      listMyComplaints(db, req.user!.id, query),
-      getRaiseStatus(db, req.user!.id, limits),
-      storage ? getUsage(db, usageLimits, clock()).then((usage) => usage.uploadsAllowed) : false,
-    ]);
+    // One after the other: all three run on the request's one connection.
+    const { list, canRaise, photoUploadsAllowed } = await inHostel(req, async (tx) => ({
+      list: await listMyComplaints(tx, req.user!.id, query),
+      canRaise: await getRaiseStatus(tx, req.user!.id, limits),
+      photoUploadsAllowed: storage ? (await getUsage(tx, usageLimits, clock())).uploadsAllowed : false,
+    }));
     res.json({ ...list, canRaise, photoUploadsAllowed });
   });
 
@@ -206,12 +212,18 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
     if (id === undefined) return;
     res.set("Cache-Control", "no-store");
     if (req.user!.role === "owner") {
-      const detail = await getOwnerComplaint(db, id);
-      res.json({ ...detail, photo: await photoFor(id) });
+      const detail = await inHostel(req, async (tx) => ({
+        ...(await getOwnerComplaint(tx, id)),
+        photo: await photoFor(tx, id),
+      }));
+      res.json(detail);
       return;
     }
-    const detail = await getMyComplaint(db, req.user!.id, id);
-    res.json({ ...detail, photo: studentPhotoView(await photoFor(id)) });
+    const detail = await inHostel(req, async (tx) => ({
+      ...(await getMyComplaint(tx, req.user!.id, id)),
+      photo: studentPhotoView(await photoFor(tx, id)),
+    }));
+    res.json(detail);
   });
 
   // The owner's writes. Each answers with the owner's view of the complaint afterwards,
@@ -222,9 +234,12 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
     if (id === undefined) return;
     const body = parseBody(statusChangeSchema, req, res);
     if (!body) return;
-    const detail = await changeComplaintStatus(db, req.user!.id, id, body);
+    const detail = await inHostel(req, async (tx) => ({
+      ...(await changeComplaintStatus(tx, req.user!.id, id, body)),
+      photo: await photoFor(tx, id),
+    }));
     res.set("Cache-Control", "no-store");
-    res.json({ ...detail, photo: await photoFor(id) });
+    res.json(detail);
   });
 
   router.patch("/complaints/:id", auth, isOwner, async (req, res) => {
@@ -232,9 +247,12 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
     if (id === undefined) return;
     const body = parseBody(priorityChangeSchema, req, res);
     if (!body) return;
-    const detail = await setComplaintPriority(db, id, body.priority);
+    const detail = await inHostel(req, async (tx) => ({
+      ...(await setComplaintPriority(tx, id, body.priority)),
+      photo: await photoFor(tx, id),
+    }));
     res.set("Cache-Control", "no-store");
-    res.json({ ...detail, photo: await photoFor(id) });
+    res.json(detail);
   });
 
   router.post("/complaints/:id/notes", auth, isOwner, async (req, res) => {
@@ -242,9 +260,12 @@ export function complaintsRouter(deps: ComplaintsRouteDeps): Router {
     if (id === undefined) return;
     const body = parseBody(noteSchema, req, res);
     if (!body) return;
-    const detail = await addComplaintNote(db, req.user!.id, id, body.note);
+    const detail = await inHostel(req, async (tx) => ({
+      ...(await addComplaintNote(tx, req.user!.id, id, body.note)),
+      photo: await photoFor(tx, id),
+    }));
     res.set("Cache-Control", "no-store");
-    res.json({ ...detail, photo: await photoFor(id) });
+    res.json(detail);
   });
 
   return router;

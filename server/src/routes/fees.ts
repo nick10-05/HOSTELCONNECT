@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { hostelToday } from "../lib/dates";
 import { idParam, parseBody, parseQuery } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import { getMyFees, listFees, markFee } from "../services/fees";
 
 // Fees (design doc, sections 5 and 9): the owner's list for a month, marking a fee paid or
@@ -57,6 +57,7 @@ export function feesRouter(deps: FeesRouteDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
   const isStudent = requireRole("student");
 
   router.get("/fees", auth, isOwner, async (req, res) => {
@@ -65,16 +66,18 @@ export function feesRouter(deps: FeesRouteDeps): Router {
     const today = hostelToday(clock());
     res.set("Cache-Control", "no-store");
     res.json(
-      await listFees(
-        db,
-        {
-          month: query.month ?? today.slice(0, 7),
-          status: query.status ?? null,
-          buildingId: query.buildingId ?? null,
-          page: query.page,
-          limit: query.limit,
-        },
-        today,
+      await inHostel(req, (tx) =>
+        listFees(
+          tx,
+          {
+            month: query.month ?? today.slice(0, 7),
+            status: query.status ?? null,
+            buildingId: query.buildingId ?? null,
+            page: query.page,
+            limit: query.limit,
+          },
+          today,
+        ),
       ),
     );
   });
@@ -82,7 +85,7 @@ export function feesRouter(deps: FeesRouteDeps): Router {
   // Before /fees/:id/..., although the paths cannot clash; kept next to the list for reading.
   router.get("/fees/mine", auth, isStudent, async (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json(await getMyFees(db, req.user!.id, hostelToday(clock())));
+    res.json(await inHostel(req, (tx) => getMyFees(tx, req.user!.id, hostelToday(clock()))));
   });
 
   router.post("/fees/:id/status", auth, isOwner, async (req, res) => {
@@ -95,7 +98,7 @@ export function feesRouter(deps: FeesRouteDeps): Router {
       body.status === "paid"
         ? { status: "paid" as const, paidOn: body.paidOn ?? today, note: body.note ?? null }
         : { status: "pending" as const };
-    res.json(await markFee(db, id, req.user!.id, change, today));
+    res.json(await inHostel(req, (tx) => markFee(tx, id, req.user!.id, change, today)));
   });
 
   return router;

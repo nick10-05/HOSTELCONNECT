@@ -52,6 +52,36 @@ describe("withHostel", () => {
     }
   });
 
+  it("runs a service's own transaction as a savepoint: its rollback undoes only its part, and the hostel stays", async () => {
+    const single = testPoolOfOne();
+    try {
+      await single.query("CREATE TEMP TABLE steps (note text)");
+      await withHostel(single, 5, async (tx) => {
+        await tx.query("INSERT INTO steps VALUES ('before')");
+        // What a service does: its own connection, BEGIN, work, ROLLBACK on an error.
+        const c = await tx.connect();
+        await c.query("BEGIN");
+        await c.query("INSERT INTO steps VALUES ('undone')");
+        await expect(c.query("SELECT 1/0")).rejects.toMatchObject({ code: "22012" });
+        await c.query("ROLLBACK");
+        c.release();
+        // A service that commits keeps its part.
+        const d = await tx.connect();
+        await d.query("BEGIN");
+        await d.query("INSERT INTO steps VALUES ('kept')");
+        const inside = await d.query<{ hostel: string }>(hostelSetting);
+        expect(inside.rows[0].hostel).toBe("5");
+        await d.query("COMMIT");
+        d.release();
+        await tx.query("INSERT INTO steps VALUES ('after')");
+      });
+      const { rows } = await single.query("SELECT note FROM steps");
+      expect(rows.map((r) => r.note)).toEqual(["before", "kept", "after"]);
+    } finally {
+      await single.end();
+    }
+  });
+
   it("rolls back after a failed statement, so the connection goes back to the pool clean", async () => {
     await expect(
       withHostel(db, 1, async (c) => {

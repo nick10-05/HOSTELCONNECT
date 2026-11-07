@@ -6,7 +6,7 @@ import { HttpError } from "../src/lib/http";
 import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import * as students from "../src/services/students";
-import { insertOwner, insertStudent, testPool } from "./helpers/db";
+import { hostelTx, insertOwner, insertStudent, testPool } from "./helpers/db";
 
 // The HTTP layer of POST /api/students: who may call, input checks and cleaning, status
 // codes and the answer. The service is a mock here; tests/students.test.ts checks the
@@ -94,7 +94,7 @@ describe("POST /api/students", () => {
     expect(res.body).toEqual(admission);
     expect(res.headers["cache-control"]).toBe("no-store");
     // The owner's id comes from the session, never from the form.
-    expect(service.admitStudent).toHaveBeenCalledWith(db, owner, {
+    expect(service.admitStudent).toHaveBeenCalledWith(hostelTx(db), owner, {
       name: "Asha Rao",
       email: "asha@example.com",
       phone: "9876543210",
@@ -250,7 +250,7 @@ describe("GET /api/students", () => {
     const res = await get("");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [], total: 0 });
-    expect(service.listStudents).toHaveBeenCalledWith(db, {
+    expect(service.listStudents).toHaveBeenCalledWith(hostelTx(db), {
       search: null,
       buildingId: null,
       floorId: null,
@@ -301,7 +301,7 @@ describe("GET /api/students/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ student: { id: 7 } });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.getStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+    expect(service.getStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -348,7 +348,7 @@ describe("POST /api/students/:id/transfer", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ transfer: moved });
     expect(service.transferStudent).toHaveBeenCalledWith(
-      db,
+      hostelTx(db),
       owner,
       7,
       { buildingId: 2, roomId: 4, bedId: 9 },
@@ -426,7 +426,7 @@ describe("POST /api/students/:id/deactivate", () => {
     const res = await deactivate("7");
     expect(res.status).toBe(204);
     expect(res.text).toBe("");
-    expect(service.deactivateStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+    expect(service.deactivateStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -481,7 +481,7 @@ describe("POST /api/students/:id/reactivate", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(back);
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.reactivateStudent).toHaveBeenCalledWith(db, owner, 7, body);
+    expect(service.reactivateStudent).toHaveBeenCalledWith(hostelTx(db), owner, 7, body);
   });
 
   it("treats a missing room and bed as none, and accepts any past date or up to 30 days ahead", async () => {
@@ -559,7 +559,7 @@ describe("POST /api/students/:id/reset-password", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ temporaryPassword: "ABCD234567" });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.resetStudentPassword).toHaveBeenCalledWith(db, 7);
+    expect(service.resetStudentPassword).toHaveBeenCalledWith(hostelTx(db), 7);
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -624,7 +624,7 @@ describe("PATCH /api/students/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ student: { id: 7, name: "Asha Rao" } });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.updateStudent).toHaveBeenCalledWith(db, 7, {
+    expect(service.updateStudent).toHaveBeenCalledWith(hostelTx(db), 7, {
       name: "Asha Rao",
       email: "asha@example.com",
       phone: "9876543210",
@@ -639,7 +639,7 @@ describe("PATCH /api/students/:id", () => {
       vegDays: [2, 6],
       monthlyFee: 6500,
     });
-    expect(service.getStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+    expect(service.getStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("treats a missing fee as not set", async () => {

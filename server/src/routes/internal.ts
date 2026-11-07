@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
-import type { Db } from "../db";
+import { withHostel, type Db } from "../db";
 import { sendDailyDigest } from "../jobs/digest";
 import { expirePhotos } from "../jobs/expirePhotos";
 import { sendFeeReminders } from "../jobs/feeReminders";
@@ -30,6 +30,16 @@ export type InternalRouteDeps = {
 // they run without FEES_START_DATE too, as they only look at rows that exist. Pruning comes
 // last. Any failure answers 500 (decided on day 9), and GitHub emails about the failed run.
 // The answer holds counts only, never a path or a link.
+//
+// Multi-tenant (phase 2b): the jobs run for every hostel in turn, oldest first, each
+// hostel's in transactions marked with it (withHostel), and the answer adds the counts
+// up. A hostel whose jobs fail does not stop the others: the error is logged with the
+// hostel's id, the next hostel runs, and the call answers 500 at the end. Until phase 5
+// reads hostels.fees_start_date, FEES_START_DATE is hostel #1's only, so no other
+// hostel gets fee rows yet.
+// FEES_START_DATE's hostel, until phase 5 gives each hostel its own start date.
+const FEES_START_DATE_HOSTEL = 1;
+
 export function internalRouter(deps: InternalRouteDeps): Router {
   const { db, jobSecret, feesStartDate, storage, clock } = deps;
   const router = Router();
@@ -50,12 +60,39 @@ export function internalRouter(deps: InternalRouteDeps): Router {
   router.post("/internal/run-jobs", limiter, requireJobSecret(jobSecret), async (_req, res) => {
     res.set("Cache-Control", "no-store");
     const now = clock();
-    const expired = await expirePhotos(db, storage, { now });
     const today = hostelToday(now);
-    const feeRows = feesStartDate ? await createDueFeeRows(db, { today, startDate: feesStartDate }) : null;
-    const feeReminders = await sendFeeReminders(db, { today });
-    const digest = await sendDailyDigest(db, { now });
-    const pruned = await pruneNotifications(db, { now });
+    const expired = { deleted: 0, failed: 0 };
+    const feeRows = feesStartDate ? { created: 0 } : null;
+    const feeReminders = { created: 0 };
+    const digest = { created: 0 };
+    const pruned = { deleted: 0 };
+    let failedHostels = 0;
+
+    const { rows: hostels } = await db.query<{ id: number }>("SELECT id FROM hostels ORDER BY id");
+    for (const { id: hostelId } of hostels) {
+      try {
+        // Photos first and on their own: each photo is its own transaction.
+        const photos = await expirePhotos(db, storage, { hostelId, now });
+        expired.deleted += photos.deleted;
+        expired.failed += photos.failed;
+        await withHostel(db, hostelId, async (tx) => {
+          if (feeRows && hostelId === FEES_START_DATE_HOSTEL) {
+            feeRows.created += (await createDueFeeRows(tx, { today, startDate: feesStartDate! })).created;
+          }
+          feeReminders.created += (await sendFeeReminders(tx, { today })).created;
+          digest.created += (await sendDailyDigest(tx, { now })).created;
+          pruned.deleted += (await pruneNotifications(tx, { now })).deleted;
+        });
+      } catch (err) {
+        failedHostels += 1;
+        console.error(`run-jobs: the jobs of hostel ${hostelId} failed`, err);
+      }
+    }
+
+    if (failedHostels > 0) {
+      sendError(res, 500, "jobs_failed", `The jobs of ${failedHostels} hostel(s) failed.`);
+      return;
+    }
     res.json({ expirePhotos: expired, feeRows, feeReminders, digest, pruned });
   });
 

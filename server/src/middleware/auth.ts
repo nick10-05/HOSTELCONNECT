@@ -1,6 +1,6 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
-import type { Db } from "../db";
+import { withHostel, type Db } from "../db";
 
 import { verifySession, type Role } from "../lib/token";
 
@@ -138,5 +138,15 @@ export function requireRole(role: Role): RequestHandler {
     }
 
     next();
+  };
+}
+// For routes: runs fn inside withHostel for the signed-in user's hostel (multi-tenant
+// phase 2b). Pass `tx` to services in place of db. Only after requireAuth, which sets
+// req.user.hostelId from the database; the hostel never comes from the request itself.
+// The answer is sent after this returns, so it is sent only once the work is committed.
+export function hostelWork(db: Db) {
+  return <T>(req: Request, fn: (tx: Db) => Promise<T>): Promise<T> => {
+    if (!req.user) throw new Error("hostelWork runs only after requireAuth");
+    return withHostel(db, req.user.hostelId, fn);
   };
 }

@@ -7,7 +7,7 @@ import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import * as rejoin from "../src/services/rejoin";
 import type { Admission } from "../src/services/students";
-import { insertOwner, insertStudent, testPool } from "./helpers/db";
+import { hostelTx, insertOwner, insertStudent, testPool } from "./helpers/db";
 
 // The HTTP layer of the owner's review: who may call, input checks, status codes and the
 // answer. The services are mocks here; tests/rejoinReview.test.ts checks them against
@@ -54,7 +54,7 @@ describe("GET /api/rejoin-requests", () => {
     const res = await get("");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [], total: 0 });
-    expect(service.listRejoinRequests).toHaveBeenCalledWith(db, { status: "pending", page: 1, limit: 20 });
+    expect(service.listRejoinRequests).toHaveBeenCalledWith(hostelTx(db), { status: "pending", page: 1, limit: 20 });
   });
 
   it("passes the status and paging on", async () => {
@@ -93,7 +93,7 @@ describe("POST /api/rejoin-requests/:id/approve", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(approved);
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.approveRejoinRequest).toHaveBeenCalledWith(db, owner, 3, body);
+    expect(service.approveRejoinRequest).toHaveBeenCalledWith(hostelTx(db), owner, 3, body);
   });
 
   it.each([
@@ -136,7 +136,7 @@ describe("POST /api/rejoin-requests/:id/reject", () => {
     const owner = await insertOwner(db);
     const res = await request(app).post("/api/rejoin-requests/3/reject").set("Cookie", cookieFor(owner, "owner")).send({});
     expect(res.status).toBe(204);
-    expect(service.rejectRejoinRequest).toHaveBeenCalledWith(db, owner, 3);
+    expect(service.rejectRejoinRequest).toHaveBeenCalledWith(hostelTx(db), owner, 3);
   });
 
   it("passes the service's refusal on", async () => {

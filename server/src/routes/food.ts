@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { hostelToday } from "../lib/dates";
 import { parseQuery } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import { getFoodCounts } from "../services/food";
 
 // GET /api/food-counts?date=YYYY-MM-DD&pollId=3 (design doc, sections 5 and 9): the owner's
@@ -23,13 +23,14 @@ export function foodRouter(deps: FoodRouteDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
   router.get("/food-counts", auth, isOwner, async (req, res) => {
     const query = parseQuery(foodCountsQuerySchema, req, res);
     if (!query) return;
     // Counts change with every admission and move: the browser must always ask again.
     res.set("Cache-Control", "no-store");
-    res.json(await getFoodCounts(db, query.date ?? hostelToday(clock()), query.pollId ?? null));
+    res.json(await inHostel(req, (tx) => getFoodCounts(tx, query.date ?? hostelToday(clock()), query.pollId ?? null)));
   });
 
   return router;

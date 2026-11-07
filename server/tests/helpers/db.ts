@@ -13,11 +13,21 @@ export function testPool(): Db {
 }
 
 // Runs fn inside a transaction that is always rolled back, for tests that only need
-// rows inside their own connection.
-export async function inRollback(db: Db, fn: (c: PoolClient) => Promise<void>): Promise<void> {
+// rows inside their own connection. The transaction works in hostel #1, as withHostel
+// would mark it (multi-tenant phase 2b), unless the test names another hostel.
+export async function inRollback(
+  db: Db,
+  fn: (c: PoolClient) => Promise<void>,
+  { hostelId = 1, repeatableRead = false }: { hostelId?: number; repeatableRead?: boolean } = {},
+): Promise<void> {
   const client = await db.connect();
   try {
-    await client.query("BEGIN");
+    await client.query(repeatableRead ? "BEGIN ISOLATION LEVEL REPEATABLE READ" : "BEGIN");
+    // SET LOCAL, not SELECT set_config(): a SET takes no snapshot, so a REPEATABLE READ
+    // snapshot (inSnapshot) still begins with the test's own first query. The id is a
+    // number from the test itself, never outside input.
+    if (!Number.isSafeInteger(hostelId) || hostelId < 1) throw new Error(`bad hostel id ${hostelId}`);
+    await client.query(`SET LOCAL app.hostel_id = '${hostelId}'`);
     await fn(client);
   } finally {
     await client.query("ROLLBACK");
@@ -77,7 +87,6 @@ export async function inSnapshot(db: Db, fn: (c: PoolClient) => Promise<void>): 
     let refused = false;
     try {
       await inRollback(db, async (client) => {
-        await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
         // The same client, except that query() notes a serialization failure.
         const watched = Object.create(client) as PoolClient;
         const query = client.query as (...args: unknown[]) => Promise<unknown>;
@@ -87,7 +96,7 @@ export async function inSnapshot(db: Db, fn: (c: PoolClient) => Promise<void>): 
             throw err;
           })) as PoolClient["query"];
         await fn(watched);
-      });
+      }, { repeatableRead: true });
       return;
     } catch (err) {
       if (!refused || attempt >= SNAPSHOT_ATTEMPTS) throw err;
@@ -121,17 +130,20 @@ type UserOptions = {
   passwordHash?: string;
   mustChangePassword?: boolean;
   isActive?: boolean;
+  // Hostel #1 when not given.
+  hostelId?: number;
 };
 
 export async function insertOwner(c: Queryable, opts: UserOptions = {}): Promise<number> {
   const { rows } = await c.query<{ id: number }>(
-    `INSERT INTO users (role, name, email, password_hash, must_change_password, is_active)
-     VALUES ('owner', 'Test Owner', $1, $2, $3, $4) RETURNING id`,
+    `INSERT INTO users (role, name, email, password_hash, must_change_password, is_active, hostel_id)
+     VALUES ('owner', 'Test Owner', $1, $2, $3, $4, $5) RETURNING id`,
     [
       `owner-${randomUUID()}@test.local`,
       opts.passwordHash ?? "not-a-real-hash",
       opts.mustChangePassword ?? false,
       opts.isActive ?? true,
+      opts.hostelId ?? 1,
     ],
   );
   return rows[0].id;
@@ -140,14 +152,15 @@ export async function insertOwner(c: Queryable, opts: UserOptions = {}): Promise
 export async function insertStudent(c: Queryable, opts: UserOptions = {}): Promise<number> {
   const { rows } = await c.query<{ id: number }>(
     `INSERT INTO users (role, name, email, password_hash, must_change_password, is_active,
-                        phone, parent_phone, category, joining_date, food_preference)
+                        phone, parent_phone, category, joining_date, food_preference, hostel_id)
      VALUES ('student', 'Test Student', $1, $2, $3, $4,
-             '9000000000', '9000000001', 'other', '2026-01-14', 'veg') RETURNING id`,
+             '9000000000', '9000000001', 'other', '2026-01-14', 'veg', $5) RETURNING id`,
     [
       `student-${randomUUID()}@test.local`,
       opts.passwordHash ?? "not-a-real-hash",
       opts.mustChangePassword ?? false,
       opts.isActive ?? true,
+      opts.hostelId ?? 1,
     ],
   );
   return rows[0].id;
@@ -185,4 +198,16 @@ export async function insertStay(
     [student, at.building, at.room ?? null, at.bed ?? null, at.endedOn ?? null, owner],
   );
   return rows[0].id;
+}
+
+// For route tests with mocked services: matches what a route hands a service when it runs
+// it inside withHostel (multi-tenant phase 2b): a database handle that is not the pool
+// itself, so a service called with the bare pool fails the test.
+export function hostelTx(pool: unknown) {
+  return {
+    asymmetricMatch: (actual: unknown) =>
+      actual !== pool && typeof (actual as { query?: unknown } | null)?.query === "function",
+    toString: () => "hostelTx",
+    toAsymmetricMatcher: () => "hostelTx (a withHostel transaction, not the pool)",
+  };
 }

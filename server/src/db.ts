@@ -1,4 +1,5 @@
 import { Pool, types, type PoolClient } from "pg";
+import { savepointDb } from "./lib/savepoints";
 
 export type Db = Pool;
 // What a service function needs: the pool, or one client inside a transaction.
@@ -41,18 +42,19 @@ export function createPool(connectionString: string): Db {
 //   connection goes back to the pool clean either way.
 // - The hostel id comes from the signed-in user's row (requireAuth), never from the
 //   request; anything but a positive whole number is refused before connecting.
-export async function withHostel<T>(db: Db, hostelId: number, fn: (c: PoolClient) => Promise<T>): Promise<T> {
-  if (!Number.isSafeInteger(hostelId) || hostelId < 1) {
-    throw new Error(`withHostel: the hostel id must be a positive whole number, got ${hostelId}`);
-  }
+// - fn gets `tx`, a stand-in for the pool on this one connection (src/lib/savepoints.ts):
+//   pass it to services in place of db. A service that opens its own transaction runs
+//   it as a savepoint inside this one, so its rollback still undoes only its own part.
+export async function withHostel<T>(db: Db, hostelId: number, fn: (tx: Db) => Promise<T>): Promise<T> {
+  checkHostelId(hostelId);
   const client = await db.connect();
   // Set when even ROLLBACK fails (a dropped connection): the pool then discards the
   // connection instead of handing it, in an unknown state, to the next request.
   let broken: Error | undefined;
   try {
     await client.query("BEGIN");
-    await client.query("SELECT set_config('app.hostel_id', $1, true)", [String(hostelId)]);
-    const result = await fn(client);
+    await markHostel(client, hostelId);
+    const result = await fn(savepointDb(client, "hostel_tx"));
     await client.query("COMMIT");
     return result;
   } catch (err) {
@@ -64,5 +66,20 @@ export async function withHostel<T>(db: Db, hostelId: number, fn: (c: PoolClient
     throw err;
   } finally {
     client.release(broken);
+  }
+}
+
+// Marks the transaction already open on `c` with its hostel, until it ends: what withHostel
+// does after BEGIN. For the few scripts that manage their own transaction on one
+// connection (scripts/importStudents.ts, scripts/seedStudents.ts); everything else uses
+// withHostel.
+export async function markHostel(c: Queryable, hostelId: number): Promise<void> {
+  checkHostelId(hostelId);
+  await c.query("SELECT set_config('app.hostel_id', $1, true)", [String(hostelId)]);
+}
+
+function checkHostelId(hostelId: number): void {
+  if (!Number.isSafeInteger(hostelId) || hostelId < 1) {
+    throw new Error(`withHostel: the hostel id must be a positive whole number, got ${hostelId}`);
   }
 }
