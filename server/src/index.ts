@@ -24,6 +24,9 @@ const app = createApp({
   photoMaxBytes: config.PHOTO_MAX_BYTES,
   photoLinkSeconds: config.PHOTO_LINK_SECONDS,
   usageLimits: { storageLimitMb: config.STORAGE_LIMIT_MB, egressLimitMb: config.EGRESS_LIMIT_MB },
+  // Already https with no path (config), so it is the origin photo links point to.
+  photoOrigin: config.SUPABASE_URL ?? null,
+  cspReportOnly: config.CSP_REPORT_ONLY,
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

@@ -4,7 +4,8 @@ import { Segmented } from "./ListParts";
 
 // Light or dark mode. "system" follows the phone's own setting (the default); "light" and
 // "dark" are the person's own choice, kept on this device only (never sent to the server).
-// index.html applies a saved choice before the page first paints, so there is no flash.
+// public/theme-init.js applies a saved choice before the page first paints, so there is
+// no flash; it reads the same storage key and colours as below.
 
 export type ThemeChoice = "system" | "light" | "dark";
 

@@ -7,6 +7,7 @@ import { sendError } from "./lib/http";
 import type { PhotoStorage } from "./lib/storage";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
+import { securityHeaders } from "./middleware/securityHeaders";
 import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { complaintsRouter } from "./routes/complaints";
@@ -50,6 +51,11 @@ export type AppDeps = {
   // The time the jobs run at, the usage guard reads its month from and the food counts
   // take India's today from, as do the fee routes; tests pass a fixed one.
   clock?: () => Date;
+  // The origin complaint photos are shown from (SUPABASE_URL), allowed by the Content
+  // Security Policy; null or missing when photo storage is off.
+  photoOrigin?: string | null;
+  // CSP_REPORT_ONLY: browsers only report policy breaks instead of blocking them.
+  cspReportOnly?: boolean;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -70,12 +76,16 @@ export function createApp({
   photoLinkSeconds = 60,
   usageLimits = DEFAULT_USAGE_LIMITS,
   clock = () => new Date(),
+  photoOrigin = null,
+  cspReportOnly = false,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
   // Render puts one proxy in front of the app. Trusting exactly that one hop lets the
   // rate limiter see each visitor's real IP instead of the proxy's.
   if (production) app.set("trust proxy", 1);
+  // First, so every answer carries them: pages, files, the API and errors.
+  app.use(securityHeaders({ production, photoOrigin, reportOnly: cspReportOnly }));
   // Before the body parser, so a refused write is not even read.
   app.use("/api", requireSameOrigin);
   app.use(express.json({ limit: "100kb" }));

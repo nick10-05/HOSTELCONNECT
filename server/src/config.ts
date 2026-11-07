@@ -68,6 +68,11 @@ const fields = z.object({
   // fee-rows job creates nothing; production runs without it until the real register is
   // imported.
   FEES_START_DATE: optional(z.iso.date("must be a date written as YYYY-MM-DD")),
+
+  // "true" sends the Content Security Policy as report-only: browsers warn in the console
+  // instead of blocking. For trying the policy on the live site before enforcing it.
+  CSP_REPORT_ONLY: optional(z.enum(["true", "false"], "must be true or false"))
+    .transform((value) => value === "true"),
 });
 
 // Settings that only make sense together, or that production cannot run without: a

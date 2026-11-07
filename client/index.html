@@ -7,19 +7,7 @@
     <meta name="theme-color" content="#09090c" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <title>HostelConnect</title>
-    <script>
-      // Apply a saved light/dark choice before the first paint (see src/ui/theme.tsx).
-      try {
-        var t = localStorage.getItem("hc-theme");
-        if (t === "light" || t === "dark") {
-          document.documentElement.dataset.theme = t;
-          document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
-            m.dataset.default = m.content;
-            m.content = t === "dark" ? "#09090c" : "#fafafb";
-          });
-        }
-      } catch (e) {}
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

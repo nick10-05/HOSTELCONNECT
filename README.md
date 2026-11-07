@@ -155,6 +155,9 @@ flowchart LR
 - The app's database role cannot drop or truncate tables; migrations use a separate
   credential that is not on the server.
 - Parameterised SQL only; Zod on every body and query; same-origin check on every write.
+- A strict Content Security Policy on every response (scripts, styles and fonts from the
+  site itself only, no inline scripts, no framing by other sites), plus HSTS, `nosniff`
+  and a same-origin referrer policy.
 - Uploads checked by their content, not their name; photos in a private bucket, reached
   only through 60-second signed links that stop at the 48-hour mark.
 - Usage guard: photo uploads switch off at 85% of the free storage or bandwidth limit.

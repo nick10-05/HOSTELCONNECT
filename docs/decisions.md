@@ -38,7 +38,7 @@ My main security concern is students deliberately trying to hack or damage Hoste
 
 **Someone deleting or damaging hostel records.** The app's database account cannot drop or truncate tables, and it cannot delete users, beds or stays at all. Database changes are made with a separate account that is not stored on the server. Every query uses parameters and every input is validated, so typed text cannot change a query. If something still goes wrong, the encrypted backups in Section 7 allow the records to be restored.
 
-I understand that no application can guarantee protection against every possible attack. Our goal is to reduce realistic risks and protect sensitive hostel data. For example, there is no two-factor login for the owner and no content security policy yet.
+I understand that no application can guarantee protection against every possible attack. Our goal is to reduce realistic risks and protect sensitive hostel data. For example, there is no two-factor login for the owner. The browser now also gets a Content Security Policy: the page may run scripts, styles and fonts only from HostelConnect itself, with no inline scripts, so even if someone managed to slip HTML into a notice or complaint, the browser would refuse to run it.
 
 ## 6. Money stays outside the app
 
@@ -71,12 +71,13 @@ Since Day 10, the two improvements I ranked highest have been built and deployed
 
 The second production user has also been checked: it was a test student, and it has been moved out.
 
+The Content Security Policy, first on my list, is built too. It goes live in report-only mode first (browsers only warn), and is enforced once the live site shows no warnings.
+
 What remains, in order of their impact on actual hostel operations:
 
-1. **Content Security Policy (CSP):** Add this as an additional layer of browser-side security.
-2. **PWA support:** This would make HostelConnect easier to access and use like an installable app on phones.
-3. **Aadhaar:** I haven't decided whether this is necessary. I don't want to collect sensitive identity information without a clear operational reason.
-4. **Editing the joining date:** This would need a database change and rules for fees that already exist, so I would only add it if it is actually needed.
+1. **PWA support:** This would make HostelConnect easier to access and use like an installable app on phones.
+2. **Aadhaar:** I haven't decided whether this is necessary. I don't want to collect sensitive identity information without a clear operational reason.
+3. **Editing the joining date:** This would need a database change and rules for fees that already exist, so I would only add it if it is actually needed.
 
 These are planned improvements, not features that currently exist.
 
