@@ -964,6 +964,18 @@ browser is signed in as the owner.
 
 ### Notes for later days
 
-- The README screenshots still show the earlier look; retake them after deploying.
+- README screenshots retaken by Nikhil after the deployment (owner pages in light at
+  laptop width, student pages in dark at phone size, local demo data).
 - Not checked on a real phone yet (only the browser's phone-size view).
-- Deployed: not yet.
+- Deployed on 2026-11-07 (see "Deployment" below).
+
+### Deployment (2026-11-07, UTC)
+
+| Step | Evidence |
+|---|---|
+| Pushed on `redesign-foundations` | `202a686` (code) and `c38132a` (docs), author nick10-05, no co-author line |
+| Before the merge | No migration, so no backup-then-migrate step; no new Render or GitHub settings |
+| Merge into `main` | Through GitHub pull request #14, as merge commit `250c4e9` at 11:54, opened and merged by Nikhil |
+| CI on `main` | Run #75 on `250c4e9`: green (1 min 12 s) |
+| Live site | `/api/health` answers `{"status":"ok"}`; the page now carries the light/dark script from `index.html` (`hc-theme`), which the earlier build did not have, so the new client is served. Checked with plain requests only: no login, no data touched |
+| Owner check | Not done yet: the owner looks at the live site on a phone, in light and dark, and tries the Automatic/Light/Dark switch |
