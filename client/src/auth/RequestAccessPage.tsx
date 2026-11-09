@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
+import { signInPath, type Hostel } from "../api/hostels";
 import { requestAccess } from "../api/rejoin";
 import { buttonClass, fieldClass } from "../ui";
 import { AuthShell, authCardClass } from "../ui/AuthShell";
@@ -12,7 +13,9 @@ export const MESSAGE_LIMIT = 500;
 
 const inputClass = `${fieldClass} mt-1`;
 
-export function RequestAccessPage() {
+// `hostel`: the hostel whose address this page is at, /h/<slug>/request-access. Without
+// one, the page at the old address, which asks hostel #1 (until phase 6).
+export function RequestAccessPage({ hostel }: { hostel?: Hostel & { slug: string } } = {}) {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -29,7 +32,7 @@ export function RequestAccessPage() {
     setSubmitting(true);
     setError(null);
     try {
-      setAnswer(await requestAccess(email.trim(), message.trim()));
+      setAnswer(await requestAccess(email.trim(), message.trim(), hostel?.slug));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       setSubmitting(false);
@@ -37,7 +40,10 @@ export function RequestAccessPage() {
   }
 
   return (
-    <AuthShell title="Request access" subtitle="For former residents who would like to come back">
+    <AuthShell
+      title="Request access"
+      subtitle={hostel ? `For former residents of ${hostel.name} who would like to come back` : "For former residents who would like to come back"}
+    >
 
         {answer ? (
           <div className={`${authCardClass} space-y-4`}>
@@ -108,7 +114,7 @@ export function RequestAccessPage() {
 
         <p className="mt-6 text-center text-sm">
           {/* A plain link: the sign-in page is the same app, loaded fresh. */}
-          <a href="/" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+          <a href={hostel ? signInPath(hostel.slug) : "/"} className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Back to sign in
           </a>
         </p>

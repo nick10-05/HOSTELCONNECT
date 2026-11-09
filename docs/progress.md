@@ -1202,3 +1202,38 @@ Not caught:
 - One owner per hostel moves to phase 4 (sign-up), where each new hostel gets its owner;
   the tests still create many owners in hostel #1.
 - `hostels` and `usage_counters` have no policies: they belong to no hostel.
+
+## Multi-tenant SaaS, phase 3a: each hostel's own address (2026-11-07)
+
+Phase 3 is in two parts: 3a gives every hostel its own sign-in and request-access pages,
+3b lets owners sign in with Google. In 3a the hostel comes from the page's address,
+`/h/<slug>/`, never from anything else in the request.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Hostel #1's address, `sns-hostel` (migration `019_hostel_one_slug.sql`) | Nikhil chose it; Claude | Done | Set only if still unset |
+| `GET /api/hostels/:slug` | Claude, at Nikhil's request | Done | Public: the hostel's name and address only; an unknown, malformed or suspended address answers 404 `hostel_not_found` |
+| Sign-in and the request form name their hostel | Claude | Done | `POST /api/auth/login` and `POST /api/rejoin-requests` take `hostel` (the slug). The same email may belong to accounts in two hostels; each address signs in only its own. An unknown or suspended hostel gets the wrong-password answer at sign-in. Without `hostel`, both still mean hostel #1, for the old pages, until phase 6 |
+| `/me` names the hostel | Claude | Done | `{ user, hostel: { name, slug } }` |
+| Client pages `/h/<slug>/login` and `/h/<slug>/request-access` | Claude | Done | Show the hostel's name; an unknown address says "No hostel here"; `/h/<slug>` leads to the sign-in page; signing out leads to the user's own hostel's sign-in page; the temporary-password card tells the owner the address their students sign in at |
+| Tests | Claude | Done | `hostelSignIn.test.ts` (11 tests), `HostelAddress.test.tsx` (7 tests). `tests/helpers/rollbackDb.ts` now puts the test's hostel mark back when one of the app's transactions ends, as a real transaction's mark ends with it: run-jobs, which visits every hostel, had left the last one's mark behind |
+
+Checks: server 1159 tests (1148 before), client 388 (381 before), both typechecks clean.
+Twelve planted bugs, all caught after one new test: at first, an unknown address that
+fell back to hostel #1 was missed, so a test now checks that a hostel #1 account cannot
+sign in through an unknown or suspended address. Checked in the browser (built client
+against the test database): `/h/sns-hostel` leads to the sign-in page, an unknown address
+says so, the request page names the hostel, and signing out lands on the user's hostel's
+page.
+
+### Notes for later days
+
+- Deployment: 019 goes with 016 to 018, after the code. Until the new client is live,
+  students keep using the old address, which still means hostel #1.
+- Hostel #1 is still named "HostelConnect", the placeholder from migration 013, so its
+  page says "Sign in to HostelConnect" until the owner renames it (phase 4).
+- 3b: Google sign-in for owners (server-side code flow with PKCE, keyed on Google's
+  `sub`), linking Google to Nikhil's existing owner account, then dropping its password.
+  Needs Nikhil's Google OAuth client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+- Phase 6 removes the requests that name no hostel, and the old `/login` and
+  `/request-access` pages.

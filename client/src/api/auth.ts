@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import type { Hostel } from "./hostels";
 
 // What the server returns for the logged-in user. The auth routes (next server
 // step) must answer with exactly this shape.
@@ -9,20 +10,22 @@ export type User = {
   mustChangePassword: boolean;
 };
 
-// POST /api/auth/login: sets the session cookie and returns the user.
+// POST /api/auth/login: sets the session cookie and returns the user. `hostel` is the
+// slug of the sign-in page's address; without it the server means hostel #1.
 // Wrong email or password: 401 "invalid_credentials"; too many attempts: 429.
-export async function login(email: string, password: string): Promise<User> {
+export async function login(email: string, password: string, hostel?: string): Promise<User> {
   const { user } = await apiFetch<{ user: User }>("/api/auth/login", {
     method: "POST",
-    body: { email, password },
+    body: hostel === undefined ? { email, password } : { hostel, email, password },
   });
   return user;
 }
 
-// GET /api/auth/me: the current user, or a 401 ApiError when not logged in.
-export async function me(): Promise<User> {
-  const { user } = await apiFetch<{ user: User }>("/api/auth/me");
-  return user;
+// GET /api/auth/me: the current user and their hostel, or a 401 ApiError when not
+// logged in.
+export async function me(): Promise<{ user: User; hostel: Hostel | null }> {
+  const { user, hostel } = await apiFetch<{ user: User; hostel?: Hostel }>("/api/auth/me");
+  return { user, hostel: hostel ?? null };
 }
 
 // POST /api/auth/change-password: returns the user with mustChangePassword false.

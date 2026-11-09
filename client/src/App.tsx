@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { logout, me, type User } from "./api/auth";
+import { signInPath, type Hostel } from "./api/hostels";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
+import { HostelContext } from "./auth/hostel";
+import { HostelAddress } from "./auth/HostelAddress";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { NotificationBell } from "./components/NotificationBell";
@@ -44,21 +47,36 @@ import {
 import { ToastProvider } from "./ui/Toast";
 import { ThemeSwitch } from "./ui/theme";
 
-type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
+type Session =
+  | { status: "loading" }
+  | { status: "anonymous" }
+  | { status: "signed-in"; user: User; hostel: Hostel | null };
 
 export function App() {
   const [session, setSession] = useState<Session>({ status: "loading" });
+  const navigate = useNavigate();
 
   // The cookie is httpOnly, so JavaScript cannot see it: ask the server who we are.
-  useEffect(() => {
+  const loadSession = () =>
     me()
-      .then((user) => setSession({ status: "signed-in", user }))
+      .then(({ user, hostel }) => setSession({ status: "signed-in", user, hostel }))
       .catch(() => setSession({ status: "anonymous" }));
+  useEffect(() => {
+    void loadSession();
   }, []);
 
-  const signIn = (user: User) => setSession({ status: "signed-in", user });
+  // Signing in or choosing a password: ask again, for the hostel as well as the user.
+  const signIn = (user: User) => {
+    setSession((s) => ({ status: "signed-in", user, hostel: s.status === "signed-in" ? s.hostel : null }));
+    void loadSession();
+  };
+  // Signed out, back to the sign-in page of the user's own hostel.
   const signOut = () => {
-    void logout().finally(() => setSession({ status: "anonymous" }));
+    const slug = session.status === "signed-in" ? session.hostel?.slug : null;
+    void logout().finally(() => {
+      setSession({ status: "anonymous" });
+      if (slug) navigate(signInPath(slug), { replace: true });
+    });
   };
 
   if (session.status === "loading") {
@@ -76,13 +94,24 @@ export function App() {
   if (session.status === "anonymous") {
     return (
       <Routes>
+        {/* Each hostel's own pages (phase 3a): the hostel comes from the address. */}
+        <Route
+          path="/h/:slug/login"
+          element={<HostelAddress>{(h) => <LoginPage onLoggedIn={signIn} hostel={withSlug(h)} />}</HostelAddress>}
+        />
+        <Route
+          path="/h/:slug/request-access"
+          element={<HostelAddress>{(h) => <RequestAccessPage hostel={withSlug(h)} />}</HostelAddress>}
+        />
+        <Route path="/h/:slug" element={<SlugRedirect />} />
+        {/* The old addresses: hostel #1's pages, until phase 6. */}
         <Route path="/request-access" element={<RequestAccessPage />} />
         <Route path="*" element={<LoginPage onLoggedIn={signIn} />} />
       </Routes>
     );
   }
 
-  const { user } = session;
+  const { user, hostel } = session;
 
   // A temporary password unlocks nothing else (the server enforces the same rule).
   if (user.mustChangePassword) {
@@ -92,6 +121,7 @@ export function App() {
   // The owner's pages, or the student's (complaints, notices, the return poll and fees).
   // On a phone the menu is a tab bar floating at the bottom; from md up it is a sidebar.
   return (
+    <HostelContext.Provider value={hostel}>
     <ToastProvider>
       <div className="min-h-dvh bg-app">
         <header className="sticky top-0 z-40 px-3 pt-2.5 md:px-6">
@@ -167,7 +197,17 @@ export function App() {
         </div>
       </div>
     </ToastProvider>
+    </HostelContext.Provider>
   );
+}
+
+// The hostel found at /h/<slug>/ always has that slug.
+const withSlug = (h: Hostel) => ({ ...h, slug: h.slug ?? "" });
+
+// /h/<slug> on its own: the hostel's sign-in page.
+function SlugRedirect() {
+  const { pathname } = useLocation();
+  return <Navigate to={`${pathname.replace(/\/+$/, "")}/login`} replace />;
 }
 
 // The menu: a floating glass tab bar on a phone, a sidebar from md up.

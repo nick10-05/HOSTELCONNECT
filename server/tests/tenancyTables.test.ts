@@ -45,7 +45,7 @@ async function newHostel(c: Parameters<Parameters<typeof inRollback>[1]>[0], nam
 }
 
 describe("hostels", () => {
-  it("holds hostel #1 for today's data: HostelConnect, active, no slug yet, the beta limits", () =>
+  it("holds hostel #1 for today's data: HostelConnect, active, at sns-hostel (migration 019), the beta limits", () =>
     inRollback(db, async (c) => {
       const { rows } = await c.query(
         `SELECT id, name, slug, status, student_limit, building_limit, fees_start_date
@@ -55,7 +55,7 @@ describe("hostels", () => {
         {
           id: 1,
           name: "HostelConnect",
-          slug: null,
+          slug: "sns-hostel",
           status: "active",
           student_limit: 300,
           building_limit: 20,
@@ -89,7 +89,7 @@ describe("hostels", () => {
 
   it("takes a slug for its students' address: 3 to 40 lowercase letters, digits and single hyphens", () =>
     inRollback(db, async (c) => {
-      for (const slug of ["abc", "sns-hostel", "a1b", "hostel-2", `a${"b".repeat(38)}c`]) {
+      for (const slug of ["abc", "sns-hostel-2", "a1b", "hostel-2", `a${"b".repeat(38)}c`]) {
         await c.query("INSERT INTO hostels (name, slug) VALUES ('H', $1)", [slug]);
       }
       for (const slug of ["ab", "-abc", "abc-", "ABC", "a b", "a--b", "a_b", "abc/", `a${"b".repeat(39)}c`]) {

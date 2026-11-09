@@ -6,6 +6,7 @@ import { parseBody, sendError } from "../lib/http";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { SESSION_TTL_SECONDS, signSession, type Role } from "../lib/token";
 import { hostelWork, requireAuth, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
+import { activeHostelBySlug, slugSchema } from "../services/hostels";
 
 export type AuthRouteDeps = AuthDeps & {
   // true in production (HTTPS): the browser then sends the cookie only over HTTPS.
@@ -13,6 +14,8 @@ export type AuthRouteDeps = AuthDeps & {
 };
 
 const loginSchema = z.object({
+  // The address of the sign-in page, /h/<slug>/login. Missing: hostel #1 (see below).
+  hostel: slugSchema.optional(),
   email: z.string().trim().min(1, "is required").max(254),
   password: z.string().min(1, "is required").max(200),
 });
@@ -38,9 +41,10 @@ function publicUser(row: UserRow) {
   return { id: row.id, name: row.name, role: row.role, mustChangePassword: row.must_change_password };
 }
 
-// Until phase 3 gives each hostel its own sign-in page, password sign-in is for hostel #1,
-// where every existing account is. Owners of new hostels sign in with Google (phase 3).
-const PASSWORD_SIGN_IN_HOSTEL = 1;
+// Password sign-in names its hostel by the sign-in page's address (phase 3a). A request
+// without one is from the sign-in page as it was before, which was hostel #1's, where
+// every account then was: it means hostel #1 until phase 6 removes that.
+const UNNAMED_SIGN_IN_HOSTEL = 1;
 
 // A hash of a random password nobody knows, made once. Login compares against it when
 // the email is unknown, so "no such email" takes as long as "wrong password" and the
@@ -80,12 +84,19 @@ export function authRouter(deps: AuthRouteDeps): Router {
       const body = parseBody(loginSchema, req, res);
       if (!body) return;
 
+      // The hostel at the page's address; an unknown or suspended one finds no account,
+      // and gets the same answer, after the same work, as a wrong password.
+      const hostelId =
+        body.hostel === undefined ? UNNAMED_SIGN_IN_HOSTEL : (await activeHostelBySlug(db, body.hostel))?.id;
       // Through auth_user_by_email (migration 014), which finds the account in one hostel
-      // before anything else about the request is known. Until students sign in on their
-      // hostel's own page (phase 3), every password account is in hostel #1.
-      const { rows } = await db.query<
-        UserRow & { password_hash: string | null; is_active: boolean; hostel_active: boolean }
-      >("SELECT * FROM auth_user_by_email($1, $2)", [PASSWORD_SIGN_IN_HOSTEL, body.email]);
+      // before anything else about the request is known.
+      const { rows } =
+        hostelId === undefined
+          ? { rows: [] }
+          : await db.query<UserRow & { password_hash: string | null; is_active: boolean; hostel_active: boolean }>(
+              "SELECT * FROM auth_user_by_email($1, $2)",
+              [hostelId, body.email],
+            );
       const user = rows[0];
       const passwordOk = await verifyPassword(
         body.password,
@@ -114,9 +125,15 @@ export function authRouter(deps: AuthRouteDeps): Router {
 
   router.get("/me", requireAuth(deps, { allowTemporaryPassword: true }), async (req, res) => {
     const { rows } = await inHostel(req, (tx) =>
-      tx.query<UserRow>("SELECT id, name, role, must_change_password FROM users WHERE id = $1 AND hostel_id = current_hostel_id()", [req.user!.id]),
+      tx.query<UserRow & { hostel_name: string; hostel_slug: string | null }>(
+        `SELECT u.id, u.name, u.role, u.must_change_password, h.name AS hostel_name, h.slug AS hostel_slug
+         FROM users u JOIN hostels h ON h.id = u.hostel_id
+         WHERE u.id = $1 AND u.hostel_id = current_hostel_id()`,
+        [req.user!.id],
+      ),
     );
-    res.json({ user: publicUser(rows[0]) });
+    // The hostel too: its name for the page, and its address for signing in again.
+    res.json({ user: publicUser(rows[0]), hostel: { name: rows[0].hostel_name, slug: rows[0].hostel_slug } });
   });
 
   router.post(

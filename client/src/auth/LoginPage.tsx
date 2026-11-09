@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { login, type User } from "../api/auth";
 import { ApiError } from "../api/client";
+import { requestAccessPath, type Hostel } from "../api/hostels";
 import { buttonClass, fieldClass } from "../ui";
 import { AuthShell, authCardClass } from "../ui/AuthShell";
 
@@ -8,9 +9,11 @@ import { AuthShell, authCardClass } from "../ui/AuthShell";
 // slow first login is normal. After this long, say so instead of looking frozen.
 const SLOW_HINT_AFTER_MS = 4000;
 
-type Props = { onLoggedIn: (user: User) => void };
+// `hostel`: the hostel whose address this page is at, /h/<slug>/login. Without one, the
+// page at the old address, which signs in to hostel #1 (until phase 6).
+type Props = { onLoggedIn: (user: User) => void; hostel?: Hostel & { slug: string } };
 
-export function LoginPage({ onLoggedIn }: Props) {
+export function LoginPage({ onLoggedIn, hostel }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +36,7 @@ export function LoginPage({ onLoggedIn }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      onLoggedIn(await login(email.trim(), password));
+      onLoggedIn(await login(email.trim(), password, hostel?.slug));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       setPassword("");
@@ -42,7 +45,7 @@ export function LoginPage({ onLoggedIn }: Props) {
   }
 
   return (
-    <AuthShell title="Welcome back" subtitle="Sign in to your hostel account">
+    <AuthShell title="Welcome back" subtitle={hostel ? `Sign in to ${hostel.name}` : "Sign in to your hostel account"}>
 
         <form
           onSubmit={handleSubmit}
@@ -116,7 +119,7 @@ export function LoginPage({ onLoggedIn }: Props) {
         <p className="mt-2 text-center text-sm text-muted">
           Former student?{" "}
           {/* A plain link, so this page needs no router (and its tests none either). */}
-          <a href="/request-access" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+          <a href={hostel ? requestAccessPath(hostel.slug) : "/request-access"} className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Request access
           </a>
         </p>

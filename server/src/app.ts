@@ -10,6 +10,7 @@ import { requireSameOrigin } from "./middleware/sameOrigin";
 import { securityHeaders } from "./middleware/securityHeaders";
 import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
+import { hostelsRouter } from "./routes/hostels";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
 import { feesRouter } from "./routes/fees";
@@ -104,6 +105,7 @@ export function createApp({
   });
 
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
+  app.use("/api", hostelsRouter({ db }));
   app.use("/api", structureRouter({ db, jwtSecret }));
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
