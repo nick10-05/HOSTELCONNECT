@@ -14,9 +14,12 @@ export type BuildingCard = {
 
 // The storage and bandwidth card (day 8): server/src/services/usage.ts's Usage, plus
 // photosConfigured (false when photo storage is not set up). Percentages are rounded down
-// and can pass 100; egress.month is 'YYYY-MM' (India's calendar).
+// and can pass 100; egress.month is 'YYYY-MM' (India's calendar). storage is every
+// hostel's photos against the whole limit; hostelStorage this hostel's own photos against
+// its equal share of it (phase 5b).
 export type UsageCard = {
   storage: { usedBytes: number; limitBytes: number; percent: number };
+  hostelStorage: { usedBytes: number; limitBytes: number; percent: number };
   egress: { month: string; usedBytes: number; limitBytes: number; percent: number };
   level: "ok" | "amber" | "uploads_off";
   uploadsAllowed: boolean;

@@ -60,6 +60,7 @@ describe("GET /api/dashboard", () => {
       // Day 8: the storage and bandwidth card.
       usage: {
         storage: { usedBytes: expect.any(Number), limitBytes: 450 * MB, percent: expect.any(Number) },
+        hostelStorage: { usedBytes: expect.any(Number), limitBytes: expect.any(Number), percent: expect.any(Number) },
         egress: { month: "2005-02", usedBytes: expect.any(Number), limitBytes: 3000 * MB, percent: expect.any(Number) },
         level: expect.toBeOneOf(["ok", "amber", "uploads_off"]),
         uploadsAllowed: expect.any(Boolean),

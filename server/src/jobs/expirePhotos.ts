@@ -1,4 +1,4 @@
-import type { Db } from "../db";
+import { withHostel, type Db } from "../db";
 import type { PhotoStorage } from "../lib/storage";
 
 // The expire-photos job (design doc, sections 9 and 10), run by POST /api/internal/run-jobs
@@ -14,11 +14,11 @@ export const EXPIRE_TIME_LIMIT_MS = 60_000;
 
 export type ExpireResult = { deleted: number; failed: number };
 
-// Deletes due photos from storage, oldest expiry first: at most `limit` per run, and none
-// started after `timeLimitMs`. A photo is due when it exists, is not deleted yet, and its
+// Deletes one hostel's due photos from storage (run-jobs calls it for each hostel in
+// turn), oldest expiry first: at most `limit` per run, and none started after `timeLimitMs`. A photo is due when it exists, is not deleted yet, and its
 // photo_expires_at is `now` or earlier.
 //
-// For each due photo, in its own transaction:
+// For each due photo, in its own transaction, marked with the hostel (withHostel):
 //   - storage deletes it, or says it no longer had it (decided on day 8: the goal is
 //     met): photo_deleted_at = `now`. Only then is the deletion recorded (section 10).
 //   - storage refuses, does not answer, or anything else goes wrong asking it:
@@ -38,7 +38,7 @@ export type ExpireResult = { deleted: number; failed: number };
 export async function expirePhotos(
   db: Db,
   storage: PhotoStorage | null,
-  opts: { now: Date; limit?: number; timeLimitMs?: number },
+  opts: { hostelId: number; now: Date; limit?: number; timeLimitMs?: number },
 ): Promise<ExpireResult> {
   const result: ExpireResult = { deleted: 0, failed: 0 };
   if (!storage) return result;
@@ -49,23 +49,20 @@ export async function expirePhotos(
   const tried: number[] = [];
 
   while (tried.length < limit && Date.now() - started < timeLimitMs) {
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const { rows } = await client.query<{ id: number; path: string }>(
+    // withHostel commits, or rolls back and passes the error on.
+    const nothingLeft = await withHostel(db, opts.hostelId, async (tx) => {
+      const { rows } = await tx.query<{ id: number; path: string }>(
         `SELECT id, photo_path AS path
          FROM complaints
-         WHERE photo_path IS NOT NULL AND photo_deleted_at IS NULL AND photo_expires_at <= $1
+         WHERE hostel_id = current_hostel_id()
+           AND photo_path IS NOT NULL AND photo_deleted_at IS NULL AND photo_expires_at <= $1
            AND id <> ALL($2::bigint[])
          ORDER BY photo_expires_at, id
          LIMIT 1
          FOR UPDATE SKIP LOCKED`,
         [opts.now, tried],
       );
-      if (rows.length === 0) {
-        await client.query("COMMIT");
-        break;
-      }
+      if (rows.length === 0) return true;
       const { id, path } = rows[0];
       tried.push(id);
 
@@ -79,22 +76,17 @@ export async function expirePhotos(
       }
 
       if (confirmed) {
-        await client.query("UPDATE complaints SET photo_deleted_at = $2 WHERE id = $1", [id, opts.now]);
+        await tx.query("UPDATE complaints SET photo_deleted_at = $2 WHERE id = $1 AND hostel_id = current_hostel_id()", [id, opts.now]);
         result.deleted += 1;
       } else {
-        await client.query(
-          "UPDATE complaints SET photo_delete_attempts = photo_delete_attempts + 1 WHERE id = $1",
-          [id],
-        );
+        await tx.query("UPDATE complaints SET photo_delete_attempts = photo_delete_attempts + 1 WHERE id = $1 AND hostel_id = current_hostel_id()", [
+          id,
+        ]);
         result.failed += 1;
       }
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      return false;
+    });
+    if (nothingLeft) break;
   }
   return result;
 }

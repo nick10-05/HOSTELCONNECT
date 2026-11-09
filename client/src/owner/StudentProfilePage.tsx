@@ -123,6 +123,13 @@ export function StudentProfilePage() {
         <Item label="Email">{s.email}</Item>
         <Item label="Mobile">{formatMobile(s.phone)}</Item>
         <Item label="Parent or guardian">{formatMobile(s.parentPhone)}</Item>
+        {s.under18 && (
+          <Item label="Under 18">
+            {s.guardianConsent
+              ? `Guardian's consent confirmed by ${s.guardianConsent.by} on ${formatDate(s.guardianConsent.on)}`
+              : "Guardian's consent not recorded"}
+          </Item>
+        )}
       </Card>
 
       <Card title={categoryLabel[s.category]} tone="blue" Icon={BuildingIcon}>

@@ -35,8 +35,8 @@ export async function notify(
   const isList = Array.isArray(to);
 
   const recipientCondition = isList
-    ? "id = ANY($1::bigint[]) AND is_active = true"
-    : "role = 'student' AND is_active = true";
+    ? "id = ANY($1::bigint[]) AND is_active = true AND hostel_id = current_hostel_id()"
+    : "role = 'student' AND is_active = true AND hostel_id = current_hostel_id()";
 
   const values = isList
     ? "$2, $3, $4, $5, $6"
@@ -98,7 +98,7 @@ export async function listNotifications(
     `SELECT count(*)::int AS total,
             count(*) FILTER (WHERE read_at IS NULL)::int AS unread
      FROM notifications
-     WHERE user_id = $1`,
+     WHERE user_id = $1 AND hostel_id = current_hostel_id()`,
     [userId],
   );
 
@@ -107,7 +107,7 @@ export async function listNotifications(
             created_at AS "createdAt",
             read_at AS "readAt"
      FROM notifications
-     WHERE user_id = $1
+     WHERE user_id = $1 AND hostel_id = current_hostel_id()
      ORDER BY created_at DESC, id DESC
      LIMIT $2 OFFSET $3`,
     [userId, page.limit, (page.page - 1) * page.limit],
@@ -130,7 +130,7 @@ export async function markRead(
   const { rowCount } = await db.query(
     `UPDATE notifications
      SET read_at = coalesce(read_at, now())
-     WHERE id = $1 AND user_id = $2`,
+     WHERE id = $1 AND user_id = $2 AND hostel_id = current_hostel_id()`,
     [id, userId],
   );
 
@@ -151,7 +151,7 @@ export async function markAllRead(
   const { rowCount } = await db.query(
     `UPDATE notifications
      SET read_at = now()
-     WHERE user_id = $1 AND read_at IS NULL`,
+     WHERE user_id = $1 AND read_at IS NULL AND hostel_id = current_hostel_id()`,
     [userId],
   );
 

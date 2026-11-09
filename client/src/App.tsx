@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
-import { logout, me, type User } from "./api/auth";
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
+import { authOptions, logout, me, type Account, type User } from "./api/auth";
+import { signInPath, type Hostel } from "./api/hostels";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
+import { AccountContext, HostelContext } from "./auth/hostel";
+import { HostelAddress } from "./auth/HostelAddress";
+import { LegalPage } from "./auth/LegalPage";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
+import { SignupPage } from "./auth/SignupPage";
 import { NotificationBell } from "./components/NotificationBell";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { AnnouncementsPage } from "./owner/AnnouncementsPage";
@@ -12,6 +17,9 @@ import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
 import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
+import { GoogleSignIn } from "./owner/GoogleSignIn";
+import { HostelFeesAndLimits } from "./owner/HostelFeesAndLimits";
+import { HostelProfile } from "./owner/HostelProfile";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
 import { ReturnPollsPage } from "./owner/ReturnPollsPage";
@@ -44,21 +52,51 @@ import {
 import { ToastProvider } from "./ui/Toast";
 import { ThemeSwitch } from "./ui/theme";
 
-type Session = { status: "loading" } | { status: "anonymous" } | { status: "signed-in"; user: User };
+type Session =
+  | { status: "loading" }
+  | { status: "anonymous" }
+  | { status: "signed-in"; user: User; hostel: Hostel | null; account: Account | null };
 
 export function App() {
   const [session, setSession] = useState<Session>({ status: "loading" });
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [signupsOpen, setSignupsOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // The cookie is httpOnly, so JavaScript cannot see it: ask the server who we are.
+  // Whether "Sign in with Google" is set up (phase 3b). Off if the server cannot say.
   useEffect(() => {
-    me()
-      .then((user) => setSession({ status: "signed-in", user }))
-      .catch(() => setSession({ status: "anonymous" }));
+    authOptions()
+      .then((options) => {
+        setGoogleEnabled(options.google);
+        setSignupsOpen(options.signupsOpen);
+      })
+      .catch(() => setGoogleEnabled(false));
   }, []);
 
-  const signIn = (user: User) => setSession({ status: "signed-in", user });
+  // The cookie is httpOnly, so JavaScript cannot see it: ask the server who we are.
+  const loadSession = () =>
+    me()
+      .then(({ user, hostel, account }) => setSession({ status: "signed-in", user, hostel, account }))
+      .catch(() => setSession({ status: "anonymous" }));
+  useEffect(() => {
+    void loadSession();
+  }, []);
+
+  // Signing in or choosing a password: ask again, for the hostel as well as the user.
+  const signIn = (user: User) => {
+    setSession((s) =>
+      s.status === "signed-in" ? { ...s, user } : { status: "signed-in", user, hostel: null, account: null },
+    );
+    void loadSession();
+  };
+  // Signed out, back to the sign-in page of the user's own hostel.
   const signOut = () => {
-    void logout().finally(() => setSession({ status: "anonymous" }));
+    const slug = session.status === "signed-in" ? session.hostel?.slug : null;
+    void logout().finally(() => {
+      setSession({ status: "anonymous" });
+      if (slug) navigate(signInPath(slug), { replace: true });
+    });
   };
 
   if (session.status === "loading") {
@@ -72,17 +110,47 @@ export function App() {
     );
   }
 
+  // The Terms and the Privacy Policy, for everyone, signed in or not (phase 4a).
+  if (location.pathname === "/terms" || location.pathname === "/privacy") {
+    return <LegalPage document={location.pathname === "/terms" ? "terms" : "privacy"} />;
+  }
+
+  // What Google sign-in came back with, for the sign-in page (/login?google=…).
+  const googleOutcome = new URLSearchParams(location.search).get("google");
+
   // Signed out: the request form for former students, and the sign-in page everywhere else.
   if (session.status === "anonymous") {
     return (
       <Routes>
+        {/* Each hostel's own pages (phase 3a): the hostel comes from the address. */}
+        <Route
+          path="/h/:slug/login"
+          element={
+            <HostelAddress>
+              {(h) => <LoginPage onLoggedIn={signIn} hostel={withSlug(h)} googleEnabled={googleEnabled} googleOutcome={googleOutcome} />}
+            </HostelAddress>
+          }
+        />
+        <Route
+          path="/h/:slug/request-access"
+          element={<HostelAddress>{(h) => <RequestAccessPage hostel={withSlug(h)} />}</HostelAddress>}
+        />
+        <Route path="/h/:slug" element={<SlugRedirect />} />
+        {/* A new owner, back from Google with a sign-up ticket (phase 4a). */}
+        <Route path="/signup" element={<SignupPage onSignedUp={signIn} />} />
+        {/* No hostel in the address: these ask for it first (phase 6). */}
         <Route path="/request-access" element={<RequestAccessPage />} />
-        <Route path="*" element={<LoginPage onLoggedIn={signIn} />} />
+        <Route
+          path="*"
+          element={<LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} signupsOpen={signupsOpen} />}
+        />
       </Routes>
     );
   }
 
-  const { user } = session;
+  const { user, hostel, account } = session;
+  // The owner renamed the hostel or moved its address (Settings > Hostel).
+  const hostelSaved = (saved: Hostel) => setSession((s) => (s.status === "signed-in" ? { ...s, hostel: saved } : s));
 
   // A temporary password unlocks nothing else (the server enforces the same rule).
   if (user.mustChangePassword) {
@@ -92,6 +160,8 @@ export function App() {
   // The owner's pages, or the student's (complaints, notices, the return poll and fees).
   // On a phone the menu is a tab bar floating at the bottom; from md up it is a sidebar.
   return (
+    <HostelContext.Provider value={hostel}>
+    <AccountContext.Provider value={account ? { ...account, googleEnabled } : null}>
     <ToastProvider>
       <div className="min-h-dvh bg-app">
         <header className="sticky top-0 z-40 px-3 pt-2.5 md:px-6">
@@ -141,7 +211,17 @@ export function App() {
                 <Route path="/return-polls/:id" element={<ReturnPollPage />} />
                 <Route path="/food-counts" element={<FoodCountsPage />} />
                 <Route path="/fees" element={<FeesPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
+                <Route
+                  path="/settings"
+                  element={
+                    <>
+                      <SettingsPage />
+                      <HostelProfile onSaved={hostelSaved} />
+                      <HostelFeesAndLimits />
+                      <GoogleSignIn />
+                    </>
+                  }
+                />
                 {/* The owner starts on the dashboard; unknown addresses go there too
                     instead of showing a blank page. */}
                 <Route path="*" element={<Navigate to="/" replace />} />
@@ -167,7 +247,18 @@ export function App() {
         </div>
       </div>
     </ToastProvider>
+    </AccountContext.Provider>
+    </HostelContext.Provider>
   );
+}
+
+// The hostel found at /h/<slug>/ always has that slug.
+const withSlug = (h: Hostel) => ({ ...h, slug: h.slug ?? "" });
+
+// /h/<slug> on its own: the hostel's sign-in page.
+function SlugRedirect() {
+  const { pathname } = useLocation();
+  return <Navigate to={`${pathname.replace(/\/+$/, "")}/login`} replace />;
 }
 
 // The menu: a floating glass tab bar on a phone, a sidebar from md up.

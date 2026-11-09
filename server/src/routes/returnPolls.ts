@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { idParam, parseBody, parseQuery } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import {
   answerPoll,
   closePoll,
@@ -53,6 +53,7 @@ export function returnPollsRouter(deps: AuthDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
   const isStudent = requireRole("student");
 
   // The owner: every poll, newest first, with counts. A student: the open poll with their
@@ -62,9 +63,9 @@ export function returnPollsRouter(deps: AuthDeps): Router {
     if (!query) return;
     res.set("Cache-Control", "no-store");
     if (req.user!.role === "owner") {
-      res.json(await listPolls(db, query));
+      res.json(await inHostel(req, (tx) => listPolls(tx, query)));
     } else {
-      const items = await listOpenPollsForStudent(db, req.user!.id);
+      const items = await inHostel(req, (tx) => listOpenPollsForStudent(tx, req.user!.id));
       res.json({ items, total: items.length });
     }
   });
@@ -72,7 +73,7 @@ export function returnPollsRouter(deps: AuthDeps): Router {
   router.post("/return-polls", auth, isOwner, async (req, res) => {
     const body = parseBody(newPollSchema, req, res);
     if (!body) return;
-    res.status(201).json(await createPoll(db, req.user!.id, body.title));
+    res.status(201).json(await inHostel(req, (tx) => createPoll(tx, req.user!.id, body.title)));
   });
 
   router.get("/return-polls/:id", auth, isOwner, async (req, res) => {
@@ -81,7 +82,7 @@ export function returnPollsRouter(deps: AuthDeps): Router {
     const query = parseQuery(pollResultsSchema, req, res);
     if (!query) return;
     res.set("Cache-Control", "no-store");
-    res.json(await getPollResults(db, id, query.buildingId ?? null));
+    res.json(await inHostel(req, (tx) => getPollResults(tx, id, query.buildingId ?? null)));
   });
 
   router.put("/return-polls/:id/response", auth, isStudent, async (req, res) => {
@@ -89,13 +90,13 @@ export function returnPollsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(pollResponseSchema, req, res);
     if (!body) return;
-    res.json(await answerPoll(db, id, req.user!.id, body.response));
+    res.json(await inHostel(req, (tx) => answerPoll(tx, id, req.user!.id, body.response)));
   });
 
   router.post("/return-polls/:id/close", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    res.json(await closePoll(db, id));
+    res.json(await inHostel(req, (tx) => closePoll(tx, id)));
   });
 
   return router;

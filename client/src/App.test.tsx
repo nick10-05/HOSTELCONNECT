@@ -66,6 +66,7 @@ function renderAt(path: string) {
         // Day 8: the storage and bandwidth card.
         usage: {
           storage: { usedBytes: 0, limitBytes: 450 * 1024 * 1024, percent: 0 },
+          hostelStorage: { usedBytes: 0, limitBytes: 450 * 1024 * 1024, percent: 0 },
           egress: { month: "2026-11", usedBytes: 0, limitBytes: 3000 * 1024 * 1024, percent: 0 },
           level: "ok",
           uploadsAllowed: true,

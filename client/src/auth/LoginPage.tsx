@@ -1,16 +1,95 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { login, type User } from "../api/auth";
 import { ApiError } from "../api/client";
+import { requestAccessPath, signInPath, type Hostel } from "../api/hostels";
 import { buttonClass, fieldClass } from "../ui";
 import { AuthShell, authCardClass } from "../ui/AuthShell";
+import { FindHostel } from "./FindHostel";
 
 // The free host sleeps after 15 idle minutes and takes about a minute to wake, so a
 // slow first login is normal. After this long, say so instead of looking frozen.
 const SLOW_HINT_AFTER_MS = 4000;
 
-type Props = { onLoggedIn: (user: User) => void };
+// What Google sign-in came back with (/login?google=…, routes/google.ts on the server).
+const GOOGLE_OUTCOMES: Record<string, string> = {
+  "no-account": "No HostelConnect owner account uses that Google account. Sign in with your password, then link Google in Settings.",
+  inactive: "That account cannot sign in: the account or its hostel is not active.",
+  cancelled: "Google sign-in was cancelled.",
+  failed: "Google sign-in did not work. Please try again.",
+};
 
-export function LoginPage({ onLoggedIn }: Props) {
+// `hostel`: the hostel whose address this page is at, /h/<slug>/login, where its people
+// sign in with their password. Without one (/login), the page asks for the hostel's
+// address first (phase 6), and owners can still sign in with Google.
+// `googleEnabled`: show "Sign in with Google" (owners, phase 3b); `googleOutcome`: the
+// ?google= value Google sign-in came back with. `signupsOpen`: new hostels may sign up
+// (phase 4a), through the same Google button.
+type Props = {
+  onLoggedIn: (user: User) => void;
+  hostel?: Hostel & { slug: string };
+  googleEnabled?: boolean;
+  googleOutcome?: string | null;
+  signupsOpen?: boolean;
+};
+
+export function LoginPage(props: Props) {
+  return props.hostel ? <PasswordSignIn {...props} hostel={props.hostel} /> : <ChooseHostel {...props} />;
+}
+
+// /login: no hostel in the address. Students and password owners go on to their hostel's
+// page; owners with Google sign in here, and new owners set up their hostel.
+function ChooseHostel({ googleEnabled = false, googleOutcome = null, signupsOpen = false }: Props) {
+  const googleMessage = googleOutcome ? GOOGLE_OUTCOMES[googleOutcome] : undefined;
+  return (
+    <AuthShell title="Welcome back" subtitle="Find your hostel to sign in">
+      <div className={authCardClass}>
+        {googleMessage && (
+          <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
+            {googleMessage}
+          </p>
+        )}
+        <FindHostel pathFor={signInPath} />
+        {googleEnabled && <GoogleOwners showSignup={signupsOpen} />}
+      </div>
+      <p className="mt-8 text-center text-sm text-muted">
+        Former student?{" "}
+        <a href="/request-access" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+          Request access
+        </a>
+      </p>
+    </AuthShell>
+  );
+}
+
+// "Hostel owner?": Google sign-in, and on /login only, setting up a new hostel.
+function GoogleOwners({ showSignup }: { showSignup: boolean }) {
+  return (
+    <div className="space-y-2 border-t border-line pt-4 text-center">
+      <p className="text-sm text-muted">Hostel owner?</p>
+      {/* A plain link: the server sends the browser on to Google. */}
+      <a href="/api/auth/google/start" className={`${buttonClass("secondary")} min-h-12 w-full`}>
+        Sign in with Google
+      </a>
+      {showSignup && (
+        <p className="text-sm text-muted">
+          New to HostelConnect?{" "}
+          <a href="/api/auth/google/start" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+            Set up your hostel with Google
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
+// /h/<slug>/login: the hostel's own page, with its password sign-in.
+function PasswordSignIn({
+  onLoggedIn,
+  hostel,
+  googleEnabled = false,
+  googleOutcome = null,
+}: Props & { hostel: Hostel & { slug: string } }) {
+  const googleMessage = googleOutcome ? GOOGLE_OUTCOMES[googleOutcome] : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +112,7 @@ export function LoginPage({ onLoggedIn }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      onLoggedIn(await login(email.trim(), password));
+      onLoggedIn(await login(email.trim(), password, hostel.slug));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       setPassword("");
@@ -42,15 +121,15 @@ export function LoginPage({ onLoggedIn }: Props) {
   }
 
   return (
-    <AuthShell title="Welcome back" subtitle="Sign in to your hostel account">
+    <AuthShell title="Welcome back" subtitle={`Sign in to ${hostel.name}`}>
 
         <form
           onSubmit={handleSubmit}
           className={authCardClass}
         >
-          {error && (
+          {(error ?? googleMessage) && (
             <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
-              {error}
+              {error ?? googleMessage}
             </p>
           )}
 
@@ -108,6 +187,9 @@ export function LoginPage({ onLoggedIn }: Props) {
               The server is waking up. This can take up to a minute.
             </p>
           )}
+
+          {/* No sign-up on a hostel's own page: its visitors are that hostel's people. */}
+          {googleEnabled && <GoogleOwners showSignup={false} />}
         </form>
 
         <p className="mt-8 text-center text-sm text-muted">
@@ -116,7 +198,7 @@ export function LoginPage({ onLoggedIn }: Props) {
         <p className="mt-2 text-center text-sm text-muted">
           Former student?{" "}
           {/* A plain link, so this page needs no router (and its tests none either). */}
-          <a href="/request-access" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+          <a href={requestAccessPath(hostel.slug)} className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Request access
           </a>
         </p>

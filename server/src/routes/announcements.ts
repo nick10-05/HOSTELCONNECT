@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { idParam, parseBody, parseQuery } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import {
   deleteAnnouncement,
   listAnnouncements,
@@ -57,18 +57,19 @@ export function announcementsRouter(deps: AuthDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
   // Pinned first, then newest; the same list for the owner and the students.
   router.get("/announcements", auth, async (req, res) => {
     const query = parseQuery(announcementListSchema, req, res);
     if (!query) return;
-    res.json(await listAnnouncements(db, query));
+    res.json(await inHostel(req, (tx) => listAnnouncements(tx, query)));
   });
 
   router.post("/announcements", auth, isOwner, async (req, res) => {
     const body = parseBody(newAnnouncementSchema, req, res);
     if (!body) return;
-    res.status(201).json(await postAnnouncement(db, req.user!.id, body));
+    res.status(201).json(await inHostel(req, (tx) => postAnnouncement(tx, req.user!.id, body)));
   });
 
   router.patch("/announcements/:id", auth, isOwner, async (req, res) => {
@@ -76,14 +77,14 @@ export function announcementsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(announcementChangesSchema, req, res);
     if (!body) return;
-    res.json(await updateAnnouncement(db, id, body));
+    res.json(await inHostel(req, (tx) => updateAnnouncement(tx, id, body)));
   });
 
   // The screen asks "are you sure?" first (section 8); the API just deletes.
   router.delete("/announcements/:id", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await deleteAnnouncement(db, id);
+    await inHostel(req, (tx) => deleteAnnouncement(tx, id));
     res.status(204).end();
   });
 

@@ -5,6 +5,7 @@ import { expirePhotos } from "../src/jobs/expirePhotos";
 import { newPhotoPath, type PhotoStorage } from "../src/lib/storage";
 import { inRollback, insertStudent, photoJobLockShared, testPool, withPhotoJobLock } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
+import { asHostel } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // The expire-photos job (Claude, at Nikhil's request; section 12 lists "expiry and retry
@@ -19,7 +20,7 @@ const NOW = new Date("1998-04-10T06:30:00Z");
 const BEFORE = (ms: number) => new Date(NOW.getTime() - ms);
 const HOUR = 3_600_000;
 
-type Options = { expiresAt?: Date; deletedAt?: Date | null; attempts?: number; status?: string };
+type Options = { expiresAt?: Date; deletedAt?: Date | null; attempts?: number; status?: string; hostelId?: number };
 
 // A complaint with a photo that is in `storage`, by a new student.
 async function complaintWithPhoto(c: Pick<PoolClient, "query">, storage: FakeStorage, opts: Options = {}) {
@@ -28,17 +29,18 @@ async function complaintWithPhoto(c: Pick<PoolClient, "query">, storage: FakeSto
   const { rows } = await c.query<{ id: number }>(
     `INSERT INTO complaints (student_id, category, description, status, photo_path, photo_size_bytes,
                              photo_expires_at, photo_deleted_at, photo_delete_attempts,
-                             created_at, updated_at)
+                             created_at, updated_at, hostel_id)
      VALUES ($1, 'plumbing', 'The tap in the bathroom leaks all night.', $2, $3, 400000, $4, $5, $6,
-             '1998-04-08T06:30:00Z', '1998-04-08T06:30:00Z')
+             '1998-04-08T06:30:00Z', '1998-04-08T06:30:00Z', $7)
      RETURNING id`,
     [
-      await insertStudent(c),
+      await insertStudent(c, { hostelId: opts.hostelId }),
       opts.status ?? "open",
       path,
       opts.expiresAt ?? BEFORE(HOUR),
       opts.deletedAt ?? null,
       opts.attempts ?? 0,
+      opts.hostelId ?? 1,
     ],
   );
   return { id: rows[0].id, path };
@@ -72,7 +74,7 @@ describe("expirePhotos", () => {
       const a = await complaintWithPhoto(c, storage, { expiresAt: BEFORE(2 * HOUR) });
       const b = await complaintWithPhoto(c, storage, { expiresAt: BEFORE(0) }); // due exactly now
 
-      const result = await expirePhotos(jobDb, storage, { now: NOW });
+      const result = await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(result).toMatchObject({ deleted: 2, failed: 0 });
       expect(removed(storage, [a.path, b.path])).toEqual([a.path, b.path]); // oldest expiry first
       expect(storage.objects.has(a.path) || storage.objects.has(b.path)).toBe(false);
@@ -90,7 +92,7 @@ describe("expirePhotos", () => {
         [await insertStudent(c)],
       );
 
-      await expirePhotos(jobDb, storage, { now: NOW });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(removed(storage, [later.path, gone.path])).toEqual([]);
       expect(await photoState(c, later.id)).toEqual({ deletedAt: null, attempts: 0 });
       expect(await photoState(c, gone.id)).toEqual({ deletedAt: BEFORE(HOUR / 2), attempts: 0 });
@@ -102,18 +104,18 @@ describe("expirePhotos", () => {
       const photo = await complaintWithPhoto(c, storage);
 
       storage.failNext("remove", 500, 500, 500); // more failures queued than one run uses
-      const first = await expirePhotos(jobDb, storage, { now: NOW });
+      const first = await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(first).toMatchObject({ deleted: 0, failed: 1 });
       expect(removed(storage, [photo.path])).toHaveLength(1);
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 1 });
 
       // The next two hourly runs use up the two failures still queued; then storage works.
-      await expirePhotos(jobDb, storage, { now: new Date(NOW.getTime() + HOUR) });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: new Date(NOW.getTime() + HOUR) });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 2 });
-      await expirePhotos(jobDb, storage, { now: new Date(NOW.getTime() + 2 * HOUR) });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: new Date(NOW.getTime() + 2 * HOUR) });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 3 });
 
-      const last = await expirePhotos(jobDb, storage, { now: new Date(NOW.getTime() + 3 * HOUR) });
+      const last = await expirePhotos(jobDb, storage, { hostelId: 1, now: new Date(NOW.getTime() + 3 * HOUR) });
       expect(last).toMatchObject({ deleted: 1, failed: 0 });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: new Date(NOW.getTime() + 3 * HOUR), attempts: 3 });
       expect(storage.objects.has(photo.path)).toBe(false);
@@ -124,9 +126,9 @@ describe("expirePhotos", () => {
       const storage = fakeStorage();
       const photo = await complaintWithPhoto(c, storage, { attempts: 7 });
       storage.failNext("remove", null);
-      await expirePhotos(jobDb, storage, { now: NOW });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 8 });
-      await expirePhotos(jobDb, storage, { now: NOW });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: NOW, attempts: 8 });
     }));
 
@@ -135,7 +137,7 @@ describe("expirePhotos", () => {
       const storage = fakeStorage();
       const photo = await complaintWithPhoto(c, storage);
       storage.objects.delete(photo.path); // gone already, e.g. a run that stopped after deleting
-      const result = await expirePhotos(jobDb, storage, { now: NOW });
+      const result = await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(result).toMatchObject({ deleted: 1, failed: 0 });
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: NOW, attempts: 0 });
     }));
@@ -148,9 +150,9 @@ describe("expirePhotos", () => {
       const middle = await complaintWithPhoto(c, storage, { expiresAt: BEFORE(2 * HOUR) });
       const paths = [newest.path, oldest.path, middle.path];
 
-      expect(await expirePhotos(jobDb, storage, { now: NOW, limit: 2 })).toMatchObject({ deleted: 2 });
+      expect(await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW, limit: 2 })).toMatchObject({ deleted: 2 });
       expect(removed(storage, paths)).toEqual([oldest.path, middle.path]);
-      await expirePhotos(jobDb, storage, { now: NOW, limit: 2 });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW, limit: 2 });
       expect(removed(storage, paths)).toEqual([oldest.path, middle.path, newest.path]);
     }));
 
@@ -170,16 +172,36 @@ describe("expirePhotos", () => {
           )
         ).rows[0];
       const before = await snapshot();
-      await expirePhotos(jobDb, storage, { now: NOW });
+      await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW });
       expect(await snapshot()).toEqual(before);
+    }));
+
+  // Multi-tenant (phase 2b): run-jobs calls the job once per hostel.
+  it("handles only the photos of the hostel it is run for", () =>
+    inJob(async (c, jobDb) => {
+      const storage = fakeStorage();
+      const other = (
+        await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Photo Hostel') RETURNING id")
+      ).rows[0].id;
+      const mine = await complaintWithPhoto(c, storage);
+      await asHostel(c, other);
+      const theirs = await complaintWithPhoto(c, storage, { hostelId: other });
+
+      expect(await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW })).toMatchObject({ deleted: 1 });
+      expect(removed(storage, [mine.path, theirs.path])).toEqual([mine.path]);
+      await asHostel(c, other);
+      expect(await photoState(c, theirs.id)).toEqual({ deletedAt: null, attempts: 0 });
+
+      expect(await expirePhotos(jobDb, storage, { hostelId: other, now: NOW })).toMatchObject({ deleted: 1 });
+      expect(removed(storage, [mine.path, theirs.path])).toEqual([mine.path, theirs.path]);
     }));
 
   it("does nothing without storage, or with no time left", () =>
     inJob(async (c, jobDb) => {
       const storage = fakeStorage();
       const photo = await complaintWithPhoto(c, storage);
-      expect(await expirePhotos(jobDb, null, { now: NOW })).toEqual({ deleted: 0, failed: 0 });
-      expect(await expirePhotos(jobDb, storage, { now: NOW, timeLimitMs: 0 })).toEqual({ deleted: 0, failed: 0 });
+      expect(await expirePhotos(jobDb, null, { hostelId: 1, now: NOW })).toEqual({ deleted: 0, failed: 0 });
+      expect(await expirePhotos(jobDb, storage, { hostelId: 1, now: NOW, timeLimitMs: 0 })).toEqual({ deleted: 0, failed: 0 });
       expect(storage.calls.filter((call) => call.operation !== "upload")).toEqual([]);
       expect(await photoState(c, photo.id)).toEqual({ deletedAt: null, attempts: 0 });
     }));
@@ -209,7 +231,7 @@ describe("expirePhotos", () => {
           }
           const paths = photos.map((p) => p.path);
 
-          const results = await Promise.all([expirePhotos(db, slow, { now }), expirePhotos(db, slow, { now })]);
+          const results = await Promise.all([expirePhotos(db, slow, { hostelId: 1, now }), expirePhotos(db, slow, { hostelId: 1, now })]);
           const calls = removed(fake, paths);
           expect([...calls].sort(), `round ${round}`).toEqual([...paths].sort()); // each exactly once
           expect(results.reduce((sum, r) => sum + r.deleted, 0), `round ${round}`).toBe(6);

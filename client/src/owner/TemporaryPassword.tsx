@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { signInPath } from "../api/hostels";
+import { useHostel } from "../auth/hostel";
 import { secondaryButton } from "./styles";
 
 // A temporary password, shown once with a Copy button, after an admission or a
 // reactivation. It lives only in the calling page's memory and is gone when the owner
 // moves on; the server never sends it again.
 export function TemporaryPassword({ password }: { password: string }) {
+  const hostel = useHostel();
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard
@@ -30,6 +33,15 @@ export function TemporaryPassword({ password }: { password: string }) {
         It is shown only now and cannot be seen again. Give it to the student in person; they
         must choose their own password when they next log in.
       </p>
+      {hostel?.slug && (
+        <p className="text-sm text-muted">
+          They sign in at{" "}
+          <span className="font-mono font-semibold break-all text-ink">
+            {window.location.host}
+            {signInPath(hostel.slug)}
+          </span>
+        </p>
+      )}
     </>
   );
 }

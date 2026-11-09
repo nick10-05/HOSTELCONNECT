@@ -35,7 +35,7 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     const id = await insertOwner(db, { passwordHash });
     const res = await request(newApp())
       .post("/api/auth/login")
-      .send({ email: await emailOf(id), password: PASSWORD });
+      .send({ hostel: "sns-hostel", email: await emailOf(id), password: PASSWORD });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -56,7 +56,7 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     const id = await insertOwner(db, { passwordHash });
     const res = await request(newApp(true))
       .post("/api/auth/login")
-      .send({ email: await emailOf(id), password: PASSWORD });
+      .send({ hostel: "sns-hostel", email: await emailOf(id), password: PASSWORD });
     expect(sessionCookie(res)).toMatch(/Secure/i);
   });
 
@@ -64,7 +64,7 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     const id = await insertOwner(db, { passwordHash });
     const res = await request(newApp())
       .post("/api/auth/login")
-      .send({ email: `  ${(await emailOf(id)).toUpperCase()} `, password: PASSWORD });
+      .send({ hostel: "sns-hostel", email: `  ${(await emailOf(id)).toUpperCase()} `, password: PASSWORD });
     expect(res.status).toBe(200);
   });
 
@@ -78,7 +78,7 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
       { email: await emailOf(inactive), password: PASSWORD },
     ];
     for (const attempt of attempts) {
-      const res = await request(app).post("/api/auth/login").send(attempt);
+      const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", ...attempt });
       expect(res.status).toBe(401);
       expect(res.body).toEqual({
         error: { code: "invalid_credentials", message: "Email or password is incorrect." },
@@ -87,8 +87,18 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     }
   });
 
+  // Phase 6: every sign-in names its hostel (the sign-in page's address).
+  it("rejects a sign-in that names no hostel with 400, before looking at the account", async () => {
+    const id = await insertStudent(db, { passwordHash });
+    const res = await request(newApp()).post("/api/auth/login").send({ email: await emailOf(id), password: PASSWORD });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("invalid_input");
+    expect(res.body.error.message).toBe("hostel: open your hostel's own sign-in page, /h/<address>/login");
+    expect(sessionCookie(res)).toBeUndefined();
+  });
+
   it("rejects a missing password with 400", async () => {
-    const res = await request(newApp()).post("/api/auth/login").send({ email: "a@b.c" });
+    const res = await request(newApp()).post("/api/auth/login").send({ hostel: "sns-hostel", email: "a@b.c" });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("invalid_input");
   });
@@ -107,10 +117,10 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     const email = await emailOf(id);
     const app = newApp();
     for (let i = 0; i < 10; i++) {
-      const res = await request(app).post("/api/auth/login").send({ email, password: "wrong" });
+      const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: "wrong" });
       expect(res.status).toBe(401);
     }
-    const blocked = await request(app).post("/api/auth/login").send({ email, password: PASSWORD });
+    const blocked = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: PASSWORD });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe("rate_limited");
   });
@@ -120,7 +130,7 @@ describe("POST /api/auth/login", { timeout: 30_000 }, () => {
     const email = await emailOf(id);
     const app = newApp();
     for (let i = 0; i < 11; i++) {
-      const res = await request(app).post("/api/auth/login").send({ email, password: PASSWORD });
+      const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: PASSWORD });
       expect(res.status).toBe(200);
     }
   });
@@ -135,7 +145,7 @@ describe("session endpoints", { timeout: 30_000 }, () => {
   it("me returns the logged-in user, and logout ends the session", async () => {
     const id = await insertOwner(db, { passwordHash });
     const agent = request.agent(newApp());
-    await agent.post("/api/auth/login").send({ email: await emailOf(id), password: PASSWORD });
+    await agent.post("/api/auth/login").send({ hostel: "sns-hostel", email: await emailOf(id), password: PASSWORD });
 
     const me = await agent.get("/api/auth/me");
     expect(me.status).toBe(200);
@@ -163,7 +173,7 @@ describe("POST /api/auth/change-password", { timeout: 30_000 }, () => {
     const id = await insertStudent(db, { passwordHash, mustChangePassword: true });
     const email = await emailOf(id);
     const agent = request.agent(newApp());
-    const login = await agent.post("/api/auth/login").send({ email, password: PASSWORD });
+    const login = await agent.post("/api/auth/login").send({ hostel: "sns-hostel", email, password: PASSWORD });
     expect(login.body.user.mustChangePassword).toBe(true);
     return { id, email, agent };
   }
@@ -179,11 +189,11 @@ describe("POST /api/auth/change-password", { timeout: 30_000 }, () => {
     expect(res.body.user.mustChangePassword).toBe(false);
 
     const app = newApp();
-    const oldLogin = await request(app).post("/api/auth/login").send({ email, password: PASSWORD });
+    const oldLogin = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: PASSWORD });
     expect(oldLogin.status).toBe(401);
     const newLogin = await request(app)
       .post("/api/auth/login")
-      .send({ email, password: "a-brand-new-secret" });
+      .send({ hostel: "sns-hostel", email, password: "a-brand-new-secret" });
     expect(newLogin.status).toBe(200);
   });
 

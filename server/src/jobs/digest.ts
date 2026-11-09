@@ -36,12 +36,13 @@ export type DigestCounts = {
 export async function digestCounts(db: Queryable, today: string): Promise<DigestCounts> {
   const { rows } = await db.query<DigestCounts>(
     `SELECT
-       (SELECT count(*)::int FROM complaints WHERE status IN ('open', 'in_progress')) AS complaints,
-       (SELECT count(*)::int FROM rejoin_requests WHERE status = 'pending') AS "rejoinRequests",
+       (SELECT count(*)::int FROM complaints WHERE status IN ('open', 'in_progress') AND hostel_id = current_hostel_id()) AS complaints,
+       (SELECT count(*)::int FROM rejoin_requests WHERE status = 'pending' AND hostel_id = current_hostel_id()) AS "rejoinRequests",
        (SELECT count(*)::int FROM fees
-        WHERE status = 'pending' AND due_date BETWEEN $1::date AND $1::date + $2::int) AS "feesDueSoon",
+        WHERE status = 'pending' AND hostel_id = current_hostel_id()
+          AND due_date BETWEEN $1::date AND $1::date + $2::int) AS "feesDueSoon",
        (SELECT count(*)::int FROM fees
-        WHERE status = 'pending' AND due_date < $1::date) AS "feesOverdue"`,
+        WHERE status = 'pending' AND hostel_id = current_hostel_id() AND due_date < $1::date) AS "feesOverdue"`,
     [today, DIGEST_FEE_DAYS_AHEAD],
   );
   return rows[0];
@@ -82,7 +83,7 @@ export async function sendDailyDigest(db: Queryable, opts: { now: Date }): Promi
   if (!text) return { created: 0 };
 
   const { rows: owners } = await db.query<{ id: number }>(
-    `SELECT id FROM users WHERE role = 'owner' AND is_active`,
+    `SELECT id FROM users WHERE role = 'owner' AND is_active AND hostel_id = current_hostel_id()`,
   );
   const created = await notify(
     db,

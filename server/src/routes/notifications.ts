@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { idParam, parseQuery } from "../lib/http";
-import { requireAuth, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, type AuthDeps } from "../middleware/auth";
 import { listNotifications, markAllRead, markRead } from "../services/notifications";
 
 // The bell (design doc, sections 5 and 9): every signed-in person, owner or student,
@@ -18,23 +18,24 @@ export function notificationsRouter(deps: AuthDeps): Router {
   const router = Router();
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
+  const inHostel = hostelWork(db);
 
   // Polled about once a minute while the app is open.
   router.get("/notifications", auth, async (req, res) => {
     const query = parseQuery(notificationListSchema, req, res);
     if (!query) return;
-    res.json(await listNotifications(db, req.user!.id, query));
+    res.json(await inHostel(req, (tx) => listNotifications(tx, req.user!.id, query)));
   });
 
   // Before /:id/read only for readability: the paths cannot match each other.
   router.post("/notifications/read-all", auth, async (req, res) => {
-    res.json({ marked: await markAllRead(db, req.user!.id) });
+    res.json({ marked: await inHostel(req, (tx) => markAllRead(tx, req.user!.id)) });
   });
 
   router.post("/notifications/:id/read", auth, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await markRead(db, req.user!.id, id);
+    await inHostel(req, (tx) => markRead(tx, req.user!.id, id));
     res.status(204).end();
   });
 

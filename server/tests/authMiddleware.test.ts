@@ -4,7 +4,9 @@ import request from "supertest";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { signSession, type SessionClaims } from "../src/lib/token";
 import { requireAuth, requireRole, SESSION_COOKIE } from "../src/middleware/auth";
+import { Client } from "pg";
 import { insertOwner, insertStudent, testPool } from "./helpers/db";
+import { toTestDatabaseUrl } from "./helpers/testDatabase";
 
 // Uses your signSession, so finish token.ts first. Users are committed to the test
 // database so the middleware's own connection can see them.
@@ -44,7 +46,7 @@ describe("requireAuth", () => {
     const id = await insertStudent(db);
     const res = await asUser("/any", tokenFor(id, "student"));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ id, role: "student", mustChangePassword: false });
+    expect(res.body).toEqual({ id, hostelId: 1, role: "student", mustChangePassword: false });
   });
 
   it("refuses a request without a session cookie", async () => {
@@ -84,6 +86,20 @@ describe("requireAuth", () => {
     expectError(await asUser("/any", tokenFor(id, "student")), 401, "unauthenticated");
   });
 
+  // Multi-tenant phase 2a: the hostel comes from the user's row too, never from the token.
+  it("sets req.user.hostelId from the database, for a user of any hostel", async () => {
+    const { hostelId, userId } = await committedOwnerOfNewHostel("active");
+    const res = await asUser("/any", tokenFor(userId, "owner"));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: userId, hostelId, role: "owner", mustChangePassword: false });
+  });
+
+  it("refuses everyone of a suspended hostel, even with a valid token", async () => {
+    const { userId } = await committedOwnerOfNewHostel("suspended");
+    expectError(await asUser("/any", tokenFor(userId, "owner")), 401, "unauthenticated");
+    expectError(await asUser("/temp-ok", tokenFor(userId, "owner")), 401, "unauthenticated");
+  });
+
   it("takes the role from the database, not from the token", async () => {
     const id = await insertStudent(db);
     const claimsOwner = tokenFor(id, "owner");
@@ -106,7 +122,7 @@ describe("requireAuth", () => {
       const id = await insertStudent(db, { mustChangePassword: true });
       const res = await asUser("/temp-ok", tokenFor(id, "student"));
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ id, role: "student", mustChangePassword: true });
+      expect(res.body).toEqual({ id, hostelId: 1, role: "student", mustChangePassword: true });
     });
 
     it("still refuses a deactivated user on those routes", async () => {
@@ -132,3 +148,29 @@ describe("requireRole", () => {
     expectError(await request(app).get("/role-without-auth"), 401, "unauthenticated");
   });
 });
+
+// A hostel with one owner, committed so the middleware's own connection sees them. Only
+// the platform admin may suspend a hostel, so this uses the admin credential on the test
+// database. The rows stay, like every committed row of this file; the test database is
+// recreated on each run.
+async function committedOwnerOfNewHostel(status: "active" | "suspended") {
+  const admin = new Client({ connectionString: toTestDatabaseUrl(process.env.MIGRATION_DATABASE_URL!) });
+  await admin.connect();
+  try {
+    const hostelId = (
+      await admin.query<{ id: number }>("INSERT INTO hostels (name, status) VALUES ('Middleware Hostel', $1) RETURNING id", [
+        status,
+      ])
+    ).rows[0].id;
+    const userId = (
+      await admin.query<{ id: number }>(
+        `INSERT INTO users (hostel_id, role, name, email, password_hash, must_change_password)
+         VALUES ($1, 'owner', 'Other Owner', $2, 'x', false) RETURNING id`,
+        [hostelId, `middleware-${hostelId}@test.local`],
+      )
+    ).rows[0].id;
+    return { hostelId: Number(hostelId), userId: Number(userId) };
+  } finally {
+    await admin.end();
+  }
+}

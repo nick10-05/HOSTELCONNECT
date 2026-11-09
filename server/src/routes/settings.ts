@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { parseBody, sendError } from "../lib/http";
 import { detectPhotoType } from "../lib/photoType";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import { singleFileUpload } from "../middleware/fileUpload";
 import { getPaymentQr, getPaymentSettings, savePaymentSettings, type PaymentQr } from "../services/paymentSettings";
 
@@ -45,6 +45,7 @@ export function settingsRouter(deps: AuthDeps): Router {
   // Per route, as in the other routers, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
   const qrUpload = singleFileUpload({
     field: "qr",
     maxBytes: QR_MAX_BYTES,
@@ -54,9 +55,9 @@ export function settingsRouter(deps: AuthDeps): Router {
   });
 
   // The details change whenever the owner saves them: the browser must always ask again.
-  router.get("/settings/payment", auth, async (_req, res) => {
+  router.get("/settings/payment", auth, async (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json(await getPaymentSettings(db));
+    res.json(await inHostel(req, (tx) => getPaymentSettings(tx)));
   });
 
   // After the session and role checks, so only the owner's uploads are read.
@@ -77,15 +78,17 @@ export function settingsRouter(deps: AuthDeps): Router {
       qr = { bytes: req.file.buffer, mime };
     }
     res.json(
-      await savePaymentSettings(db, { upiId: body.upiId ?? null, upiPayeeName: body.upiPayeeName ?? null, qr }),
+      await inHostel(req, (tx) =>
+        savePaymentSettings(tx, { upiId: body.upiId ?? null, upiPayeeName: body.upiPayeeName ?? null, qr }),
+      ),
     );
   });
 
   // The address from GET /settings/payment carries ?v=<time of the last change>, so a new
   // image always has a new address and this one may be kept for a year. private: it
   // needs a login, so no shared cache may keep it.
-  router.get("/settings/payment/qr", auth, async (_req, res) => {
-    const qr = await getPaymentQr(db);
+  router.get("/settings/payment/qr", auth, async (req, res) => {
+    const qr = await inHostel(req, (tx) => getPaymentQr(tx));
     if (!qr) {
       sendError(res, 404, "qr_not_set", "No QR image has been uploaded.");
       return;

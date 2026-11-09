@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { Router, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
+import { withHostel } from "../db";
 import { idParam, parseBody, parseQuery, sendError } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { activeHostelBySlug, slugSchema } from "../services/hostels";
 import {
   approveRejoinRequest,
   listRejoinRequests,
@@ -28,7 +30,10 @@ export const REJOIN_LIMIT_PER_IP = 10; // per hour
 export const REJOIN_LIMIT_PER_EMAIL = 3; // per 24 hours
 export const REJOIN_ANSWER = "If this email belongs to a former student, the owner will review the request.";
 
+// The form names its hostel by the page's address, /h/<slug>/request-access (phase 3a);
+// required since phase 6, like password sign-in (routes/auth.ts).
 export const rejoinSchema = z.object({
+  hostel: z.string({ error: "open your hostel's own page, /h/<address>/request-access" }).pipe(slugSchema),
   email: z.string().trim().toLowerCase().max(254).pipe(z.email("must be a valid email address")),
   message: z
     .string()
@@ -68,6 +73,7 @@ export function rejoinRouter(deps: AuthDeps): Router {
   // Per route, as in routes/students.ts, so the public form needs no session.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
   const perIp = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -88,7 +94,14 @@ export function rejoinRouter(deps: AuthDeps): Router {
   router.post("/rejoin-requests", perIp, perEmail, async (req, res) => {
     const body = parseBody(rejoinSchema, req, res);
     if (!body) return;
-    await requestRejoin(db, body.email, body.message);
+    const hostelId = (await activeHostelBySlug(db, body.hostel))?.id;
+    // Whether a hostel has an address is public (GET /api/hostels/:slug), so an unknown
+    // one may say so; whether an email belongs to it never is (REJOIN_ANSWER).
+    if (hostelId === undefined) {
+      sendError(res, 404, "hostel_not_found", "No hostel has this address.");
+      return;
+    }
+    await withHostel(db, hostelId, (tx) => requestRejoin(tx, body.email, body.message));
     res.status(202).json({ message: REJOIN_ANSWER });
   });
 
@@ -97,7 +110,7 @@ export function rejoinRouter(deps: AuthDeps): Router {
   router.get("/rejoin-requests", auth, isOwner, async (req, res) => {
     const query = parseQuery(reviewListSchema, req, res);
     if (!query) return;
-    res.json(await listRejoinRequests(db, query));
+    res.json(await inHostel(req, (tx) => listRejoinRequests(tx, query)));
   });
 
   // The joining date and place follow the same rules as a reactivation from the profile.
@@ -106,7 +119,7 @@ export function rejoinRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(reactivationSchema, req, res);
     if (!body) return;
-    const result = await approveRejoinRequest(db, req.user!.id, id, body);
+    const result = await inHostel(req, (tx) => approveRejoinRequest(tx, req.user!.id, id, body));
     // The answer carries the temporary password, shown once: no browser or proxy may keep it.
     res.set("Cache-Control", "no-store");
     res.json(result);
@@ -115,7 +128,7 @@ export function rejoinRouter(deps: AuthDeps): Router {
   router.post("/rejoin-requests/:id/reject", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await rejectRejoinRequest(db, req.user!.id, id);
+    await inHostel(req, (tx) => rejectRejoinRequest(tx, req.user!.id, id));
     res.status(204).end();
   });
 

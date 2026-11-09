@@ -55,7 +55,11 @@ Build these URLs (replace the `<…>` parts):
 |---|---|
 | `MIGRATION_DATABASE_URL` | `postgres://postgres.<ref>:<ADMIN_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
 | `DATABASE_URL` | `postgres://hostel_app.<ref>:<APP_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
-| `BACKUP_DATABASE_URL` | the `DATABASE_URL` above, ending in `?sslmode=require` instead |
+| `BACKUP_DATABASE_URL` | `postgres://hostel_backup.<ref>:<BACKUP_PW>@<pooler-host>:5432/postgres?sslmode=require` |
+
+`<BACKUP_PW>` is a third password, made the same way as the app's. `hostel_backup` is
+the nightly backup's own role: it may read every hostel's rows and write nothing. It is
+created by migration 018 without a login; step 3 gives it this password.
 
 Why two `sslmode`s: both encrypt the connection. The Node `pg` driver reads `require`
 as "also verify the certificate against the public CAs", which fails for Supabase's
@@ -80,6 +84,17 @@ Check that Supabase's API roles can see nothing (SQL Editor, should return no ro
 select grantee, table_name from information_schema.role_table_grants
 where table_schema = 'public' and grantee in ('anon', 'authenticated');
 ```
+
+Then give the backup its login (migration 018 on): from `server/`, in PowerShell, with
+the two URLs set in this window only, never in `.env`:
+```powershell
+$env:MIGRATION_DATABASE_URL = Read-Host "Paste MIGRATION_DATABASE_URL"
+$env:BACKUP_DATABASE_URL = Read-Host "Paste BACKUP_DATABASE_URL"
+npx tsx scripts/backup-role.ts
+Remove-Item Env:MIGRATION_DATABASE_URL, Env:BACKUP_DATABASE_URL
+```
+It prints `hostel_backup can log in and read every hostel: …`. Running it again sets the
+password again (to change it).
 
 ## 4. Render
 
@@ -113,9 +128,61 @@ clear the screen, remove the variable and close the window:
 Clear-Host; Remove-Item Env:DATABASE_URL
 ```
 
-Log in on the Render URL with the temporary password. The app allows nothing else until
+Sign in at `<Render URL>/h/sns-hostel/login` (hostel #1's address, migration 019) with
+the temporary password. The app allows nothing else until
 you choose a new one (the server enforces this too). If the script says an owner
 already exists, it changed nothing.
+
+## 5a. Google sign-in for owners (multi-tenant phase 3b)
+
+Owners sign in with their Google account. Until the three settings below are in Render,
+the sign-in page shows no Google button and nothing else changes.
+
+1. console.cloud.google.com → create a project, e.g. `HostelConnect`.
+2. **Google Auth Platform** (or APIs & Services → OAuth consent screen) → Get started:
+   app name `HostelConnect`, your email as support and developer contact, audience
+   **External**. Under Data access the app needs only `openid` and `.../auth/userinfo.email`,
+   which need no review by Google.
+3. **Clients** → Create client → **Web application**, name `HostelConnect web`.
+   - Authorized JavaScript origins: none needed.
+   - Authorized redirect URIs: `https://<service>.onrender.com/api/auth/google/callback`
+     (exactly, with https and no trailing slash).
+4. Copy the client ID and the client secret. The secret is shown in full only now; keep
+   it in your password manager.
+5. Render → Environment → add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+   `PUBLIC_URL` = `https://<service>.onrender.com` → save (redeploys).
+6. While the consent screen is in **Testing**, only the Google accounts listed under
+   Audience → Test users can sign in. Add yours. Publish the app (Audience → Publish)
+   before other owners sign up (phase 4).
+
+Then, for the existing owner account:
+
+1. Sign in with the password as before → Settings → **Sign-in** → **Link Google account**,
+   and choose your Google account. Settings then says it is linked.
+2. Sign out, and sign in with **Sign in with Google** to check it works.
+3. Back in Settings → **Remove password**, with the current password. From then on only
+   Google signs you in (decided in phase 0). If Google sign-in ever breaks before that
+   step, the password still works; after it, `npm run reset:owner-password` gives the
+   owner a password again (docs/RECOVERY.md).
+
+## 5b. Opening sign-up to new hostels (multi-tenant phase 4a)
+
+Anyone with a Google account can then create a hostel and become its owner. Sign-up stays
+closed (`SIGNUPS_OPEN` unset or `false`) until all of these are true:
+
+1. Google sign-in works (step 5a), and the consent screen is **published** (Audience →
+   Publish), so that any Google account can sign in, not only the test users.
+2. The Terms of Service and the Privacy Policy (`/terms`, `/privacy`) are final and a
+   lawyer has reviewed them. Whenever either changes in substance, change `TERMS_VERSION`
+   in `server/src/lib/legal.ts`: each owner's account records the version they accepted.
+3. Render → Environment → `SIGNUPS_OPEN` = `true` → save (redeploys). The server refuses
+   to start with it on and Google sign-in off.
+
+How it works: an unknown Google account at **Sign in with Google** is sent to `/signup`
+instead of being told it has no account. There the owner names themself and the hostel,
+chooses its address (`/h/<address>/login`) and accepts the terms. Five hostels an hour at
+most from one IP address. To close sign-up again, set `SIGNUPS_OPEN` = `false`: hostels
+that signed up keep working.
 
 ## 6. First backup and restore drill
 
@@ -140,7 +207,8 @@ password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost 
 
 1. Create a new Supabase project (step 1) and update the three URL secrets (step 2).
 2. Run **Migrate production database** on the commit that matches the backup, so the
-   empty schema has the same migrations as the backup.
+   empty schema has the same migrations as the backup. Then give the backup its login
+   again (`scripts/backup-role.ts`, step 3): the new project's `hostel_backup` has none.
 3. Load the rows, in Git Bash. Paste the admin URL (ending in `?sslmode=require` here)
    at the hidden `read` prompt: Bash saves typed commands to a history file, and only
    the name `$RESTORE_URL` ends up there, never the URL.
@@ -157,6 +225,74 @@ password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost 
 A pull request with a new migration: run **Migrate production database** on that branch
 first, then merge. Migrations only ever add, so the running code keeps working while the
 new tables arrive, and the new code never starts without them.
+
+### Moving an existing deployment to hostels (migrations 013 to 022)
+
+Production is at 012. The hostels code needs every migration up to 022, and the code
+before it stops working after 016 (rows need a hostel) and 018 (row-level security), so
+the move is one short break, at a quiet hour:
+
+1. Run **Backup database**, and download that backup.
+2. Rehearse on it, on your laptop (`docs/RECOVERY.md`, section 9): every check must pass.
+3. Tell the students their new sign-in address, `<Render URL>/h/sns-hostel/login`. From
+   this deploy on, the plain `/login` asks for the hostel's address first (phase 6), and
+   the owner signs in there with Google or at the same address with the password.
+4. Render → the service → **Suspend**.
+5. Run **Migrate production database** on the branch being deployed: 013 to 022.
+6. Deploy that branch's code and **Resume** the service.
+7. At once: make `<BACKUP_PW>`, run `scripts/backup-role.ts` (step 3), and set the
+   GitHub secret `BACKUP_DATABASE_URL` to the `hostel_backup` URL (step 1's table).
+   Until then the nightly backup fails: `hostel_app`, which it used before, now sees at
+   most one hostel. Then run **Backup database** by hand to check it.
+8. Check: `/api/health`; a student signs in at `/h/sns-hostel/login`; the owner signs in;
+   the dashboard and the students list look as before; Settings → Fees and limits shows
+   the fees start date to set and the limits (step "A hostel's limits").
+
+If step 5 fails, nothing changed (each migration is all or nothing): resume the old
+service and look at the log. If a problem shows after step 6, restore the step 1 backup
+(section 5 of `docs/RECOVERY.md`) and deploy the previous code.
+
+## A hostel's limits (multi-tenant phase 5a)
+
+Every hostel may have 300 current students and 20 buildings during the beta. Admitting,
+reactivating or letting back a student past the limit, or adding a building past it, is
+refused with a message telling the owner to ask for more. The owner sees the numbers in
+Settings → Fees and limits. Only the migration credential can change a limit: in the
+Supabase SQL editor (or `psql "<MIGRATION_DATABASE_URL>"`):
+
+```sql
+SELECT id, name, slug, student_limit, building_limit FROM hostels ORDER BY id;
+UPDATE hostels SET student_limit = 400 WHERE slug = '<their-address>';
+```
+
+Before the real register goes into hostel #1, check its limits suit it.
+
+Photo storage is shared too: each hostel's photos are counted against an equal share of
+`STORAGE_LIMIT_MB` (the limit divided by the number of active hostels), and that hostel's
+photo uploads switch off at 85% of its share. All hostels' photos together still count
+against the whole limit. The owner sees their share on the dashboard.
+
+## Importing a hostel's register (multi-tenant phase 5b)
+
+The import goes into one hostel, named by its address (its slug), on behalf of its one
+owner, within its limits. From `server/`, with `DATABASE_URL` set to the app's
+connection:
+
+```
+npm run import:students -- --hostel sns-hostel --file C:\path\students.csv --out C:\Users\you\Documents\credentials.html
+```
+
+Start from `docs/import-template.csv`. The last two columns may be left out: `under_18`
+(`yes` for a student under 18) and `guardian_consent` (`yes` once the owner has a
+parent's or guardian's consent for them, which `under_18` needs). The import records
+the owner as having confirmed it.
+
+## Students under 18 (multi-tenant phase 5b)
+
+Migration 022 adds `users.under_18`, and who confirmed a guardian's consent and when. The
+owner ticks "Under 18" and confirms the consent when admitting or editing a student; the
+profile shows who confirmed it and on which day. The record is kept after the student is
+unmarked. Apply 022 with **Migrate production database** before deploying this code.
 
 ## Free-plan limits to expect
 

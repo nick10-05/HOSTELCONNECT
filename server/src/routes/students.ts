@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { addDays, hostelToday } from "../lib/dates";
 import { idParam, parseBody, parseQuery } from "../lib/http";
-import { requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, type AuthDeps } from "../middleware/auth";
 import * as students from "../services/students";
 
 // Owner-only student endpoints. This file checks who is asking and what they sent, and
@@ -47,6 +47,10 @@ const detailsObject = z.object({
   vegDays: z.array(z.number().int().min(1).max(7)).max(7).default([]),
   // Rupees; left out or null means "not set yet".
   monthlyFee: z.number().int().min(0).max(1_000_000).nullable().default(null),
+  // Under 18 (phase 5b): only with the owner's confirmation of a parent's or guardian's
+  // consent, which the app records.
+  under18: z.boolean().default(false),
+  guardianConsent: z.boolean().default(false),
 });
 
 type Details = z.infer<typeof detailsObject>;
@@ -67,6 +71,13 @@ function checkDetails(v: EditDetails & { joiningDate?: string }, ctx: z.Refineme
   if (v.category === "working" && !v.company) missing("company");
   if (new Set(v.vegDays).size !== v.vegDays.length) {
     ctx.addIssue({ code: "custom", path: ["vegDays"], message: "lists a day twice" });
+  }
+  if (v.under18 && !v.guardianConsent) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["guardianConsent"],
+      message: "must be confirmed for a student under 18",
+    });
   }
   if (v.vegDays.length > 0 && v.foodPreference !== "non_veg") {
     ctx.addIssue({ code: "custom", path: ["vegDays"], message: "are only for non-veg students" });
@@ -97,6 +108,7 @@ const pickEdit = (v: EditDetails): students.StudentEdit => ({
   foodPreference: v.foodPreference,
   vegDays: [...v.vegDays].sort((a, b) => a - b),
   monthlyFee: v.monthlyFee,
+  under18: v.under18,
 });
 
 const pickDetails = (v: Details): StudentDetails => ({ ...pickEdit(v), joiningDate: v.joiningDate });
@@ -207,11 +219,12 @@ export function studentsRouter(deps: AuthDeps): Router {
   // Per route, as in routes/structure.ts, so unknown /api paths still get a plain 404.
   const auth = requireAuth(deps);
   const isOwner = requireRole("owner");
+  const inHostel = hostelWork(db);
 
   router.get("/students", auth, isOwner, async (req, res) => {
     const query = parseQuery(directorySchema, req, res);
     if (!query) return;
-    res.json(await students.listStudents(db, query));
+    res.json(await inHostel(req, (tx) => students.listStudents(tx, query)));
   });
 
   router.get("/students/:id", auth, isOwner, async (req, res) => {
@@ -219,7 +232,7 @@ export function studentsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     // Phone numbers are in this answer: no browser or proxy may keep a copy.
     res.set("Cache-Control", "no-store");
-    res.json({ student: await students.getStudent(db, id, hostelToday()) });
+    res.json({ student: await inHostel(req, (tx) => students.getStudent(tx, id, hostelToday())) });
   });
 
   router.patch("/students/:id", auth, isOwner, async (req, res) => {
@@ -227,16 +240,19 @@ export function studentsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(studentEditSchema, req, res);
     if (!body) return;
-    await students.updateStudent(db, id, body);
+    const student = await inHostel(req, async (tx) => {
+      await students.updateStudent(tx, id, body, req.user!.id);
+      return students.getStudent(tx, id, hostelToday());
+    });
     // The profile as it is now. Phone numbers are in it: no browser or proxy may keep a copy.
     res.set("Cache-Control", "no-store");
-    res.json({ student: await students.getStudent(db, id, hostelToday()) });
+    res.json({ student });
   });
 
   router.post("/students", auth, isOwner, async (req, res) => {
     const body = parseBody(admissionSchema, req, res);
     if (!body) return;
-    const result = await students.admitStudent(db, req.user!.id, body);
+    const result = await inHostel(req, (tx) => students.admitStudent(tx, req.user!.id, body));
     // The answer carries the temporary password, shown once: no browser or proxy may keep it.
     res.set("Cache-Control", "no-store");
     res.status(201).json(result);
@@ -247,21 +263,21 @@ export function studentsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(transferSchema, req, res);
     if (!body) return;
-    const transfer = await students.transferStudent(db, req.user!.id, id, body, hostelToday());
+    const transfer = await inHostel(req, (tx) => students.transferStudent(tx, req.user!.id, id, body, hostelToday()));
     res.json({ transfer });
   });
 
   router.post("/students/:id/deactivate", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    await students.deactivateStudent(db, id, hostelToday());
+    await inHostel(req, (tx) => students.deactivateStudent(tx, id, hostelToday()));
     res.status(204).end();
   });
 
   router.post("/students/:id/reset-password", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;
-    const result = await students.resetStudentPassword(db, id);
+    const result = await inHostel(req, (tx) => students.resetStudentPassword(tx, id));
     // The answer carries the temporary password, shown once: no browser or proxy may keep it.
     res.set("Cache-Control", "no-store");
     res.json(result);
@@ -272,7 +288,7 @@ export function studentsRouter(deps: AuthDeps): Router {
     if (id === undefined) return;
     const body = parseBody(reactivationSchema, req, res);
     if (!body) return;
-    const result = await students.reactivateStudent(db, req.user!.id, id, body);
+    const result = await inHostel(req, (tx) => students.reactivateStudent(tx, req.user!.id, id, body));
     // The answer carries the temporary password, shown once: no browser or proxy may keep it.
     res.set("Cache-Control", "no-store");
     res.json(result);

@@ -3,8 +3,9 @@ import { inRollback, pgError, testPool } from "./helpers/db";
 
 // The rules the database itself enforces for the owner's payment details (migration 012),
 // so they hold even if a service function has a bug. Run as hostel_app, the role the app
-// uses, inside transactions that are rolled back. There is one row at most: another test
-// file saving details at the same moment makes this file's insert wait, not fail.
+// uses, inside transactions that are rolled back. There is one row per hostel (migration
+// 017; one row overall before it): another test file saving hostel #1's details at the
+// same moment makes this file's insert wait, not fail.
 const db = testPool();
 afterAll(() => db.end());
 
@@ -16,42 +17,51 @@ const UPI_ONLY = `INSERT INTO hostel_settings (upi_id) VALUES ($1)`;
 const IMAGE = `INSERT INTO hostel_settings (qr_image, qr_mime) VALUES ($1, $2)`;
 // How the service saves: create the row the first time, change it after that.
 const SAVE = `INSERT INTO hostel_settings (upi_id, upi_payee_name, qr_image, qr_mime) VALUES ($1, $2, $3, $4)
-              ON CONFLICT (id) DO UPDATE SET upi_id = EXCLUDED.upi_id, upi_payee_name = EXCLUDED.upi_payee_name,
+              ON CONFLICT (hostel_id) DO UPDATE SET upi_id = EXCLUDED.upi_id, upi_payee_name = EXCLUDED.upi_payee_name,
                 qr_image = EXCLUDED.qr_image, qr_mime = EXCLUDED.qr_mime, updated_at = now()`;
 
 const KB_200 = 200 * 1024;
 
 describe("hostel_settings", () => {
-  it("creates the one row, id 1, updated now", () =>
+  it("creates the hostel's row, in the transaction's hostel, updated now", () =>
     inRollback(db, async (c) => {
       await c.query(UPI_ONLY, ["owner@okaxis"]);
       const { rows } = await c.query(
-        `SELECT id, upi_id, upi_payee_name, qr_image, qr_mime, updated_at = now() AS updated_now
-         FROM hostel_settings`,
+        `SELECT hostel_id, upi_id, upi_payee_name, qr_image, qr_mime, updated_at = now() AS updated_now
+         FROM hostel_settings WHERE hostel_id = current_hostel_id()`,
       );
       expect(rows).toEqual([
-        { id: 1, upi_id: "owner@okaxis", upi_payee_name: null, qr_image: null, qr_mime: null, updated_now: true },
+        { hostel_id: 1, upi_id: "owner@okaxis", upi_payee_name: null, qr_image: null, qr_mime: null, updated_now: true },
       ]);
     }));
 
-  it("never holds a second row", () =>
+  it("holds one row per hostel: never a second for the same hostel, one each for two", () =>
     inRollback(db, async (c) => {
       await c.query(UPI_ONLY, ["owner@okaxis"]);
       expect(await pgError(c, UPI_ONLY, ["other@ybl"])).toMatchObject({
         code: UNIQUE_VIOLATION,
-        constraint: "hostel_settings_pkey",
+        constraint: "hostel_settings_hostel_key",
       });
-      expect(
-        await pgError(c, `INSERT INTO hostel_settings (id, upi_id) VALUES (2, 'other@ybl')`),
-      ).toMatchObject({ code: CHECK_VIOLATION, constraint: "hostel_settings_id_check" });
+      const other = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Settings Hostel') RETURNING id"))
+        .rows[0].id;
+      await c.query(`SET LOCAL app.hostel_id = '${other}'`);
+      await c.query(UPI_ONLY, ["other@ybl"]);
+      const settingsOf = async (hostel: number) => {
+        await c.query(`SET LOCAL app.hostel_id = '${hostel}'`);
+        return (await c.query("SELECT hostel_id, upi_id FROM hostel_settings")).rows;
+      };
+      expect(await settingsOf(other)).toEqual([{ hostel_id: other, upi_id: "other@ybl" }]);
+      expect(await settingsOf(1)).toEqual([{ hostel_id: 1, upi_id: "owner@okaxis" }]);
     }));
 
   it("saves with an upsert, so the first save creates the row and later ones change it", () =>
     inRollback(db, async (c) => {
       await c.query(SAVE, ["owner@okaxis", "Hostel Owner", null, null]);
       await c.query(SAVE, [null, null, Buffer.from([0xff, 0xd8, 0xff]), "image/jpeg"]);
-      const { rows } = await c.query(`SELECT id, upi_id, qr_mime FROM hostel_settings`);
-      expect(rows).toEqual([{ id: 1, upi_id: null, qr_mime: "image/jpeg" }]);
+      const { rows } = await c.query(
+        `SELECT upi_id, qr_mime FROM hostel_settings WHERE hostel_id = current_hostel_id()`,
+      );
+      expect(rows).toEqual([{ upi_id: null, qr_mime: "image/jpeg" }]);
     }));
 
   it("needs a UPI ID or a QR image, or both", () =>

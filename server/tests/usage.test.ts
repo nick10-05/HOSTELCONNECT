@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { AMBER_PERCENT, egressKey, getUsage, UPLOADS_OFF_PERCENT, type UsageLimits } from "../src/services/usage";
 import { inRollback, insertStudent, testPool } from "./helpers/db";
+import { asHostel } from "./helpers/hostels";
 
 // The usage guard (Nikhil). Other test files add complaints at the same time, so storage
 // and failed deletions are totals over every complaint: each test runs in one rolled-back
@@ -27,10 +28,12 @@ function inSnapshot(fn: (c: PoolClient) => Promise<void>) {
   });
 }
 
-// What was already in storage and failing, read without the code under test.
+// What was already in storage (every hostel's, through the database's own total, which
+// row-level security would otherwise hide) and failing (this hostel's), read without the
+// code under test.
 async function before(c: PoolClient) {
   const { rows } = await c.query<{ stored: number; failing: number }>(
-    `SELECT coalesce(sum(photo_size_bytes), 0)::bigint AS stored,
+    `SELECT photo_storage_bytes() AS stored,
             count(*) FILTER (WHERE photo_delete_attempts >= 5)::int AS failing
      FROM complaints WHERE photo_path IS NOT NULL AND photo_deleted_at IS NULL`,
   );
@@ -62,11 +65,18 @@ async function photo(c: PoolClient, bytes: number, opts: Photo = {}) {
   }
 }
 
-// Brings storage in use to exactly `bytes`, counting what other tests left.
+// Brings storage in use to exactly `bytes`, counting what other tests left. The photos
+// go to a hostel of their own, so hostel #1's own share (phase 5b) stays as it was and
+// only the whole bucket's limit is tested.
 async function storageAt(c: PoolClient, bytes: number) {
   const { stored } = await before(c);
   if (bytes < stored) throw new Error("the test database already holds more photos than this test needs");
-  if (bytes > stored) await photo(c, bytes - stored);
+  if (bytes > stored) {
+    const filler = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Filler') RETURNING id")).rows[0].id;
+    await asHostel(c, filler);
+    await photo(c, bytes - stored);
+    await asHostel(c, 1);
+  }
 }
 
 async function egressAt(c: PoolClient, key: string, bytes: number) {
@@ -111,6 +121,23 @@ describe("getUsage", () => {
         limitBytes: LIMIT_BYTES,
         percent: Math.floor(((stored + 500_000) * 100) / LIMIT_BYTES),
       });
+    }));
+
+  // Multi-tenant phase 2d: the storage limit is the one shared bucket's, so every hostel's
+  // photos count, though row-level security hides the other hostels' rows; a failing
+  // deletion is shown only to the owner of the hostel it belongs to.
+  it("counts every hostel's photos for storage, and only this hostel's failing deletions", () =>
+    inSnapshot(async (c) => {
+      const { stored, failing } = await before(c);
+      const other = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Usage Hostel') RETURNING id"))
+        .rows[0].id;
+      await asHostel(c, other);
+      await photo(c, 400_000, { attempts: 5 });
+      await asHostel(c, 1);
+
+      const usage = await getUsage(c, LIMITS, NOW);
+      expect(usage.storage.usedBytes).toBe(stored + 400_000);
+      expect(usage.failingDeletions).toBe(failing);
     }));
 
   it("reads this India month's egress counter, and 0 for a month with none", () =>
@@ -198,6 +225,42 @@ describe("getUsage", () => {
         level: "uploads_off",
         uploadsAllowed: false,
       });
+    }));
+
+  // Phase 5b: each hostel's equal share of the storage limit.
+  it("gives each hostel an equal share of storage, counting its own photos only", () =>
+    inSnapshot(async (c) => {
+      const mine = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Share Hostel') RETURNING id")).rows[0].id;
+      const { rows } = await c.query<{ n: number }>("SELECT count(*)::int AS n FROM hostels WHERE status = 'active'");
+      const shareBytes = Math.floor(LIMIT_BYTES / rows[0].n);
+      await asHostel(c, mine);
+      await photo(c, 300_000);
+      await photo(c, 100_000, { deletedAt: new Date("1995-03-14T07:00:00Z") }); // deleted: not counted
+
+      const usage = await getUsage(c, LIMITS, NOW);
+      expect(usage.hostelStorage).toEqual({
+        usedBytes: 300_000,
+        limitBytes: shareBytes,
+        percent: Math.floor((300_000 * 100) / shareBytes),
+      });
+    }));
+
+  it("turns this hostel's uploads off at 85% of its share, while the bucket has room", () =>
+    inSnapshot(async (c) => {
+      const mine = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Busy Hostel') RETURNING id")).rows[0].id;
+      const { rows } = await c.query<{ n: number }>("SELECT count(*)::int AS n FROM hostels WHERE status = 'active'");
+      const shareBytes = Math.floor(LIMIT_BYTES / rows[0].n);
+      await asHostel(c, mine);
+      await photo(c, Math.ceil(shareBytes * 0.7));
+      expect(await getUsage(c, LIMITS, NOW)).toMatchObject({ level: "amber", uploadsAllowed: true });
+      await photo(c, Math.ceil(shareBytes * 0.15));
+      const usage = await getUsage(c, LIMITS, NOW);
+      expect(usage).toMatchObject({ level: "uploads_off", uploadsAllowed: false });
+      expect(usage.storage.percent).toBeLessThan(AMBER_PERCENT);
+
+      // The other hostels' uploads are not affected.
+      await asHostel(c, 1);
+      expect((await getUsage(c, LIMITS, NOW)).hostelStorage.percent).toBeLessThan(AMBER_PERCENT);
     }));
 
   it("counts the photos not yet deleted that have failed 5 times or more", () =>

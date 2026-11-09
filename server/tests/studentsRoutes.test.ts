@@ -6,7 +6,7 @@ import { HttpError } from "../src/lib/http";
 import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import * as students from "../src/services/students";
-import { insertOwner, insertStudent, testPool } from "./helpers/db";
+import { hostelTx, insertOwner, insertStudent, testPool } from "./helpers/db";
 
 // The HTTP layer of POST /api/students: who may call, input checks and cleaning, status
 // codes and the answer. The service is a mock here; tests/students.test.ts checks the
@@ -94,7 +94,7 @@ describe("POST /api/students", () => {
     expect(res.body).toEqual(admission);
     expect(res.headers["cache-control"]).toBe("no-store");
     // The owner's id comes from the session, never from the form.
-    expect(service.admitStudent).toHaveBeenCalledWith(db, owner, {
+    expect(service.admitStudent).toHaveBeenCalledWith(hostelTx(db), owner, {
       name: "Asha Rao",
       email: "asha@example.com",
       phone: "9876543210",
@@ -109,6 +109,7 @@ describe("POST /api/students", () => {
       foodPreference: "veg",
       vegDays: [],
       monthlyFee: 6500,
+      under18: false,
       buildingId: 1,
       roomId: null,
       bedId: null,
@@ -172,6 +173,15 @@ describe("POST /api/students", () => {
     expect(service.admitStudent.mock.calls[0][2]).toMatchObject({ designation: null });
   });
 
+  // Phase 5b: the owner confirms a parent's or guardian's consent for a student under 18.
+  it("admits a student under 18 once the owner confirms the guardian's consent", async () => {
+    service.admitStudent.mockResolvedValue(admission);
+    const res = await post(form({ under18: true, guardianConsent: true }));
+    expect(res.status).toBe(201);
+    expect(service.admitStudent.mock.calls[0][2]).toMatchObject({ under18: true });
+    expect(service.admitStudent.mock.calls[0][2]).not.toHaveProperty("guardianConsent");
+  });
+
   it("allows a joining date up to 30 days ahead and any past date", async () => {
     service.admitStudent.mockResolvedValue(admission);
     for (const joiningDate of [addDays(hostelToday(), 10), "2019-07-01"]) {
@@ -204,6 +214,8 @@ describe("POST /api/students", () => {
     ["fee with paise", { monthlyFee: 6500.5 }, "monthlyFee"],
     ["missing building", { buildingId: undefined }, "buildingId"],
     ["bed without a room", { bedId: 3 }, "roomId"],
+    ["under 18 without the guardian's consent", { under18: true }, "guardianConsent"],
+    ["under 18 not true or false", { under18: "yes", guardianConsent: true }, "under18"],
   ];
 
   it.each(invalid)("refuses %s with 400 before reaching the service", async (_name, overrides, field) => {
@@ -250,7 +262,7 @@ describe("GET /api/students", () => {
     const res = await get("");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ items: [], total: 0 });
-    expect(service.listStudents).toHaveBeenCalledWith(db, {
+    expect(service.listStudents).toHaveBeenCalledWith(hostelTx(db), {
       search: null,
       buildingId: null,
       floorId: null,
@@ -301,7 +313,7 @@ describe("GET /api/students/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ student: { id: 7 } });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.getStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+    expect(service.getStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -348,7 +360,7 @@ describe("POST /api/students/:id/transfer", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ transfer: moved });
     expect(service.transferStudent).toHaveBeenCalledWith(
-      db,
+      hostelTx(db),
       owner,
       7,
       { buildingId: 2, roomId: 4, bedId: 9 },
@@ -426,7 +438,7 @@ describe("POST /api/students/:id/deactivate", () => {
     const res = await deactivate("7");
     expect(res.status).toBe(204);
     expect(res.text).toBe("");
-    expect(service.deactivateStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+    expect(service.deactivateStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -481,7 +493,7 @@ describe("POST /api/students/:id/reactivate", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(back);
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.reactivateStudent).toHaveBeenCalledWith(db, owner, 7, body);
+    expect(service.reactivateStudent).toHaveBeenCalledWith(hostelTx(db), owner, 7, body);
   });
 
   it("treats a missing room and bed as none, and accepts any past date or up to 30 days ahead", async () => {
@@ -559,7 +571,7 @@ describe("POST /api/students/:id/reset-password", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ temporaryPassword: "ABCD234567" });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.resetStudentPassword).toHaveBeenCalledWith(db, 7);
+    expect(service.resetStudentPassword).toHaveBeenCalledWith(hostelTx(db), 7);
   });
 
   it("answers 404 for an id that is not a positive number", async () => {
@@ -610,6 +622,7 @@ describe("PATCH /api/students/:id", () => {
   it("saves the cleaned details and answers with the profile as it is now, never cached", async () => {
     service.updateStudent.mockResolvedValue(undefined);
     service.getStudent.mockResolvedValue({ id: 7, name: "Asha Rao" } as never);
+    const owner = await insertOwner(db);
     const res = await patch(
       "7",
       editForm({
@@ -619,12 +632,13 @@ describe("PATCH /api/students/:id", () => {
         foodPreference: "non_veg",
         vegDays: [6, 2],
       }),
+      cookieFor(owner, "owner"),
     );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ student: { id: 7, name: "Asha Rao" } });
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(service.updateStudent).toHaveBeenCalledWith(db, 7, {
+    expect(service.updateStudent).toHaveBeenCalledWith(hostelTx(db), 7, {
       name: "Asha Rao",
       email: "asha@example.com",
       phone: "9876543210",
@@ -638,8 +652,9 @@ describe("PATCH /api/students/:id", () => {
       foodPreference: "non_veg",
       vegDays: [2, 6],
       monthlyFee: 6500,
-    });
-    expect(service.getStudent).toHaveBeenCalledWith(db, 7, hostelToday());
+      under18: false,
+    }, owner);
+    expect(service.getStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
   it("treats a missing fee as not set", async () => {
@@ -658,6 +673,7 @@ describe("PATCH /api/students/:id", () => {
     ["negative fee", { monthlyFee: -1 }, "monthlyFee"],
     ["joining date (not editable)", { joiningDate: "2026-01-31" }, "joiningDate"],
     ["building (a move is a transfer)", { buildingId: 2 }, "buildingId"],
+    ["student under 18 without the guardian's consent", { under18: true }, "guardianConsent"],
   ])("refuses a %s with 400 before reaching the service", async (_name, overrides, field) => {
     const res = await patch("7", editForm(overrides));
     expect(res.status).toBe(400);

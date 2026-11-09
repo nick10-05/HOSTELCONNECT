@@ -90,12 +90,12 @@ export async function getMyFees(db: Queryable, studentId: number, today: string)
   const { rows: history } = await db.query<MyFeeRow>(
     `SELECT id, due_date AS "dueDate", amount, status, paid_on AS "paidOn", note
      FROM fees
-     WHERE student_id = $1
+     WHERE student_id = $1 AND hostel_id = current_hostel_id()
      ORDER BY due_date DESC`,
     [studentId],
   );
   const { rows: users } = await db.query<{ joiningDate: string | null }>(
-    `SELECT joining_date AS "joiningDate" FROM users WHERE id = $1`,
+    `SELECT joining_date AS "joiningDate" FROM users WHERE id = $1 AND hostel_id = current_hostel_id()`,
     [studentId],
   );
   const joiningDate = users[0]?.joiningDate ?? null;
@@ -179,7 +179,8 @@ export async function listFees(
     JOIN users u ON u.id = f.student_id
     LEFT JOIN stays s ON s.student_id = u.id AND s.ended_on IS NULL
     LEFT JOIN buildings b ON b.id = s.building_id
-    WHERE f.due_date >= $1::date AND f.due_date < ($1::date + interval '1 month')
+    WHERE f.hostel_id = current_hostel_id()
+      AND f.due_date >= $1::date AND f.due_date < ($1::date + interval '1 month')
       AND ($3::bigint IS NULL OR s.building_id = $3)`;
   // The status filter, on top of those rows: 'paid' and 'overdue' are states, 'pending' is
   // the status (overdue, due and upcoming together).
@@ -266,20 +267,20 @@ export async function markFeeInTransaction(
     change.status === "paid"
       ? await c.query<MarkedFee>(
           `UPDATE fees SET status = 'paid', paid_on = $2, recorded_by = $3, note = $4
-           WHERE id = $1 AND status = 'pending'
+           WHERE id = $1 AND status = 'pending' AND hostel_id = current_hostel_id()
            RETURNING ${MARKED_COLUMNS}`,
           [feeId, change.paidOn, ownerId, change.note],
         )
       : await c.query<MarkedFee>(
           `UPDATE fees SET status = 'pending', paid_on = NULL, recorded_by = NULL, note = NULL
-           WHERE id = $1 AND status = 'paid'
+           WHERE id = $1 AND status = 'paid' AND hostel_id = current_hostel_id()
            RETURNING ${MARKED_COLUMNS}`,
           [feeId],
         );
 
   if (rows.length === 0) {
     // Nothing changed: say why.
-    const { rowCount } = await c.query(`SELECT 1 FROM fees WHERE id = $1`, [feeId]);
+    const { rowCount } = await c.query(`SELECT 1 FROM fees WHERE id = $1 AND hostel_id = current_hostel_id()`, [feeId]);
     if (!rowCount) throw new HttpError(404, "fee_not_found", "That fee does not exist.");
     throw change.status === "paid"
       ? new HttpError(409, "fee_already_paid", "That fee is already marked paid.")

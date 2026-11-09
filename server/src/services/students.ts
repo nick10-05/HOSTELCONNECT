@@ -3,6 +3,7 @@ import { HttpError } from "../lib/http";
 import { hashPassword } from "../lib/password";
 import { generateTemporaryPassword } from "../lib/tempPassword";
 import { nextDueDate } from "./fees";
+import { requireStudentPlace } from "./hostels";
 
 // Students: admission, the directory and the profile (design doc, sections 3, 5, 6 and 9).
 // tests/students.test.ts describes what admitStudent must do; tests/studentDirectory.test.ts
@@ -28,6 +29,10 @@ export type AdmissionInput = {
   // Always empty for a veg student (migration 006).
   vegDays: number[];
   monthlyFee: number | null;
+  // Under 18 (phase 5b). True only when the owner has confirmed a parent's or guardian's
+  // consent (the route checks it); the consent is recorded with the owner and the time.
+  // Missing means false.
+  under18?: boolean;
   buildingId: number;
   roomId: number | null;
   bedId: number | null;
@@ -70,6 +75,10 @@ export type Admission = {
 //   (users_email_lower_key, stays_one_current_per_bed), so you can tell which one.
 //   That stays right when two admissions race for the same bed.
 // - No foreign key looks at beds.is_active, so the retired check is yours to write.
+// The unique index that refuses an email already in use: each hostel's own from migration
+// 017 (users_hostel_email_lower_key), the whole database's before it.
+const EMAIL_TAKEN_INDEXES = ["users_email_lower_key", "users_hostel_email_lower_key"];
+
 export async function admitStudent(
   db: Db,
   ownerId: number,
@@ -126,7 +135,7 @@ export async function admitStudent(
     const pgError = err as { code?: string; constraint?: string };
 
     if (pgError.code === "23505") {
-      if (pgError.constraint === "users_email_lower_key") {
+      if (EMAIL_TAKEN_INDEXES.includes(pgError.constraint ?? "")) {
         throw new HttpError(409, "email_taken", "This email address already belongs to an account.");
       }
 
@@ -153,14 +162,19 @@ export async function insertStudentWithStay(
   input: AdmissionInput,
   passwordHash: string,
 ): Promise<number> {
+  // The hostel must have room for one more current student (phase 5a).
+  await requireStudentPlace(c);
+
   // Create the student account. Only the password hash is stored.
   const user = await c.query<{ id: number }>(
     `INSERT INTO users (
       role, name, email, phone, parent_phone, password_hash, must_change_password,
       category, college_name, branch, academic_year, company, designation,
-      joining_date, food_preference, monthly_fee, veg_days
+      joining_date, food_preference, monthly_fee, veg_days,
+      under_18, guardian_consent_at, guardian_consent_by
     )
-    VALUES ('student', $1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    VALUES ('student', $1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+            $16, CASE WHEN $16 THEN now() END, CASE WHEN $16 THEN $17::bigint END)
     RETURNING id`,
     [
       input.name,
@@ -178,6 +192,8 @@ export async function insertStudentWithStay(
       input.foodPreference,
       input.monthlyFee,
       input.vegDays,
+      input.under18 === true,
+      ownerId,
     ],
   );
   const studentId = user.rows[0].id;
@@ -206,7 +222,7 @@ async function checkPlace(
   place: { buildingId: number; roomId: number | null; bedId: number | null },
 ): Promise<void> {
   const building = await c.query(
-    "SELECT id FROM buildings WHERE id = $1",
+    "SELECT id FROM buildings WHERE id = $1 AND hostel_id = current_hostel_id()",
     [place.buildingId],
   );
 
@@ -217,7 +233,7 @@ async function checkPlace(
   // If a room was provided, verify that it belongs to this building.
   if (place.roomId !== null) {
     const room = await c.query(
-      "SELECT id FROM rooms WHERE id = $1 AND building_id = $2",
+      "SELECT id FROM rooms WHERE id = $1 AND building_id = $2 AND hostel_id = current_hostel_id()",
       [place.roomId, place.buildingId],
     );
 
@@ -229,7 +245,7 @@ async function checkPlace(
   // If a bed was provided, verify its room and active status.
   if (place.bedId !== null) {
     const bed = await c.query<{ id: number; is_active: boolean }>(
-      "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2",
+      "SELECT id, is_active FROM beds WHERE id = $1 AND room_id = $2 AND hostel_id = current_hostel_id()",
       [place.bedId, place.roomId],
     );
 
@@ -313,7 +329,7 @@ export async function transferStudent(
     const student = await c.query<{ isActive: boolean }>(
       `SELECT is_active AS "isActive"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -344,7 +360,7 @@ export async function transferStudent(
               bed_id AS "bedId",
               to_char(started_on, 'YYYY-MM-DD') AS "startedOn"
        FROM stays
-       WHERE student_id = $1 AND ended_on IS NULL
+       WHERE student_id = $1 AND ended_on IS NULL AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -380,7 +396,7 @@ export async function transferStudent(
       await c.query(
         `UPDATE stays
          SET building_id = $1, room_id = $2, bed_id = $3
-         WHERE id = $4`,
+         WHERE id = $4 AND hostel_id = current_hostel_id()`,
         [to.buildingId, to.roomId, to.bedId, oldStay.id],
       );
 
@@ -401,7 +417,7 @@ export async function transferStudent(
     await c.query(
       `UPDATE stays
        SET ended_on = $1
-       WHERE id = $2`,
+       WHERE id = $2 AND hostel_id = current_hostel_id()`,
       [today, oldStay.id],
     );
 
@@ -501,7 +517,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     const student = await c.query<{ isActive: boolean }>(
       `SELECT is_active AS "isActive"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -518,7 +534,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     await c.query(
       `UPDATE users
        SET is_active = false, deactivated_at = now()
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [studentId],
     );
 
@@ -527,7 +543,7 @@ export async function deactivateStudent(db: Db, studentId: number, today: string
     await c.query(
       `UPDATE stays
        SET ended_on = GREATEST(started_on, $1::date)
-       WHERE student_id = $2 AND ended_on IS NULL`,
+       WHERE student_id = $2 AND ended_on IS NULL AND hostel_id = current_hostel_id()`,
       [today, studentId],
     );
 
@@ -602,7 +618,7 @@ export async function reactivateInTransaction(
   }>(
     `SELECT id, name, email, is_active AS "isActive"
      FROM users
-     WHERE id = $1 AND role = 'student'
+     WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
      FOR UPDATE`,
     [studentId],
   );
@@ -617,6 +633,10 @@ export async function reactivateInTransaction(
     throw new HttpError(409, "student_active", "This student is already active.");
   }
 
+  // Coming back makes them a current student again: the hostel needs room (phase 5a).
+  // After the student's lock, as every caller locks the student first.
+  await requireStudentPlace(c);
+
   // Use the actual move-out day when available. MAX(ended_on) alone is
   // insufficient because a future booking cancelled before arrival ends on
   // its scheduled start date, not on the day the student moved out.
@@ -624,12 +644,12 @@ export async function reactivateInTransaction(
     `SELECT to_char(
               COALESCE(
                 (u.deactivated_at AT TIME ZONE 'Asia/Kolkata')::date,
-                (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id)
+                (SELECT MAX(ended_on) FROM stays WHERE student_id = u.id AND hostel_id = u.hostel_id)
               ),
               'YYYY-MM-DD'
             ) AS "leftOn"
      FROM users u
-     WHERE u.id = $1`,
+     WHERE u.id = $1 AND u.hostel_id = current_hostel_id()`,
     [studentId],
   );
 
@@ -654,7 +674,7 @@ export async function reactivateInTransaction(
          joining_date = $1,
          password_hash = $2,
          must_change_password = true
-     WHERE id = $3`,
+     WHERE id = $3 AND hostel_id = current_hostel_id()`,
     [input.joiningDate, passwordHash, studentId],
   );
 
@@ -694,7 +714,7 @@ export async function reactivateInTransaction(
   await c.query(
     `UPDATE rejoin_requests
      SET status = 'approved', decided_at = now(), decided_by = $2
-     WHERE student_id = $1 AND status = 'pending'`,
+     WHERE student_id = $1 AND status = 'pending' AND hostel_id = current_hostel_id()`,
     [studentId, ownerId],
   );
 
@@ -785,7 +805,9 @@ export type StudentEdit = Omit<AdmissionInput, "buildingId" | "roomId" | "bedId"
 //   409 email_taken         another account has this email, in any letter case (the unique
 //                           index users_email_lower_key refuses the UPDATE with error 23505,
 //                           as at admission; the student's own email is never "taken")
-export async function updateStudent(db: Db, studentId: number, input: StudentEdit): Promise<void> {
+// `ownerId`: the owner making the edit, recorded as confirming a guardian's consent when
+// the student is marked under 18 for the first time (phase 5b).
+export async function updateStudent(db: Db, studentId: number, input: StudentEdit, ownerId?: number): Promise<void> {
   const c = await db.connect();
   let transactionStarted = false;
   let rollbackFailed = false;
@@ -798,7 +820,7 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
     const student = await c.query<{ isActive: boolean; monthlyFee: number | null }>(
       `SELECT is_active AS "isActive", monthly_fee AS "monthlyFee"
        FROM users
-       WHERE id = $1 AND role = 'student'
+       WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [studentId],
     );
@@ -821,8 +843,11 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
         `UPDATE users
          SET name = $2, email = $3, phone = $4, parent_phone = $5, category = $6,
              college_name = $7, branch = $8, academic_year = $9, company = $10,
-             designation = $11, food_preference = $12, veg_days = $13, monthly_fee = $14
-         WHERE id = $1`,
+             designation = $11, food_preference = $12, veg_days = $13, monthly_fee = $14,
+             under_18 = $15,
+             guardian_consent_at = CASE WHEN $15 AND guardian_consent_at IS NULL THEN now() ELSE guardian_consent_at END,
+             guardian_consent_by = CASE WHEN $15 AND guardian_consent_by IS NULL THEN $16::bigint ELSE guardian_consent_by END
+         WHERE id = $1 AND hostel_id = current_hostel_id()`,
         [
           studentId,
           input.name,
@@ -838,12 +863,14 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
           input.foodPreference,
           input.vegDays,
           input.monthlyFee,
+          input.under18 === true,
+          ownerId ?? null,
         ],
       );
     } catch (err) {
       // The unique index on lower(email) has the last word, as at admission.
       const pgError = err as { code?: string; constraint?: string };
-      if (pgError.code === "23505" && pgError.constraint === "users_email_lower_key") {
+      if (pgError.code === "23505" && EMAIL_TAKEN_INDEXES.includes(pgError.constraint ?? "")) {
         throw new HttpError(409, "email_taken", "This email address already belongs to an account.");
       }
       throw err;
@@ -899,6 +926,7 @@ export async function resetStudentPassword(
      SET password_hash = $1,
          must_change_password = true
      WHERE id = $2
+       AND hostel_id = current_hostel_id()
        AND role = 'student'
        AND is_active = true
      RETURNING id`,
@@ -912,7 +940,7 @@ export async function resetStudentPassword(
     }>(
       `SELECT role, is_active AS "isActive"
        FROM users
-       WHERE id = $1`,
+       WHERE id = $1 AND hostel_id = current_hostel_id()`,
       [studentId],
     );
 
@@ -1003,6 +1031,10 @@ export type StudentProfile = {
   deactivatedAt: string | null; // 'YYYY-MM-DD'
   // True until the student has replaced the temporary password, i.e. never logged in.
   mustChangePassword: boolean;
+  // Under 18 (phase 5b), and the guardian's consent the owner confirmed: when ('YYYY-MM-DD',
+  // India) and by whom. Kept after the student is unmarked; null if never confirmed.
+  under18: boolean;
+  guardianConsent: { on: string; by: string } | null;
   currentStay: Stay | null;
   stays: Stay[]; // every stay, newest first, the current one included
   nextDueDate: string | null; // null for a former student
@@ -1047,7 +1079,7 @@ export async function listStudents(
     FROM users u
     LEFT JOIN stays s ON s.student_id = u.id AND s.ended_on IS NULL
     ${PLACE_JOINS}
-    WHERE u.role = 'student'
+    WHERE u.role = 'student' AND u.hostel_id = current_hostel_id()
       AND ($1::text IS NULL
            OR u.name ILIKE $1 OR u.email ILIKE $1 OR r.room_number ILIKE $1)
       AND ($2::bigint IS NULL OR s.building_id = $2)
@@ -1094,28 +1126,38 @@ export async function listStudents(
 
 // One student's full profile. `today` ('YYYY-MM-DD', India) decides the next due date.
 export async function getStudent(db: Queryable, id: number, today: string): Promise<StudentProfile> {
-  const { rows } = await db.query<Omit<StudentProfile, "currentStay" | "stays" | "nextDueDate">>(
-    `SELECT id, name, email, phone, parent_phone AS "parentPhone", category,
-            college_name AS "collegeName", branch, academic_year AS "academicYear",
-            company, designation, joining_date AS "joiningDate",
-            food_preference AS "foodPreference", veg_days AS "vegDays",
-            monthly_fee AS "monthlyFee",
-            is_active AS "isActive",
+  const { rows } = await db.query<
+    Omit<StudentProfile, "currentStay" | "stays" | "nextDueDate" | "guardianConsent"> & {
+      consentOn: string | null;
+      consentBy: string | null;
+    }
+  >(
+    `SELECT u.id, u.name, u.email, u.phone, u.parent_phone AS "parentPhone", u.category,
+            u.college_name AS "collegeName", u.branch, u.academic_year AS "academicYear",
+            u.company, u.designation, u.joining_date AS "joiningDate",
+            u.food_preference AS "foodPreference", u.veg_days AS "vegDays",
+            u.monthly_fee AS "monthlyFee",
+            u.is_active AS "isActive",
             -- The day the student left, as India's date, like every other date here.
-            to_char(deactivated_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "deactivatedAt",
-            must_change_password AS "mustChangePassword"
-     FROM users WHERE id = $1 AND role = 'student'`,
+            to_char(u.deactivated_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "deactivatedAt",
+            u.must_change_password AS "mustChangePassword",
+            u.under_18 AS "under18",
+            to_char(u.guardian_consent_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "consentOn",
+            o.name AS "consentBy"
+     FROM users u
+     LEFT JOIN users o ON o.id = u.guardian_consent_by AND o.hostel_id = u.hostel_id
+     WHERE u.id = $1 AND u.role = 'student' AND u.hostel_id = current_hostel_id()`,
     [id],
   );
   if (rows.length === 0) {
     throw new HttpError(404, "student_not_found", "That student does not exist.");
   }
-  const student = rows[0];
+  const { consentOn, consentBy, ...student } = rows[0];
 
   const { rows: stayRows } = await db.query<PlaceRow & { id: number; startedOn: string; endedOn: string | null }>(
     `SELECT s.id, s.started_on AS "startedOn", s.ended_on AS "endedOn", ${PLACE_COLUMNS}
      FROM stays s ${PLACE_JOINS}
-     WHERE s.student_id = $1
+     WHERE s.student_id = $1 AND s.hostel_id = current_hostel_id()
      ORDER BY s.started_on DESC, s.id DESC`,
     [id],
   );
@@ -1128,6 +1170,7 @@ export async function getStudent(db: Queryable, id: number, today: string): Prom
 
   return {
     ...student,
+    guardianConsent: consentOn ? { on: consentOn, by: consentBy ?? "" } : null,
     currentStay: stays.find((s) => s.endedOn === null) ?? null,
     stays,
     nextDueDate: student.isActive ? nextDueDate(student.joiningDate, today) : null,

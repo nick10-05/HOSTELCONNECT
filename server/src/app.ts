@@ -10,6 +10,10 @@ import { requireSameOrigin } from "./middleware/sameOrigin";
 import { securityHeaders } from "./middleware/securityHeaders";
 import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
+import { hostelsRouter } from "./routes/hostels";
+import { googleRouter } from "./routes/google";
+import { signupRouter } from "./routes/signup";
+import type { GoogleAuth } from "./lib/google";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
 import { feesRouter } from "./routes/fees";
@@ -37,8 +41,6 @@ export type AppDeps = {
   complaintLimits?: ComplaintLimits;
   // JOB_SECRET; without it POST /api/internal/run-jobs does not exist.
   jobSecret?: string;
-  // FEES_START_DATE ('YYYY-MM-DD'); without it the fee-rows job creates nothing.
-  feesStartDate?: string;
   // Supabase Storage for complaint photos (storageFromConfig); null or missing: photo
   // uploads are off.
   storage?: PhotoStorage | null;
@@ -56,6 +58,10 @@ export type AppDeps = {
   photoOrigin?: string | null;
   // CSP_REPORT_ONLY: browsers only report policy breaks instead of blocking them.
   cspReportOnly?: boolean;
+  // Google sign-in for owners (googleFromConfig); null or missing: it is off.
+  google?: GoogleAuth | null;
+  // SIGNUPS_OPEN: new owners may sign up (with Google). Off when not given.
+  signupsOpen?: boolean;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -70,7 +76,6 @@ export function createApp({
   clientDir,
   complaintLimits = DEFAULT_COMPLAINT_LIMITS,
   jobSecret,
-  feesStartDate,
   storage = null,
   photoMaxBytes = 1024 * 1024,
   photoLinkSeconds = 60,
@@ -78,6 +83,8 @@ export function createApp({
   clock = () => new Date(),
   photoOrigin = null,
   cspReportOnly = false,
+  google = null,
+  signupsOpen = false,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -104,6 +111,11 @@ export function createApp({
   });
 
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
+  // Sign-up needs Google: without it, it stays closed whatever SIGNUPS_OPEN says.
+  const signupsOn = signupsOpen && google !== null;
+  app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google, signupsOpen: signupsOn }));
+  app.use("/api", signupRouter({ db, jwtSecret, secureCookies: production, signupsOpen: signupsOn }));
+  app.use("/api", hostelsRouter({ db, jwtSecret }));
   app.use("/api", structureRouter({ db, jwtSecret }));
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
@@ -127,7 +139,7 @@ export function createApp({
   app.use("/api", foodRouter({ db, jwtSecret, clock }));
   app.use("/api", feesRouter({ db, jwtSecret, clock }));
   app.use("/api", settingsRouter({ db, jwtSecret }));
-  app.use("/api", internalRouter({ db, jobSecret, feesStartDate, storage, clock }));
+  app.use("/api", internalRouter({ db, jobSecret, storage, clock }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

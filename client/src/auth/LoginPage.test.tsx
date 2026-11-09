@@ -5,6 +5,8 @@ import { jsonResponse, mockFetch } from "../test/fetch";
 import { LoginPage } from "./LoginPage";
 
 const asha = { id: 7, name: "Asha", role: "student", mustChangePassword: true };
+// The hostel whose address the page is at, /h/sns-hostel/login.
+const SNS = { name: "SNS Hostel", slug: "sns-hostel" };
 
 afterEach(() => {
   vi.useRealTimers();
@@ -22,7 +24,7 @@ describe("LoginPage", () => {
   it("posts the trimmed email and the password, then hands over the user", async () => {
     const fetch = mockFetch(async () => jsonResponse(200, { user: asha }));
     const onLoggedIn = vi.fn();
-    render(<LoginPage onLoggedIn={onLoggedIn} />);
+    render(<LoginPage onLoggedIn={onLoggedIn} hostel={SNS} />);
 
     await fillAndSubmit();
 
@@ -30,6 +32,7 @@ describe("LoginPage", () => {
     const [url, init] = fetch.mock.calls[0];
     expect(url).toBe("/api/auth/login");
     expect(JSON.parse(init!.body as string)).toEqual({
+      hostel: "sns-hostel",
       email: "asha@example.com",
       password: "temp-pass",
     });
@@ -43,7 +46,7 @@ describe("LoginPage", () => {
       }),
     );
     const onLoggedIn = vi.fn();
-    render(<LoginPage onLoggedIn={onLoggedIn} />);
+    render(<LoginPage onLoggedIn={onLoggedIn} hostel={SNS} />);
 
     await fillAndSubmit();
 
@@ -59,7 +62,7 @@ describe("LoginPage", () => {
     mockFetch(async () => {
       throw new TypeError("Failed to fetch");
     });
-    render(<LoginPage onLoggedIn={vi.fn()} />);
+    render(<LoginPage onLoggedIn={vi.fn()} hostel={SNS} />);
 
     await fillAndSubmit();
 
@@ -69,7 +72,7 @@ describe("LoginPage", () => {
   it("sends only one request while a login is in flight", async () => {
     let finish: (r: Response) => void = () => {};
     const fetch = mockFetch(() => new Promise<Response>((resolve) => (finish = resolve)));
-    render(<LoginPage onLoggedIn={vi.fn()} />);
+    render(<LoginPage onLoggedIn={vi.fn()} hostel={SNS} />);
 
     const user = await fillAndSubmit();
     const button = screen.getByRole("button", { name: "Signing in…" });
@@ -83,7 +86,7 @@ describe("LoginPage", () => {
   it("says the server is waking up when a login takes a while", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockFetch(() => new Promise<Response>(() => {}));
-    render(<LoginPage onLoggedIn={vi.fn()} />);
+    render(<LoginPage onLoggedIn={vi.fn()} hostel={SNS} />);
 
     await fillAndSubmit();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -95,7 +98,7 @@ describe("LoginPage", () => {
   });
 
   it("can show the password while typing", async () => {
-    render(<LoginPage onLoggedIn={vi.fn()} />);
+    render(<LoginPage onLoggedIn={vi.fn()} hostel={SNS} />);
     const user = userEvent.setup();
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     await user.click(screen.getByRole("button", { name: "Show" }));

@@ -24,6 +24,28 @@ const supabaseUrl = z
     }
   });
 
+// The address people open the app at, e.g. https://hostelconnect-o8e6.onrender.com: https
+// (or http for this machine), nothing after the host. Google sends owners back to it.
+const publicUrl = z
+  .string()
+  .transform((url) => url.replace(/\/$/, ""))
+  .superRefine((url, ctx) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      ctx.addIssue({ code: "custom", message: "is not a valid URL" });
+      return;
+    }
+    const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:")) {
+      ctx.addIssue({ code: "custom", message: "must start with https:// (http:// only for localhost)" });
+    }
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+      ctx.addIssue({ code: "custom", message: "must be the site's address only, with no path" });
+    }
+  });
+
 // Every setting the server needs, checked once at startup.
 // If something is missing or wrong, the server refuses to start with a clear message
 // instead of failing later in some random request.
@@ -73,6 +95,18 @@ const fields = z.object({
   // instead of blocking. For trying the policy on the live site before enforcing it.
   CSP_REPORT_ONLY: optional(z.enum(["true", "false"], "must be true or false"))
     .transform((value) => value === "true"),
+
+  // Google sign-in for owners (multi-tenant phase 3b), from the OAuth client in Google
+  // Cloud Console. All three or none; without them, sign-in with Google is off.
+  GOOGLE_CLIENT_ID: optional(
+    z.string().regex(/^[\w-]+\.apps\.googleusercontent\.com$/, "must be an OAuth client id ending in .apps.googleusercontent.com"),
+  ),
+  GOOGLE_CLIENT_SECRET: optional(z.string().min(10, "must be at least 10 characters")),
+  PUBLIC_URL: optional(publicUrl),
+
+  // "true" lets new owners sign up with Google (multi-tenant phase 4a). Off by default:
+  // sign-up stays closed until the Terms and Privacy Policy have been reviewed.
+  SIGNUPS_OPEN: optional(z.enum(["true", "false"], "must be true or false")).transform((value) => value === "true"),
 });
 
 // Settings that only make sense together, or that production cannot run without: a
@@ -86,6 +120,15 @@ const schema = fields.superRefine((config, ctx) => {
   }
   if (config.SUPABASE_SECRET_KEY && !config.SUPABASE_URL) {
     missing("SUPABASE_URL", "is required when SUPABASE_SECRET_KEY is set");
+  }
+  const google = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PUBLIC_URL"] as const;
+  if (google.some((name) => config[name]) && !google.every((name) => config[name])) {
+    for (const name of google) {
+      if (!config[name]) missing(name, "is required for Google sign-in, with the other two GOOGLE_ settings and PUBLIC_URL");
+    }
+  }
+  if (config.SIGNUPS_OPEN && !config.GOOGLE_CLIENT_ID) {
+    missing("SIGNUPS_OPEN", "needs Google sign-in (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PUBLIC_URL): owners sign up with Google");
   }
   if (config.NODE_ENV === "production") {
     for (const name of ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "JOB_SECRET"] as const) {

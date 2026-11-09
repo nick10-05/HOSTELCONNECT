@@ -1,14 +1,16 @@
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { createPool } from "../src/db";
+import { createPool, withHostel } from "../src/db";
 import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { loadDotEnv } from "../src/loadEnv";
+import { activeHostelBySlug } from "../src/services/hostels";
 import { confirmationMatches, resetOwnerPassword, resetTargetProblem } from "./resetOwnerPassword";
 
-// Gives the owner a new temporary password, printed once.
-//   npm run reset:owner-password -- --email owner@example.com
-//   npm run reset:owner-password -- --email owner@example.com --production
+// Gives a hostel's owner a new temporary password, printed once. The hostel is named by
+// its address (phase 6: the same email may belong to accounts in two hostels).
+//   npm run reset:owner-password -- --hostel sns-hostel --email owner@example.com
+//   npm run reset:owner-password -- --hostel sns-hostel --email owner@example.com --production
 // The owner must change it at the next login. Without --production it resets the local
 // owner only. With --production (day 10) it resets the owner in the database DATABASE_URL
 // points at, which must be on another machine; DATABASE_URL is then read from this window
@@ -16,20 +18,23 @@ import { confirmationMatches, resetOwnerPassword, resetTargetProblem } from "./r
 // The steps are in docs/RECOVERY.md.
 
 const argsSchema = z.object({
+  hostel: z.string({ error: "--hostel must be the hostel's address, such as sns-hostel" }).trim().toLowerCase().min(1),
   email: z.email("--email must be the owner's email address"),
   production: z.boolean().default(false),
 });
 
-const USAGE = "Usage: npm run reset:owner-password -- --email owner@example.com [--production]";
+const USAGE = "Usage: npm run reset:owner-password -- --hostel <address> --email owner@example.com [--production]";
 
 async function main() {
   const parsed = argsSchema.safeParse(
-    parseArgs({ options: { email: { type: "string" }, production: { type: "boolean" } } }).values,
+    parseArgs({
+      options: { hostel: { type: "string" }, email: { type: "string" }, production: { type: "boolean" } },
+    }).values,
   );
   if (!parsed.success) {
     throw new Error(`${parsed.error.issues.map((i) => i.message).join("\n")}\n${USAGE}`);
   }
-  const { email, production } = parsed.data;
+  const { hostel: slug, email, production } = parsed.data;
 
   // A production run never reads .env, so production's address need not be in a file.
   if (!production) loadDotEnv();
@@ -56,7 +61,10 @@ async function main() {
 
   const db = createPool(url);
   try {
-    const { temporaryPassword } = await resetOwnerPassword(db, email);
+    // Inside that hostel (row-level security, migration 018, shows no row outside a hostel).
+    const hostel = await activeHostelBySlug(db, slug);
+    if (!hostel) throw new Error(`No active hostel has the address "${slug}". Nothing was changed.`);
+    const { temporaryPassword } = await withHostel(db, hostel.id, (tx) => resetOwnerPassword(tx, email));
     // The one time this password is ever shown. It is not stored anywhere in plain text.
     console.log(production ? "Production owner password reset." : "Owner password reset.");
     console.log(`Temporary password: ${temporaryPassword}`);

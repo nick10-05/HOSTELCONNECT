@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import type { Dashboard, UsageCard } from "../api/dashboard";
@@ -10,7 +10,8 @@ const NO_COMPLAINTS = { active: 0, highPriority: 0, oldestActiveAt: null };
 const MB = 1024 * 1024;
 // Day 8: the storage and bandwidth card, at rest.
 const QUIET_USAGE: UsageCard = {
-  storage: { usedBytes: Math.round(12.34 * MB), limitBytes: 450 * MB, percent: 2 },
+  storage: { usedBytes: Math.round(40 * MB), limitBytes: 450 * MB, percent: 8 },
+  hostelStorage: { usedBytes: Math.round(12.34 * MB), limitBytes: 450 * MB, percent: 2 },
   egress: { month: "2026-11", usedBytes: Math.round(1.5 * MB), limitBytes: 3000 * MB, percent: 0 },
   level: "ok",
   uploadsAllowed: true,
@@ -231,6 +232,44 @@ describe("DashboardPage", () => {
     expect(usage).toHaveTextContent("Bandwidth in November 20261.5 MB of 3,000 MB (0%)");
     expect(within(usage).queryByRole("alert")).not.toBeInTheDocument();
     expect(usage).toHaveTextContent("Photo uploads are on.");
+  });
+
+  // Phase 5b: each hostel's share of storage.
+  it("shows this hostel's photos against its share, and all hostels' photos once those near the limit", async () => {
+    const shared = {
+      ...QUIET_USAGE,
+      hostelStorage: { usedBytes: Math.round(20 * MB), limitBytes: 90 * MB, percent: 22 },
+    };
+    renderPage(() => jsonResponse(200, { ...full, usage: shared }));
+    let usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(usage).toHaveTextContent("Photos stored20 MB of 90 MB (22%)");
+    expect(usage).not.toHaveTextContent("Photos of all hostels");
+    cleanup();
+
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        usage: { ...shared, storage: { usedBytes: 320 * MB, limitBytes: 450 * MB, percent: 71 }, level: "amber" },
+      }),
+    );
+    usage = await screen.findByRole("region", { name: "Storage and bandwidth" });
+    expect(usage).toHaveTextContent("Photos of all hostels320 MB of 450 MB (71%)");
+  });
+
+  it("explains uploads switched off by this hostel's share being full", async () => {
+    renderPage(() =>
+      jsonResponse(200, {
+        ...full,
+        usage: {
+          ...QUIET_USAGE,
+          hostelStorage: { ...QUIET_USAGE.hostelStorage, percent: 85 },
+          level: "uploads_off",
+          uploadsAllowed: false,
+        },
+      }),
+    );
+    const alert = within(await screen.findByRole("region", { name: "Storage and bandwidth" })).getByRole("alert");
+    expect(alert).toHaveTextContent("Space frees up as photos are deleted 48 hours after upload.");
   });
 
   it("turns amber at 70% and says when uploads will switch off", async () => {

@@ -34,6 +34,8 @@ const asha: StudentProfile = {
   foodPreference: "veg",
   vegDays: [],
   monthlyFee: 6500,
+  under18: false,
+  guardianConsent: null,
   isActive: true,
   deactivatedAt: null,
   mustChangePassword: true,
@@ -757,6 +759,53 @@ describe("editing details", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This email address already belongs to an account.");
     expect(screen.getByRole("button", { name: "Save details" })).toBeEnabled();
+  });
+
+  // Phase 5b: students under 18.
+  const minorAsha: StudentProfile = {
+    ...asha,
+    under18: true,
+    guardianConsent: { on: "2026-11-02", by: "Ravi Owner" },
+  };
+
+  it("shows who confirmed a guardian's consent, and does not ask for it again", async () => {
+    const { user, posts } = actionServer([minorAsha], { edit: saved({ ...minorAsha, under18: false }) });
+    expect(await screen.findByText("Under 18", { selector: "dt" })).toBeInTheDocument();
+    expect(valueOf("Under 18")).toHaveTextContent("Guardian's consent confirmed by Ravi Owner on 2 Nov 2026");
+
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+    expect(screen.getByRole("checkbox", { name: "Under 18" })).toBeChecked();
+    expect(screen.getByText("Guardian's consent confirmed on 2 Nov 2026.")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /guardian's consent/ })).not.toBeInTheDocument();
+
+    // They turned 18: unmarked, the edit says nothing about being under 18.
+    await user.click(screen.getByRole("checkbox", { name: "Under 18" }));
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+    await screen.findByRole("status");
+    expect(posts[0].body).not.toHaveProperty("under18");
+    expect(screen.queryByText("Under 18", { selector: "dt" })).not.toBeInTheDocument();
+  });
+
+  it("saves a student still under 18 with the consent already recorded", async () => {
+    const { user, posts } = actionServer([minorAsha], { edit: saved(minorAsha) });
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+    await screen.findByRole("status");
+    expect(posts[0].body).toMatchObject({ under18: true, guardianConsent: true });
+  });
+
+  it("asks for the consent when a student is first marked under 18 while editing", async () => {
+    const { user, posts } = actionServer([asha], { edit: saved(minorAsha) });
+    expect(screen.queryByText("Under 18", { selector: "dt" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Edit details" }));
+    await user.click(screen.getByRole("checkbox", { name: "Under 18" }));
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+    expect(posts).toEqual([]);
+
+    await user.click(screen.getByRole("checkbox", { name: /guardian's consent/ }));
+    await user.click(screen.getByRole("button", { name: "Save details" }));
+    await screen.findByRole("status");
+    expect(posts[0].body).toMatchObject({ under18: true, guardianConsent: true });
   });
 
   it("shows a former student's fee without letting it change, and sends it back as it is", async () => {

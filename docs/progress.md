@@ -1005,3 +1005,435 @@ fix, the Settings QR (`data:` image) shows, and a saved dark choice is applied f
   bucket) and the student pages. Check both on the live site during the report-only trial.
 - Rollout: deploy with `CSP_REPORT_ONLY=true` set in Render, check the live site's console,
   then delete the setting to enforce. No code change is needed to switch.
+
+### Deployment (2026-11-07)
+
+| Step | Evidence |
+|---|---|
+| Merge into `main` | Through GitHub pull request #15, as merge commit `2ac5d2b`, merged by Nikhil |
+| Enforced | The live page answers with `Content-Security-Policy` (not the report-only header), allowing images from the Supabase project's origin, plus HSTS, `nosniff`, `X-Frame-Options: DENY`, COOP and the Permissions-Policy. Checked with plain requests, no login |
+| Owner check | Production testing done by Nikhil, including his phone in light and dark |
+
+## Multi-tenant SaaS, phase 1: hostels in the schema (2026-11-07)
+
+HostelConnect becomes a platform for any hostel (decisions in `docs/decisions.md`, section
+9). Phase 1 is the "expand" step: migration `013_hostels.sql` adds hostels to the schema
+without changing what today's code does. Nothing is moved or deleted; every existing row
+becomes part of hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `hostels` table | Claude, at Nikhil's request | Done | Name, slug (for `/h/<slug>/login`, 3–40 lowercase letters, digits and single hyphens), status (active or suspended), the beta limits (300 students, 20 buildings), a per-hostel fee start date. Hostel #1, "HostelConnect", holds today's data. The app may create a hostel (name and slug only) and rename it; only the platform admin sets status and limits; the app can never delete one |
+| `hostel_id` on 15 tables | Claude | Done | `bigint NOT NULL DEFAULT 1`, so rows written by today's code land in hostel #1. `usage_counters` stays platform-wide until phase 5 |
+| No row points into another hostel | Claude | Done | Composite foreign keys on `(hostel_id, …)` from every row to its building, room, student, author, complaint or poll |
+| No row changes hostel | Claude | Done | The `hostel_id_fixed` trigger on all 15 tables |
+| Per-hostel unique rules | Claude | Done | Email, building name, one open poll and payment settings per hostel, next to today's global indexes, which phase 6 drops |
+| Google sign-in columns | Claude | Done | `users.google_sub` (owners only, unique); an owner with a Google account may have no password; students always have one |
+| Tests | Claude | Done | `tests/tenancyTables.test.ts`, 24 tests, written first and seen failing before the migration existed |
+
+Checks: server 1098 tests (1074 before) and typecheck clean. Rehearsal on a copy of the
+local demo database (104 users, 860 notifications, 217 fees), restored the way the restore
+drill restores a backup: 013 applied, every table kept its row count, every row in hostel
+#1, every new constraint validated; the copy was dropped afterwards.
+
+### Notes for later days
+
+- Moved to phase 2: "one owner per hostel". The tests create owners freely (`insertOwner`
+  in 301 places, often several in one test), so the rule waits until every test has its
+  own hostel.
+- Before merging: the same rehearsal on a restored production backup (restore drill with
+  `--keep`), then a backup and the Migrate workflow as for every migration.
+
+## Multi-tenant SaaS, phase 2a: hostel context and sign-in lookups (2026-11-07)
+
+Phase 2 makes each hostel's data invisible to every other hostel, in four steps: 2a the
+hostel context, 2b every query scoped, 2c the two-hostel isolation tests, 2d row-level
+security. 2a lays the ground; what the app does does not change, since every account is
+still in hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `withHostel(db, hostelId, fn)` in `src/db.ts` | Claude, at Nikhil's request | Done | One transaction marked with the hostel (`set_config('app.hostel_id', …, true)`, i.e. `SET LOCAL`); commits or rolls back; a connection whose rollback fails is discarded, not reused; a hostel id that is not a positive whole number is refused before connecting. 7 tests in `withHostel.test.ts` |
+| Sign-in lookups, migration `014_auth_lookups.sql` | Claude | Done | `auth_user_by_id` (the session check, never the password hash) and `auth_user_by_email(hostel, email)` (sign-in in one hostel only), `SECURITY DEFINER` with a fixed `search_path`, callable by the app only. 12 tests in `authLookups.test.ts` |
+| `requireAuth` | Claude | Done | Reads the user through `auth_user_by_id`; `req.user.hostelId` comes from the database, never the token; everyone of a suspended hostel is refused (401) |
+| Login | Claude | Done | Reads the account through `auth_user_by_email`, in hostel #1 until each hostel has its own sign-in page (phase 3); a suspended hostel gets the same answer as a wrong password |
+
+Checks: server 1119 tests (1098 before), typecheck clean. Two planted bugs were caught and
+then removed: a hostel mark that outlived its transaction (`set_config(…, false)`), and
+`requireAuth` ignoring a suspended hostel.
+
+### Notes for later days
+
+- 2b runs every route's queries inside `withHostel`. The 15 service functions that open
+  their own transactions (`db.connect()` and `BEGIN`) will run inside the request's
+  transaction instead.
+- 2d must keep the nightly backup working: it dumps as `hostel_app`, and `pg_dump` refuses
+  tables whose rows row-level security would hide. The backup needs its own role that may
+  read every row, or a policy exemption.
+
+## Multi-tenant SaaS, phase 2b-1: every request in its hostel's transaction (2026-11-07)
+
+2b is split in two. 2b-1 (this part) runs everything that touches a hostel's data inside
+`withHostel`; 2b-2 adds `hostel_id = current_hostel_id()` to every service query and names
+the hostel on every insert. What the app does still does not change: every account is in
+hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| `current_hostel_id()`, migration `015_current_hostel.sql` | Claude, at Nikhil's request | Done | The hostel the transaction is marked with; fails (instead of returning NULL) outside `withHostel`; `STABLE`; callable by the app only. 4 tests in `currentHostel.test.ts` |
+| Services' own transactions as savepoints | Claude | Done | `src/lib/savepoints.ts`, shared by `withHostel` and the tests' `rollbackDb`: a service's `BEGIN`/`COMMIT`/`ROLLBACK` becomes a savepoint inside the request's transaction, so its rollback undoes only its part. 1 new test in `withHostel.test.ts` |
+| Routes | Claude | Done | `hostelWork(db)` next to `requireAuth` gives each router `inHostel(req, tx => …)`, with the hostel from the signed-in user. All 12 routers with sessions use it, `/me` and change-password included (bcrypt runs between two short transactions, never inside one). Calls that ran side by side (`Promise.all`) now run one after the other, as they share one connection. Route tests with mocked services check the service got a transaction, not the pool (`hostelTx` in `tests/helpers/db.ts`) |
+| Public "Request access" form | Claude | Done | Runs in hostel #1 until each hostel has its own pages (phase 3), like password sign-in |
+| Scheduled jobs (`run-jobs`) | Claude | Done | Run for every hostel in turn, each in its own transactions; counts are added up. A hostel whose jobs fail is logged and skipped, the others still run, and the call answers 500 at the end. `FEES_START_DATE` is hostel #1's only until phase 5 reads `hostels.fees_start_date`. `expirePhotos` takes the hostel and handles only its photos (1 new test) |
+| Import and seed scripts | Claude | Done | `markHostel(c, 1)` right after their own `BEGIN` |
+
+Checks: server 1125 tests (1119 before), typecheck clean. Two planted bugs were caught and
+then removed: `expirePhotos` without its hostel filter, and a route calling a service with
+the bare pool.
+
+### Notes for later days
+
+- The untracked local demo seed (`scripts/demoSeed.ts`) calls services directly. It passes
+  today, but fails from 2b-2 on, when the services read `current_hostel_id()`: it needs to
+  run inside `withHostel(db, 1, …)`.
+- A failing hostel inside `run-jobs` has no test of its own yet; 2c's two-hostel tests
+  should add one.
+- Inside a test's rollback transaction, `withHostel` becomes a savepoint, and its hostel
+  mark lasts until the test's transaction ends. Tests that run more than one hostel in one
+  transaction (2c) must name the hostel again afterwards, or use separate transactions.
+
+## Multi-tenant SaaS, phase 2b-2: every query scoped to its hostel (2026-11-07)
+
+Every service and job query now filters on `hostel_id = current_hostel_id()`, and every
+new row takes the transaction's hostel. What the app does still does not change: every
+account is in hostel #1.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Reads, updates and deletes | Claude, at Nikhil's request | Done | The table each query starts from carries `hostel_id = current_hostel_id()` (services, jobs, `/me` and change-password). Rows reached through a join follow it: the composite foreign keys of migration 013 keep a child in its parent's hostel. Two joins that had no such key now say so: the poll counts join students of the poll's hostel, and a student's last stay is looked up in their own hostel |
+| New rows, migration `016_hostel_id_default.sql` | Claude | Done | `hostel_id` defaults to `current_hostel_id()` on all 15 tables, instead of 1: an insert names the transaction's hostel without the code saying so, and an insert outside `withHostel` fails |
+| `seed-owner` script | Claude | Done | Creates hostel #1's owner inside `withHostel(db, 1, …)` |
+| Tests | Claude | Done | `hostelIsolation.test.ts` (2 tests): with hostel #1 and a second hostel each holding one of everything, hostel #1's 13 lists, counts and totals read the same before and after the second hostel's rows exist, and 29 lookups or changes by id of the second hostel's rows answer 404 and change nothing of its. `testPool()` connections start in hostel #1 for the session, so the existing tests that call services straight on the pool keep working; `bareTestPool()` has no hostel, like the app's pool. 3 new tests in `currentHostel.test.ts` |
+
+Checks: server 1129 tests (1125 before), typecheck clean, two full runs. Ten planted bugs
+(a filter removed each time): eight caught. The two not caught are the beds lists of the
+dashboard and of the structure page, where another hostel's beds would be dropped anyway
+when matched to this hostel's rooms; their filters stay.
+
+### Notes for later days
+
+- **Deployment order matters.** The code from 2b-1 on calls `current_hostel_id()`
+  (migration 015), and migration 016 makes inserts outside `withHostel` fail, which the
+  code before 2b-1 does. So: back up, apply 013 to 015, deploy this code, then apply 016.
+  Applying 016 while the old code still runs would refuse every insert until the deploy.
+- Still global, to be changed before other hostels can sign up (phase 2d or 4): the
+  unique indexes on users' email, buildings' name and the one open return poll (only the
+  per-hostel ones should stay); `hostel_settings`, still one row overall (`id = 1`); photo
+  storage and egress usage (`services/usage.ts`), deliberately counted for the whole
+  platform, because the limits are those of the one shared bucket; and the owner password
+  reset script, a tool of the platform's operator that finds an owner by email anywhere.
+- The untracked local demo seed (`npm run seed:demo`) now fails on its first insert: it
+  needs to run inside `withHostel(db, 1, …)`. Its test still passes, because test pool
+  connections start in hostel #1.
+
+## Multi-tenant SaaS, phase 2c: two hostels through the routes (2026-11-07)
+
+2c tests isolation the way a signed-in user meets it: through the routes, with the hostel
+taken from the account. It found one real cross-hostel bug, fixed here.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Route-level two-hostel tests | Claude, at Nikhil's request | Done | `hostelIsolationRoutes.test.ts` (3 tests): two new hostels with one of everything; the app's hostel mark is cleared before every request, so a route without `withHostel` fails. Each owner's and student's 14 lists and counts show exactly their own rows; 28 routes given the other hostel's ids answer 404 in both directions and change nothing; each hostel's payment details stay its own |
+| Payment details, one row per hostel (migration `017_per_hostel_uniques.sql`) | Claude | Done, bug fixed | `hostel_settings.id` was always 1, so a second hostel saving its UPI details would have overwritten the first hostel's row. The id now comes from a sequence and saving upserts on `hostel_id` |
+| Per-hostel rules only (migration 017) | Claude | Done | Dropped the global unique indexes on email, building name and the one open poll; the per-hostel ones from migration 013 stay. Google accounts stay unique across hostels. Code that recognises a taken email knows both index names, for the deploy window |
+| Owner password reset script | Claude | Done | Limited to hostel #1, the only hostel with password owners, now that an email may exist in two hostels |
+| `run-jobs` with a failing hostel | Claude | Done | `jobsPerHostel.test.ts`: the failing hostel's work is rolled back, the hostel after it still runs, the failure is logged with the hostel's id, and the call answers 500 |
+| Shared two-hostel fixtures | Claude | Done | `tests/helpers/hostels.ts`, used by the service-level and route-level tests |
+
+Checks: server 1133 tests (1129 before), typecheck clean. Eight planted bugs: seven
+caught. The one not caught is the status change's UPDATE without its hostel filter,
+which the scoped lookup before it already stops with a 404.
+
+### Notes for later days
+
+- Deployment order, extended: back up, apply 013 to 015, deploy the code, then apply 016
+  and 017.
+- On this Windows machine the full run sometimes loses a test file to a worker crash
+  (exit code 0xC0000409, in a different file each time); the files pass alone, and the full
+  run passes with `npx vitest run --maxWorkers=4`. CI runs on Linux.
+- 2d (row-level security) remains: policies on all 15 tables reading
+  `current_hostel_id()`, a way for the nightly backup to read every row, and one owner per
+  hostel.
+
+## Multi-tenant SaaS, phase 2d: row-level security (2026-11-07)
+
+2d makes the database itself keep each hostel's rows to that hostel. A query that forgets
+its hostel filter, or a bug that passes another hostel's id, now finds nothing and can
+write nothing outside the hostel `withHostel` marked the transaction with.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Policies on the 15 per-hostel tables (migration `018_row_level_security.sql`) | Claude, at Nikhil's request | Done | `hostel_app` reads, changes and deletes only rows where `hostel_id = current_hostel_id()`, and may write only such rows. Outside `withHostel` every query on these tables fails ("No hostel is set"). Not forced: the tables' owner (migrations, restores, the sign-in lookups of migration 014) is not limited. `rowSecurity.test.ts` (8 tests) sends SQL with no hostel filter and checks it sees, changes and deletes none of another hostel's rows |
+| The nightly backup's own role, `hostel_backup` | Claude; the password is Nikhil's step | Done in code | Reads every row of every hostel and writes nothing; created without a login. `scripts/backup-role.ts` gives it the password from `BACKUP_DATABASE_URL` (6 tests in `backupRole.test.ts`). `backup.yml` dumps with `--enable-row-security`. Checked locally: `pg_dump` as `hostel_backup` succeeds with the flag and fails without it. The migration refuses an existing `hostel_backup` with more rights than a backup needs |
+| Photo storage for the whole platform | Claude | Done | The storage limit is the one shared bucket's, so `photo_storage_bytes()` (owner's rights, one number) counts every hostel's photos; failing deletions stay each hostel's own. New test in `usage.test.ts` |
+| Owner password reset script | Claude | Done | Runs inside hostel #1 (`withHostel`), since the table is no longer readable outside a hostel |
+| Tests that build two hostels | Claude | Done | Rows of another hostel are now written and read from inside that hostel (`asHostel`), so the foreign keys, not row-level security, are what the cross-hostel tests see refusing; `rowsOfHostel` reads under the hostel's own mark and restores the previous one |
+| Deploy and recovery docs | Claude | Done | `docs/deploy.md`: the `hostel_backup` URL, the one-time script, and the order for moving an existing deployment; `docs/RECOVERY.md`: the backup password as its own secret, and how to rotate it |
+
+Checks: server 1148 tests (1133 before), typecheck clean. Eleven planted bugs: nine caught.
+Not caught:
+- the failing-deletions count without its hostel filter: row-level security still limits
+  it to the hostel, which is what 2d is for;
+- `hostel_backup` created with BYPASSRLS: roles belong to the whole server, so the role
+  from an earlier run was reused and the planted CREATE never ran. The migration's guard
+  against such a role was checked by hand instead: with BYPASSRLS given to the local role,
+  the migration stopped with its message.
+
+### Notes for later days
+
+- Deployment order, complete: back up; apply 013 to 015; deploy the code; apply 016 to
+  018; then at once give `hostel_backup` its login (`scripts/backup-role.ts`) and set the
+  GitHub secret `BACKUP_DATABASE_URL` to its URL, and run the backup by hand. Until then
+  the nightly backup fails, since `hostel_app` now sees one hostel at most.
+  (`docs/deploy.md`, "Moving an existing deployment to hostels".)
+- Nikhil's step: a third password for `hostel_backup`, and the secret above.
+- The local demo seed (`scripts/demoSeed.ts`, Nikhil's uncommitted work) must run inside
+  `withHostel(db, 1, …)`, like `seed-owner.ts`, or row-level security refuses its queries.
+- One owner per hostel moves to phase 4 (sign-up), where each new hostel gets its owner;
+  the tests still create many owners in hostel #1.
+- `hostels` and `usage_counters` have no policies: they belong to no hostel.
+
+## Multi-tenant SaaS, phase 3a: each hostel's own address (2026-11-07)
+
+Phase 3 is in two parts: 3a gives every hostel its own sign-in and request-access pages,
+3b lets owners sign in with Google. In 3a the hostel comes from the page's address,
+`/h/<slug>/`, never from anything else in the request.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Hostel #1's address, `sns-hostel` (migration `019_hostel_one_slug.sql`) | Nikhil chose it; Claude | Done | Set only if still unset |
+| `GET /api/hostels/:slug` | Claude, at Nikhil's request | Done | Public: the hostel's name and address only; an unknown, malformed or suspended address answers 404 `hostel_not_found` |
+| Sign-in and the request form name their hostel | Claude | Done | `POST /api/auth/login` and `POST /api/rejoin-requests` take `hostel` (the slug). The same email may belong to accounts in two hostels; each address signs in only its own. An unknown or suspended hostel gets the wrong-password answer at sign-in. Without `hostel`, both still mean hostel #1, for the old pages, until phase 6 |
+| `/me` names the hostel | Claude | Done | `{ user, hostel: { name, slug } }` |
+| Client pages `/h/<slug>/login` and `/h/<slug>/request-access` | Claude | Done | Show the hostel's name; an unknown address says "No hostel here"; `/h/<slug>` leads to the sign-in page; signing out leads to the user's own hostel's sign-in page; the temporary-password card tells the owner the address their students sign in at |
+| Tests | Claude | Done | `hostelSignIn.test.ts` (11 tests), `HostelAddress.test.tsx` (7 tests). `tests/helpers/rollbackDb.ts` now puts the test's hostel mark back when one of the app's transactions ends, as a real transaction's mark ends with it: run-jobs, which visits every hostel, had left the last one's mark behind |
+
+Checks: server 1159 tests (1148 before), client 388 (381 before), both typechecks clean.
+Twelve planted bugs, all caught after one new test: at first, an unknown address that
+fell back to hostel #1 was missed, so a test now checks that a hostel #1 account cannot
+sign in through an unknown or suspended address. Checked in the browser (built client
+against the test database): `/h/sns-hostel` leads to the sign-in page, an unknown address
+says so, the request page names the hostel, and signing out lands on the user's hostel's
+page.
+
+### Notes for later days
+
+- Deployment: 019 goes with 016 to 018, after the code. Until the new client is live,
+  students keep using the old address, which still means hostel #1.
+- Hostel #1 is still named "HostelConnect", the placeholder from migration 013, so its
+  page says "Sign in to HostelConnect" until the owner renames it (phase 4).
+- 3b: Google sign-in for owners (server-side code flow with PKCE, keyed on Google's
+  `sub`), linking Google to Nikhil's existing owner account, then dropping its password.
+  Needs Nikhil's Google OAuth client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
+- Phase 6 removes the requests that name no hostel, and the old `/login` and
+  `/request-access` pages.
+
+## Multi-tenant SaaS, phase 3b: owners sign in with Google (2026-11-09)
+
+Owners can sign in with their Google account, link one to an existing owner account, and
+then drop the password. Google sign-in stays off until its three settings are in Render
+(`docs/deploy.md`, step 5a), so nothing changes in production before then.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| The flow, `src/lib/google.ts` | Claude, at Nikhil's request | Done | OpenID Connect's authorization code flow on the server, with PKCE (S256), state and nonce. The ID token is checked here against Google's published keys (RS256 only), issuer, audience, expiry, nonce and a Google-verified email; keys are cached as long as Google allows and fetched again for a new key. No new dependency. 15 tests in `google.test.ts` with a locally made key pair |
+| Routes, `src/routes/google.ts` | Claude | Done | `GET /api/auth/options`, `/api/auth/google/start`, `/link` (signed-in owners) and `/callback`. What a sign-in must remember travels in a 10-minute signed httpOnly cookie on `/api/auth/google` only, cleared by the callback. The account is found by Google's `sub`, never the email. 15 tests in `googleSignIn.test.ts` with a fake Google that checks the PKCE verifier and nonce |
+| Owner lookup by Google account (migration `020_google_sign_in.sql`) | Claude | Done | `auth_owner_by_google_sub`, like the lookups of migration 014: owners only, any hostel, callable by the app only |
+| Linking and removing the password | Claude | Done | Linking only for the owner who started it and is still signed in; never replaces a linked account; a Google account another account uses is refused. `POST /api/auth/remove-password` needs Google linked and the current password; change-password then answers `no_password`. `/me` says `account: { googleLinked, hasPassword }`, never the Google id |
+| Settings `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL` | Claude | Done | All three or none, checked at startup without printing values; 4 tests in `config.test.ts` |
+| Client | Claude | Done | "Sign in with Google" on the sign-in pages when the server has it; the outcome of a Google sign-in explained there; Settings → Sign-in links Google and removes the password. 13 tests in `GoogleSignIn.test.tsx` |
+| Docs | Claude | Done | `docs/deploy.md` step 5a (creating the OAuth client, Render settings, linking the existing owner), `docs/RECOVERY.md` (the new secret and rotating it), `.env.example` |
+
+Checks: server 1193 tests (1159 before), client 401 (388 before), both typechecks clean.
+Twenty-one planted bugs: eighteen caught at first. The replay test did not yet replay the
+same callback, so a callback that left its cookie behind went unnoticed; it now does, and
+catches it. Not caught, because another check already stops them: an explicit RS256 check
+removed (`jwt.verify` still allows only RS256), and linking without the owner check (only
+an owner can start linking, and the database refuses a Google id for a student). Checked
+in the browser with dummy settings: the button and the no-account message show, `/start`
+sends the browser to Google with PKCE, state, nonce and the flow cookie, and a stray
+callback lands on `/login?google=failed`.
+
+### Notes for later days
+
+- Nikhil's steps: create the OAuth client and add the three settings to Render
+  (`docs/deploy.md`, step 5a); then link Google to the owner account, check Google sign-in,
+  and remove the password.
+- Deployment: 020 goes with 016 to 019, after the code.
+- Phase 4 (sign-up) starts from `?google=no-account`: an unknown Google account will be
+  offered to create an owner account and a hostel instead.
+
+## Multi-tenant SaaS, phase 4a: sign-up and the hostel's profile (2026-11-09)
+
+A new owner signs up with Google, names the hostel, chooses its address and accepts the
+terms, and is signed in to an empty hostel of their own. The owner can later rename the
+hostel or move its address. Sign-up stays off until `SIGNUPS_OPEN=true` is in Render
+(`docs/deploy.md`, step 5b), which waits for the reviewed Terms and Privacy Policy.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Accepted terms, migration `021_signup.sql` | Claude, at Nikhil's request | Done | `users.terms_version` and `terms_accepted_at`: both or neither, owners only, the version trimmed and 1 to 40 characters. `TERMS_VERSION` in `src/lib/legal.ts` |
+| Making a hostel, `src/services/hostels.ts` | Claude | Done | `createHostelWithOwner`: the hostel and its one owner in one transaction (Google only, no password). It is the only way an owner is made, and it always makes a new hostel, so every hostel has one owner and a Google account owns one hostel at most (`users_google_sub_key`). `checkSlug` adds reserved addresses (`admin`, `api`, `signup`, …) |
+| Sign-up routes, `src/routes/signup.ts` | Claude | Done | The Google callback gives an unknown account a 30-minute signed ticket (httpOnly cookie on `/api/signup` only, its own audience, so a session token is no ticket) and sends it to `/signup`. `GET /api/signup`, `GET /api/signup/slug`, `POST /api/signup` (terms accepted, the shown version or 409 `terms_changed`; five hostels an hour per IP, refused forms not counted). 15 tests in `signup.test.ts`, including that sign-up never adds an owner to an existing hostel |
+| The hostel's profile, `PATCH /api/hostel` | Claude | Done | Owners only, their own hostel only (`withHostel`); a moved address frees the old one. 6 tests in `hostelProfile.test.ts` |
+| Setting `SIGNUPS_OPEN` | Claude | Done | Off by default; the server will not start with it on and Google sign-in off; `/api/auth/options` says `signupsOpen`. 2 tests in `config.test.ts` |
+| Client | Claude | Done | `/signup` (the address follows the hostel's name until edited, checked live; the terms checkbox also confirms guardians' consent for students under 18), placeholder `/terms` and `/privacy` (phase 4b), Settings → Hostel (rename, move the address with a warning that students' link changes), and "Set up your hostel with Google" on the main sign-in page while sign-up is open. 24 tests in `SignupPage.test.tsx` and `HostelProfile.test.tsx` |
+| Docs | Claude | Done | `docs/deploy.md` step 5b, `.env.example` |
+
+Checks: server 1216 tests (1193 before), client 425 (401 before), both typechecks clean.
+Eighteen planted bugs: sixteen caught at first. The two misses now have tests: a token
+signed with the server's secret and shaped like a ticket but without the sign-up audience
+(a session token was already refused, as it has no email), and the sign-up page showing
+what the server said about the previous address for a new one. Checked in the browser
+against the test database, with a locally made ticket in place of Google: the main sign-in
+page offers sign-up, `/signup` without a ticket sends you to Google, `/terms` shows the
+placeholder; with the ticket the address follows the hostel's name and shows as free,
+"Create my hostel" signs the owner in, and Settings → Hostel moved the address (the old one
+then answers 404).
+
+### Notes for later days
+
+- Phase 4b: the plain-language Terms of Service and Privacy Policy on `/terms` and
+  `/privacy`, marked as under legal review. Then a lawyer's review, then `SIGNUPS_OPEN`.
+- Deployment: 021 goes with 016 to 020, after the code. With `SIGNUPS_OPEN` unset nothing
+  changes for users, apart from Settings → Hostel.
+- A new hostel starts empty: the owner sets up its buildings before admitting students.
+  Its limits (300 students, 20 buildings) are enforced in phase 5.
+
+## Multi-tenant SaaS, phase 4b: draft Terms of Service and Privacy Policy (2026-11-09)
+
+Plain-language drafts on `/terms` and `/privacy`, written to match what the app does,
+marked as under legal review. Sign-up stays closed until a lawyer has reviewed them.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| The text, `client/src/legal/documents.ts` | Claude, at Nikhil's request (phase 0) | Draft | Terms: the free beta and 30 days' notice before it stops or costs money, one hostel per Google account, the beta limits, the owner as Data Fiduciary and HostelConnect as Data Processor (DPDP Act 2023), guardians' consent for students under 18, no sensitive ID numbers in free text, fees paid outside the app, deletion on request within 30 days, no guarantee, changes re-accepted. Privacy Policy: what is recorded about owners and students, why, who sees it, the services used (Render, Supabase in Singapore; Google; GitHub backups, encrypted), how long it is kept, cookies, security, children, rights and grievances |
+| The pages, `LegalPage.tsx` | Claude | Done | A readable page for each, its version, the under-review note, a link to the other; works on a phone and in both themes. 4 tests in `LegalPage.test.tsx` |
+| Keeping the text true | Claude | Done | `server/tests/legalVersion.test.ts`: the documents' version is the one sign-up asks owners to accept, and the photo (48 hours), notification (60 days) and sign-in (7 days) periods are the server's. Changing any of the three on the server fails it (checked) |
+
+Checks: server 1218 tests (1216 before), client 429 (425 before), both typechecks clean.
+Checked in the browser: both pages, at phone width (no sideways scrolling) and in light
+and dark.
+
+### Notes for later days
+
+- Still to fill in, in square brackets: the operator's legal name and address, the
+  contact email, the grievance officer, the city for jurisdiction, and the liability
+  limit. Then the lawyer's review; remove `UNDER_REVIEW` and set a final version (both
+  `LEGAL_VERSION` and `TERMS_VERSION`) once it is approved.
+- Promises the drafts make that rely on someone doing them by hand for now: deleting a
+  hostel within 30 days of a request (with a copy if asked), answering rights requests
+  within 30 days, and notice in the app before changes or stopping. A deletion script
+  and a way to export a hostel's data would make them easier to keep.
+- Phase 5 (guardian consent recorded per student under 18) makes the minors' promise
+  checkable in the app.
+
+## Multi-tenant SaaS, phase 5a: each hostel's limits and fees start date (2026-11-09)
+
+Each hostel now keeps to its limits (300 current students, 20 buildings in the beta), and
+starts tracking fees from its own date, which its owner sets in Settings. No migration:
+the columns came with migration 013.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Limits, `src/services/hostels.ts` | Claude, at Nikhil's request (phase 0) | Done | `requireStudentPlace` before a student becomes current (admission and the import script through `insertStudentWithStay`, reactivation and approved rejoin requests through `reactivateInTransaction`); `requireBuildingPlace` before a building is added. Both lock the hostel's row first, so two admissions at once cannot both take the last place. Former students do not count. 409 `student_limit_reached` / `building_limit_reached`, telling the owner what to do. Tests in `hostelLimits.test.ts` |
+| Each hostel's fees start date | Claude | Done | The hourly job creates fee rows for each hostel from `hostels.fees_start_date`; a hostel without one gets none. The owner sets or changes it with `PATCH /api/hostel` (2020-01-01 to a year ahead; it cannot be removed). `FEES_START_DATE` is written to hostel #1 at startup if hostel #1 has no date yet, then never again (`adoptFeesStartDate`). Tests in `jobsRoutes.test.ts`, `adoptFeesStartDate.test.ts`, `hostelLimits.test.ts` |
+| `GET /api/hostel` | Claude | Done | The owner's own hostel: name, address, fees start date, limits and how much of them is used |
+| Client | Claude | Done | Settings → Fees and limits: the start date (with what changing it does) and "102 of 300" for students and buildings, marked when full. 6 tests in `HostelFeesAndLimits.test.tsx`. Refusals at the limit show where they happen (checked in the browser on the Structure page) |
+| Tests' hostel #1 | Claude | Done | `tests/globalSetup.ts` lifts hostel #1's limits in the test database, where every test file puts its rows (a full run leaves about 360 students and 90 buildings there) |
+| Docs | Claude | Done | `docs/deploy.md` (raising a hostel's limits), `.env.example` (`FEES_START_DATE` is hostel #1's starting value only) |
+
+Checks: server 1232 tests (1218 before), client 435 (429 before), both typechecks clean.
+Fourteen planted bugs: eleven caught at first. Two now have tests: the limit check without
+the hostel's lock (a deterministic test holds one admission open and checks the second
+waits, then is refused), and Settings sending the old date instead of a changed one. Not
+caught, because row-level security already stops it: usage counted over every hostel.
+Checked in the browser against the test database with a hostel limited to one student and
+one building: Settings showed "0 of 1" and "1 of 1 (full)", saved a start date, and the
+Structure page showed the building-limit message.
+
+### Notes for later days
+
+- Deployment: no migration. Before it, decide hostel #1's limits (`docs/deploy.md`); if
+  `FEES_START_DATE` is ever set in Render, the first start after this deploy copies it to
+  hostel #1, and from then on the owner's Settings decide.
+- Phase 5b: the CSV import per hostel (through the same limit), guardians' consent for
+  students under 18, and photo storage per hostel.
+
+## Multi-tenant SaaS, phase 5b: the import per hostel, guardians' consent, storage shares (2026-11-09)
+
+The CSV import now goes into one chosen hostel within its limits; an owner confirms a
+parent's or guardian's consent before adding a student under 18, and the app records who
+and when; and each hostel's photos count against its own share of storage.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Migration 022 | Claude, at Nikhil's request (phase 0) | Done | `users.under_18`, `guardian_consent_at`, `guardian_consent_by` (an account of the same hostel). Checks: only students may be under 18, a student under 18 has a consent, and the time and the owner come together. Tests in `guardianConsent.test.ts` |
+| Consent at admission and editing | Claude | Done | The route refuses `under18` without `guardianConsent` (400 naming `guardianConsent`); the service records the owner and the time the first time a student is marked, keeps them when another owner saves again, and keeps them after the student is unmarked (they turned 18). `GET /api/students/:id` shows `under18` and `guardianConsent: {on, by}` |
+| The import, `scripts/importStudents.ts` | Claude | Done | `--hostel <address>` names the hostel; its one owner imports. The owner must belong to it. The whole file is checked against the hostel's limits first (students, and the new buildings it names) with the hostel's row locked. Optional columns `under_18` and `guardian_consent` (yes/no, empty for no). Tests in `importIntoHostel.test.ts` |
+| Storage shares, `src/services/usage.ts` | Claude | Done | `hostelStorage`: this hostel's photos against the storage limit divided by the number of active hostels. Uploads switch off at 85% of the share or of the whole limit. Tests in `usage.test.ts` (a new hostel's share; one hostel's full share does not stop another's uploads) |
+| Client | Claude | Done | "Under 18" on the admit and edit forms, with the consent checkbox when there is no consent yet; the profile shows "Guardian's consent confirmed by X on date"; the dashboard shows this hostel's photos against its share, and every hostel's photos once those pass 70% |
+| Docs | Claude | Done | `docs/deploy.md` (storage shares, importing a register with `--hostel`, students under 18 and migration 022), `docs/import-template.csv` (the two optional columns) |
+
+Checks: server 1255 tests (1232 before), client 443 (435 before), both typechecks clean.
+Fifteen planted bugs: fourteen caught at first. The one missed (the edit form not carrying
+a recorded consent, which would have stopped every save of a student under 18 without
+saying why) now has a test. Checked in the browser against the test database: the admit
+form asked for the consent, the profile named who confirmed it, saving again did not ask
+twice, and the dashboard showed a 64.3 MB share.
+
+### Notes for later days
+
+- Deployment: apply migration 022 with **Migrate production database** before deploying
+  this code. The import command now needs `--hostel sns-hostel` for hostel #1.
+- Phase 6: remove the hostel #1 fallbacks, rehearse on a restored production backup.
+
+## Multi-tenant SaaS, phase 6: no more hostel #1 fallbacks, and the rehearsal (2026-11-09)
+
+Every password sign-in and every request to come back now names its hostel; the plain
+`/login` and `/request-access` ask for the hostel's address first (Nikhil chose this over
+a temporary redirect to SNS). The database side of "contract" was already done (global
+uniques dropped in 017, `DEFAULT 1` replaced in 016). A script rehearses the whole move
+on a restored production backup.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Sign-in and the request form | Claude, at Nikhil's request | Done | `hostel` is required in `POST /api/auth/login` and `POST /api/rejoin-requests`; without it, 400 "hostel: open your hostel's own sign-in page, /h/<address>/login" (no account looked up, nothing filed). Tests in `authRoutes.test.ts`, `hostelSignIn.test.ts`; every other sign-in in the tests names `sns-hostel` |
+| `/login` and `/request-access` | Claude | Done | `FindHostel`: the hostel's address (or a pasted sign-in link), looked up, then on to `/h/<address>/login` or `/request-access`; "No hostel has this address" otherwise. Owners still sign in with Google on `/login`, and new owners set up a hostel there. 9 tests in `FindHostel.test.tsx` |
+| Owner password reset script | Claude | Done | `--hostel <address>` required; refuses an unknown hostel. Tried by hand: without `--hostel` it stops before connecting |
+| Rehearsal, `ops/rehearse-saas.sh` + `server/scripts/rehearse-saas.ts` | Claude | Done, not yet run on a production backup | Restores the backup into the local `restore_drill`, runs 013 to 022, checks rows per table unchanged, one hostel (#1 at `sns-hostel`), every row in hostel #1, one owner, every password account found by sign-in, the app sees everything inside hostel #1 and is refused outside, nobody under 18. Prints counts only. Refuses any database but a local copy. Tried on a copy of the local demo database (at 012, 104 accounts): all migrations applied in 0.2 s, every check passed; with a planted change, the check failed and the script exited 1 |
+| Docs | Claude | Done | `docs/deploy.md` (the move from 012 to 022 as one short break, with the new sign-in address for students first; first sign-in at `/h/sns-hostel/login`), `docs/RECOVERY.md` (the rehearsal; the reset script's `--hostel`) |
+
+Checks: server 1257 tests (1255 before), client 452 (443 before), both typechecks clean.
+Fourteen planted bugs, all caught. Checked in the browser against the test database:
+`/login` asked for the address, refused an unknown one, and went on to
+`/h/sns-hostel/login` for "SNS-Hostel"; `/request-access` asked first; sign-in and the
+request without a hostel answered 400.
+
+### Notes for later days
+
+- Before deploying: run the rehearsal on the newest production backup (Nikhil, with the
+  backup key) and record its output here; give the students `/h/sns-hostel/login`.
+- `FEES_START_DATE` and `adoptFeesStartDate` stay for now (production has none set, so
+  they do nothing there); they can go in a later clean-up.
+
+### Rehearsal on the production backup (2026-11-09)
+
+`ops/rehearse-saas.sh` on `hostelconnect-2026-11-09T0109Z.dump.age` (production at
+012): migrations 013 to 022 applied in 0.2 s, and every check passed. Rows per table
+unchanged (3 users, 2 buildings, 2 floors, 2 rooms, 6 beds, 3 stays, 2 announcements, 1
+notification, 1 return poll, the rest empty); one hostel, #1, active, at `sns-hostel`; every
+row in hostel #1; one owner; every account with a password found by sign-in; the app sees
+all 3 accounts inside hostel #1 and is refused outside any hostel. Hostel #1 has no fees
+start date yet (the owner sets it in Settings after the move). The local copy was dropped
+afterwards.

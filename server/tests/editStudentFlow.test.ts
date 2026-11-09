@@ -22,7 +22,7 @@ beforeAll(async () => {
 afterAll(() => db.end());
 
 async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post("/api/auth/login").send({ email, password });
+  const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password });
   expect(res.status).toBe(200);
   const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
   const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
@@ -90,7 +90,7 @@ describe("editing a student", { timeout: 60_000 }, () => {
     expect(edited.body.student.stays[0]).toMatchObject({ bedId: s.bed1, startedOn: "2026-01-14", endedOn: null });
 
     // The same temporary password still works, now with the corrected email only.
-    expect((await request(app).post("/api/auth/login").send({ email, password: admitted.body.temporaryPassword })).status).toBe(401);
+    expect((await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: admitted.body.temporaryPassword })).status).toBe(401);
     await login(corrected, admitted.body.temporaryPassword);
   });
 });

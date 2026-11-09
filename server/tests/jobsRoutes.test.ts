@@ -7,11 +7,12 @@ import { signSession } from "../src/lib/token";
 import { SESSION_COOKIE } from "../src/middleware/auth";
 import { inRollback, insertOwner, insertStudent, photoJobLockShared, testPool } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
+import { asHostel } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
 // POST /api/internal/run-jobs (design doc, sections 5, 8 and 10): called every hour by
 // GitHub Actions with a secret header; it runs the expire-photos job (day 8), the
-// fee-rows job (day 9, only when FEES_START_DATE is set), and fee reminders, the owner's
+// fee-rows job (day 9; phase 5a: for each hostel with a fees start date), and fee reminders, the owner's
 // digest and pruning (day 10). Each test builds its own app (the rate limit lives in the
 // app) on rollbackDb, with a clock fixed in 1999, so the job sees this test's photos only
 // and everything is rolled back. Photos another file commits (expirePhotos.test.ts's race
@@ -30,9 +31,12 @@ const PATH = "/api/internal/run-jobs";
 
 type Ctx = { c: PoolClient; storage: FakeStorage; app: ReturnType<typeof createApp> };
 
-function withApp(deps: Partial<AppDeps>, fn: (ctx: Ctx) => Promise<void>) {
+// `feesStartDate`: hostel #1's own fees start date for this test (phase 5a), rolled back
+// with the rest.
+function withApp({ feesStartDate, ...deps }: Partial<AppDeps> & { feesStartDate?: string }, fn: (ctx: Ctx) => Promise<void>) {
   return inRollback(db, async (c) => {
     await photoJobLockShared(c);
+    if (feesStartDate) await c.query("UPDATE hostels SET fees_start_date = $1 WHERE id = 1", [feesStartDate]);
     const storage = fakeStorage();
     const app = createApp({
       db: rollbackDb(c),
@@ -69,7 +73,7 @@ describe("POST /api/internal/run-jobs", () => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 }, feeRows: null, ...NOTHING_DAY_10 });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 1, failed: 0 }, feeRows: { created: 0 }, ...NOTHING_DAY_10 });
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(storage.objects.has(photo.path)).toBe(false);
       expect(await deletedAt(c, photo.id)).toEqual(NOW);
@@ -134,7 +138,7 @@ describe("POST /api/internal/run-jobs", () => {
     withApp({ storage: null }, async ({ app }) => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: null, ...NOTHING_DAY_10 });
+      expect(res.body).toEqual({ expirePhotos: { deleted: 0, failed: 0 }, feeRows: { created: 0 }, ...NOTHING_DAY_10 });
     }));
 
   it("takes at most 10 calls per 15 minutes from all callers together, right secret or not", () =>
@@ -179,7 +183,7 @@ describe("POST /api/internal/run-jobs: fee rows", () => {
       (r) => r.d,
     );
 
-  it("creates the fee rows due within 7 days when FEES_START_DATE is set, and says how many", () =>
+  it("creates the fee rows due within 7 days from the hostel's fees start date, and says how many", () =>
     withApp({ feesStartDate: "1999-01-01" }, async ({ c, app }) => {
       const s = await joinedOn(c, "1999-01-15"); // due 15 February, within 7 days of 10 February
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
@@ -188,11 +192,11 @@ describe("POST /api/internal/run-jobs: fee rows", () => {
       expect(await feeDates(c, s)).toEqual(["1999-02-15"]);
     }));
 
-  it("creates nothing and answers feeRows null without FEES_START_DATE", () =>
+  it("creates nothing for a hostel without a fees start date", () =>
     withApp({}, async ({ c, app }) => {
       const s = await joinedOn(c, "1999-01-15");
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
-      expect(res.body.feeRows).toBeNull();
+      expect(res.body.feeRows).toEqual({ created: 0 });
       expect(await feeDates(c, s)).toEqual([]);
     }));
 
@@ -210,6 +214,29 @@ describe("POST /api/internal/run-jobs: fee rows", () => {
       const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
       expect(res.body.feeRows).toEqual({ created: 0 });
       expect(await feeDates(c, s)).toEqual([]);
+    }));
+
+  // Phase 5a: each hostel from its own date.
+  it("creates rows for each hostel from that hostel's own start date", () =>
+    withApp({}, async ({ c, app }) => {
+      const without = await joinedOn(c, "1999-01-15"); // hostel #1, which has no date here
+      const b = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Fees B') RETURNING id")).rows[0].id;
+      await c.query("UPDATE hostels SET fees_start_date = '1999-01-01' WHERE id = $1", [b]);
+      await asHostel(c, b);
+      const inB = await joinedOn(c, "1999-01-15");
+      const late = (await c.query<{ id: number }>("INSERT INTO hostels (name) VALUES ('Fees C') RETURNING id")).rows[0].id;
+      await c.query("UPDATE hostels SET fees_start_date = '1999-03-01' WHERE id = $1", [late]);
+      await asHostel(c, late);
+      const inC = await joinedOn(c, "1999-01-15");
+      await asHostel(c, 1);
+
+      const res = await request(app).post(PATH).set("X-Job-Secret", JOB_SECRET);
+      expect(res.body.feeRows).toEqual({ created: 1 });
+      expect(await feeDates(c, without)).toEqual([]);
+      await asHostel(c, b);
+      expect(await feeDates(c, inB)).toEqual(["1999-02-15"]);
+      await asHostel(c, late);
+      expect(await feeDates(c, inC)).toEqual([]);
     }));
 
   // Day 10: reminders run after the fee rows, so a row created in this call is reminded in it.

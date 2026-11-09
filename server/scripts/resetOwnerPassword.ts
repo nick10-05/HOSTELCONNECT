@@ -20,7 +20,10 @@ export async function resetOwnerPassword(
   // One statement: the role check and the change cannot be separated by another write.
   const { rowCount } = await db.query(
     `UPDATE users SET password_hash = $1, must_change_password = true
-     WHERE role = 'owner' AND lower(email) = lower($2)`,
+     WHERE role = 'owner' AND lower(email) = lower($2)
+       -- Hostel #1, the only hostel with password owners: owners of new hostels sign in
+       -- with Google (phase 3), and the same email may exist in other hostels.
+       AND hostel_id = 1`,
     [hash, email.trim()],
   );
   // The email is not repeated: this message may be pasted into a chat or an issue.

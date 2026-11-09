@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import { updateStudent, type StudentProfile } from "../api/students";
 import { checkEdit, type AdmissionErrors, type AdmissionValues, type TextValues } from "./admissionForm";
-import { FoodField, Section, SelectField, TextField } from "./AdmitStudentPage";
+import { AgeField, FoodField, Section, SelectField, TextField } from "./AdmitStudentPage";
 import { formatDate, formatRupees } from "./format";
 import { primaryButton, secondaryButton } from "./styles";
 
@@ -30,6 +30,9 @@ function valuesFrom(s: StudentProfile): AdmissionValues {
     joiningDate: s.joiningDate,
     foodPreference: s.foodPreference,
     vegDays: [...s.vegDays],
+    under18: s.under18,
+    // A consent already recorded is not asked for again (the server keeps the first one).
+    guardianConsent: s.guardianConsent !== null,
     monthlyFee: s.monthlyFee === null ? "" : String(s.monthlyFee),
     buildingId: "",
     roomId: "",
@@ -61,6 +64,11 @@ export function EditStudentForm({
       ...v,
       vegDays: v.vegDays.includes(day) ? v.vegDays.filter((d) => d !== day) : [...v.vegDays, day],
     }));
+
+  const setFlag = (name: "under18" | "guardianConsent", value: boolean) => {
+    setValues((v) => ({ ...v, [name]: value }));
+    setErrors((e) => ({ ...e, guardianConsent: undefined }));
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -99,6 +107,11 @@ export function EditStudentForm({
           label="Parent or guardian mobile"
           type="tel"
           inputMode="tel"
+        />
+        <AgeField
+          {...fieldProps}
+          setFlag={setFlag}
+          consentOn={student.guardianConsent ? formatDate(student.guardianConsent.on) : undefined}
         />
       </Section>
 

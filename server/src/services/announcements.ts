@@ -101,12 +101,12 @@ export async function postAnnouncement(db: Db, ownerId: number, input: NewAnnoun
 //   404 announcement_not_found  "That announcement does not exist."   (nothing deleted)
 export async function deleteAnnouncementInTransaction(c: Queryable, id: number): Promise<void> {
   // The announcement first: if it does not exist, nothing is deleted.
-  const { rowCount } = await c.query(`DELETE FROM announcements WHERE id = $1`, [id]);
+  const { rowCount } = await c.query(`DELETE FROM announcements WHERE id = $1 AND hostel_id = current_hostel_id()`, [id]);
   if (rowCount === 0) throw NOT_FOUND();
 
   // Then its notifications, for every user: the exact key only (no LIKE, so
   // 'announcement:12' is never caught when deleting announcement 1).
-  await c.query(`DELETE FROM notifications WHERE dedup_key = $1`, [announcementKey(id)]);
+  await c.query(`DELETE FROM notifications WHERE dedup_key = $1 AND hostel_id = current_hostel_id()`, [announcementKey(id)]);
 }
 
 // Deletes an announcement and its notifications, all or nothing.
@@ -135,7 +135,7 @@ export async function updateAnnouncement(
          is_urgent = coalesce($4, is_urgent),
          is_pinned = coalesce($5, is_pinned),
          updated_at = now()
-     WHERE id = $1
+     WHERE id = $1 AND hostel_id = current_hostel_id()
      RETURNING ${COLUMNS}`,
     [id, changes.title ?? null, changes.body ?? null, changes.isUrgent ?? null, changes.isPinned ?? null],
   );
@@ -152,10 +152,11 @@ export async function listAnnouncements(
   db: Queryable,
   page: { page: number; limit: number },
 ): Promise<{ items: Announcement[]; total: number }> {
-  const { rows: counted } = await db.query<{ total: number }>(`SELECT count(*)::int AS total FROM announcements`);
+  const { rows: counted } = await db.query<{ total: number }>(`SELECT count(*)::int AS total FROM announcements WHERE hostel_id = current_hostel_id()`);
   const { rows } = await db.query<Announcement>(
     `SELECT ${COLUMNS}
      FROM announcements
+     WHERE hostel_id = current_hostel_id()
      ORDER BY is_pinned DESC, created_at DESC, id DESC
      LIMIT $1 OFFSET $2`,
     [page.limit, (page.page - 1) * page.limit],

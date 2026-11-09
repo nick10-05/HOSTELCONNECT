@@ -21,6 +21,7 @@ export type UsageLevel = "ok" | "amber" | "uploads_off";
 
 export type Usage = {
   storage: { usedBytes: number; limitBytes: number; percent: number };
+  hostelStorage: { usedBytes: number; limitBytes: number; percent: number };
   egress: { month: string; usedBytes: number; limitBytes: number; percent: number };
   level: UsageLevel;
   uploadsAllowed: boolean;
@@ -39,8 +40,12 @@ export function egressKey(now: Date): string {
 //
 // storage.usedBytes   the sum of photo_size_bytes over complaints whose photo exists and is
 //                     not yet deleted (photo_path set, photo_deleted_at empty), every
-//                     student's, expired or not: an expired photo uses storage until the
+//                     hostel's, expired or not: an expired photo uses storage until the
 //                     job confirms its deletion. 0 when there are none.
+// hostelStorage       the same for this hostel's photos only, against its equal share of
+//                     the storage limit (phase 5b): the limit divided by the number of
+//                     active hostels, rounded down to a byte. With one hostel, the whole
+//                     limit. One busy hostel cannot use up the bucket for the others.
 // egress.month        'YYYY-MM' of `now` in India's calendar.
 // egress.usedBytes    the value of that month's counter in usage_counters (egressKey);
 //                     0 when the month has no row yet.
@@ -50,35 +55,51 @@ export function egressKey(now: Date): string {
 //                     It can pass 100.
 // level               "uploads_off" when either percent is UPLOADS_OFF_PERCENT or more;
 //                     otherwise "amber" when either is AMBER_PERCENT or more; otherwise
-//                     "ok". The worse of the two limits decides.
+//                     "ok". The worst of storage, hostelStorage and egress decides.
 // uploadsAllowed      false exactly when level is "uploads_off". The guard looks at usage
 //                     as it is now, without the photo being uploaded (decided on day 8).
 // failingDeletions    how many photos that are not yet deleted have failed to delete
 //                     DELETE_WARNING_ATTEMPTS times or more (photo_delete_attempts).
 export async function getUsage(db: Queryable, limits: UsageLimits, now: Date): Promise<Usage> {
   const key = egressKey(now);
-  // One query, so storage, failures and egress are read at the same moment. The partial
-  // index complaints_photo_due covers exactly these rows.
-  const { rows } = await db.query<{ stored: number; failing: number; egress: number }>(
-    `SELECT coalesce(sum(photo_size_bytes), 0)::bigint AS stored,
-            count(*) FILTER (WHERE photo_delete_attempts >= $2)::int AS failing,
-            coalesce((SELECT value FROM usage_counters WHERE key = $1), 0)::bigint AS egress
-     FROM complaints
-     WHERE photo_path IS NOT NULL AND photo_deleted_at IS NULL`,
+  // One query, so storage, failures and egress are read at the same moment. Storage and
+  // egress are the whole platform's (one shared bucket): photo_storage_bytes() counts every
+  // hostel's photos (migration 018), and usage_counters belongs to no hostel. Failing
+  // deletions are this hostel's own, for its owner's dashboard.
+  const { rows } = await db.query<{ stored: number; own: number; hostels: number; failing: number; egress: number }>(
+    `SELECT photo_storage_bytes() AS stored,
+            (SELECT coalesce(sum(photo_size_bytes), 0)::bigint FROM complaints
+             WHERE hostel_id = current_hostel_id()
+               AND photo_path IS NOT NULL AND photo_deleted_at IS NULL) AS own,
+            (SELECT count(*)::int FROM hostels WHERE status = 'active') AS hostels,
+            (SELECT count(*)::int FROM complaints
+             WHERE hostel_id = current_hostel_id()
+               AND photo_path IS NOT NULL AND photo_deleted_at IS NULL
+               AND photo_delete_attempts >= $2) AS failing,
+            coalesce((SELECT value FROM usage_counters WHERE key = $1), 0)::bigint AS egress`,
     [key, DELETE_WARNING_ATTEMPTS],
   );
-  const { stored, failing, egress } = rows[0];
+  const { stored, own, hostels, failing, egress } = rows[0];
 
   const storage = share(stored, limits.storageLimitMb);
+  const shareBytes = Math.floor((limits.storageLimitMb * 1024 * 1024) / Math.max(hostels, 1));
+  const hostelStorage = { usedBytes: own, limitBytes: shareBytes, percent: Math.floor((own * 100) / shareBytes) };
   const monthly = { month: key.slice("egress:".length), ...share(egress, limits.egressLimitMb) };
 
   // A floored percentage reaches a threshold exactly when the exact one does, so the
   // thresholds can be compared with the whole numbers the card shows.
-  const worst = Math.max(storage.percent, monthly.percent);
+  const worst = Math.max(storage.percent, hostelStorage.percent, monthly.percent);
   const level: UsageLevel =
     worst >= UPLOADS_OFF_PERCENT ? "uploads_off" : worst >= AMBER_PERCENT ? "amber" : "ok";
 
-  return { storage, egress: monthly, level, uploadsAllowed: level !== "uploads_off", failingDeletions: failing };
+  return {
+    storage,
+    hostelStorage,
+    egress: monthly,
+    level,
+    uploadsAllowed: level !== "uploads_off",
+    failingDeletions: failing,
+  };
 }
 
 // Bytes used against a limit in MB, with the percentage rounded down.

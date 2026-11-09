@@ -78,7 +78,7 @@ export async function getPollResults(
   buildingId: number | null = null,
 ): Promise<PollResults> {
   const { rows: polls } = await db.query<ReturnPoll>(
-    `SELECT ${POLL_COLUMNS} FROM return_polls WHERE id = $1`,
+    `SELECT ${POLL_COLUMNS} FROM return_polls WHERE id = $1 AND hostel_id = current_hostel_id()`,
     [pollId],
   );
   if (polls.length === 0) throw POLL_NOT_FOUND();
@@ -95,7 +95,7 @@ export async function getPollResults(
      LEFT JOIN buildings b ON b.id = s.building_id
      LEFT JOIN rooms r ON r.id = s.room_id
      LEFT JOIN return_poll_responses a ON a.poll_id = $1 AND a.student_id = u.id
-     WHERE u.role = 'student' AND u.is_active
+     WHERE u.role = 'student' AND u.is_active AND u.hostel_id = current_hostel_id()
        AND ($2::bigint IS NULL OR s.building_id = $2)
      ORDER BY lower(u.name), u.id`,
     [pollId, buildingId],
@@ -135,9 +135,9 @@ export async function getPollCounts(db: Queryable, pollIds: number[]): Promise<M
             count(*) FILTER (WHERE a.response = 'not_yet')::int AS "notYet",
             count(u.id) FILTER (WHERE a.response IS NULL)::int AS "noResponse"
      FROM return_polls p
-     LEFT JOIN users u ON u.role = 'student' AND u.is_active
+     LEFT JOIN users u ON u.role = 'student' AND u.is_active AND u.hostel_id = p.hostel_id
      LEFT JOIN return_poll_responses a ON a.poll_id = p.id AND a.student_id = u.id
-     WHERE p.id = ANY ($1::bigint[])
+     WHERE p.id = ANY ($1::bigint[]) AND p.hostel_id = current_hostel_id()
      GROUP BY p.id`,
     [pollIds],
   );
@@ -175,7 +175,7 @@ const POLL_CLOSED = () => new HttpError(409, "poll_closed", "That poll is closed
 // Returns the new poll.
 export async function createPollInTransaction(c: Queryable, ownerId: number, title: string): Promise<ReturnPoll> {
   // The usual case: an open poll is already there.
-  const { rowCount } = await c.query(`SELECT 1 FROM return_polls WHERE status = 'open' LIMIT 1`);
+  const { rowCount } = await c.query(`SELECT 1 FROM return_polls WHERE status = 'open' AND hostel_id = current_hostel_id() LIMIT 1`);
   if (rowCount) throw POLL_ALREADY_OPEN();
 
   // The race: another request opened one after the check. The index refuses this insert.
@@ -188,7 +188,12 @@ export async function createPollInTransaction(c: Queryable, ownerId: number, tit
     poll = rows[0];
   } catch (err) {
     const { code, constraint } = err as { code?: string; constraint?: string };
-    if (code === "23505" && constraint === "return_polls_one_open") throw POLL_ALREADY_OPEN();
+    if (
+      code === "23505" &&
+      (constraint === "return_polls_one_open" || constraint === "return_polls_one_open_per_hostel")
+    ) {
+      throw POLL_ALREADY_OPEN();
+    }
     throw err;
   }
 
@@ -218,14 +223,14 @@ export async function closePoll(db: Queryable, pollId: number): Promise<ReturnPo
   // One statement: two closes at once cannot both succeed (the second finds it closed).
   const { rows } = await db.query<ReturnPoll>(
     `UPDATE return_polls SET status = 'closed', closed_at = now()
-     WHERE id = $1 AND status = 'open'
+     WHERE id = $1 AND status = 'open' AND hostel_id = current_hostel_id()
      RETURNING ${POLL_COLUMNS}`,
     [pollId],
   );
   if (rows.length > 0) return rows[0];
 
   // Nothing closed: say why.
-  const { rowCount } = await db.query(`SELECT 1 FROM return_polls WHERE id = $1`, [pollId]);
+  const { rowCount } = await db.query(`SELECT 1 FROM return_polls WHERE id = $1 AND hostel_id = current_hostel_id()`, [pollId]);
   throw rowCount ? POLL_CLOSED() : POLL_NOT_FOUND();
 }
 
@@ -247,7 +252,7 @@ export async function answerPollInTransaction(
   // FOR SHARE: a close (an UPDATE of this row) waits until this transaction ends, and this
   // waits for a close already under way, then sees the poll closed.
   const { rows: polls } = await c.query<{ status: PollStatus }>(
-    `SELECT status FROM return_polls WHERE id = $1 FOR SHARE`,
+    `SELECT status FROM return_polls WHERE id = $1 AND hostel_id = current_hostel_id() FOR SHARE`,
     [pollId],
   );
   if (polls.length === 0) throw POLL_NOT_FOUND();
@@ -279,10 +284,11 @@ export async function listPolls(
   db: Queryable,
   page: { page: number; limit: number },
 ): Promise<{ items: PollWithCounts[]; total: number }> {
-  const { rows: counted } = await db.query<{ total: number }>(`SELECT count(*)::int AS total FROM return_polls`);
+  const { rows: counted } = await db.query<{ total: number }>(`SELECT count(*)::int AS total FROM return_polls WHERE hostel_id = current_hostel_id()`);
   const { rows } = await db.query<ReturnPoll>(
     `SELECT ${POLL_COLUMNS}
      FROM return_polls
+     WHERE hostel_id = current_hostel_id()
      ORDER BY created_at DESC, id DESC
      LIMIT $1 OFFSET $2`,
     [page.limit, (page.page - 1) * page.limit],
@@ -310,7 +316,7 @@ export async function listOpenPollsForStudent(db: Queryable, studentId: number):
             a.response AS "myResponse", a.responded_at AS "respondedAt"
      FROM return_polls p
      LEFT JOIN return_poll_responses a ON a.poll_id = p.id AND a.student_id = $1
-     WHERE p.status = 'open'
+     WHERE p.status = 'open' AND p.hostel_id = current_hostel_id()
      ORDER BY p.created_at DESC, p.id DESC`,
     [studentId],
   );

@@ -40,6 +40,7 @@ export async function requestRejoin(
      WHERE lower(email) = lower($1)
        AND role = 'student'
        AND is_active = false
+       AND hostel_id = current_hostel_id()
      ON CONFLICT (student_id) WHERE status = 'pending'
      DO NOTHING`,
     [email, message],
@@ -81,7 +82,7 @@ export async function listRejoinRequests(
   db: Queryable,
   f: RejoinFilters,
 ): Promise<{ items: RejoinRequestItem[]; total: number }> {
-  const where = `WHERE ($1::text = 'pending') = (r.status = 'pending')`;
+  const where = `WHERE r.hostel_id = current_hostel_id() AND ($1::text = 'pending') = (r.status = 'pending')`;
 
   const { rows: counted } = await db.query<{ total: number }>(
     `SELECT count(*)::int AS total FROM rejoin_requests r ${where}`,
@@ -137,7 +138,7 @@ export async function listRejoinRequests(
 // Why a request cannot be decided: it does not exist, or it is no longer pending.
 async function refuseDecision(db: Queryable, requestId: number): Promise<never> {
   const { rows } = await db.query<{ status: RejoinStatus }>(
-    "SELECT status FROM rejoin_requests WHERE id = $1",
+    "SELECT status FROM rejoin_requests WHERE id = $1 AND hostel_id = current_hostel_id()",
     [requestId],
   );
   if (rows.length === 0) {
@@ -161,7 +162,7 @@ export async function rejectRejoinRequest(
   const { rowCount } = await db.query(
     `UPDATE rejoin_requests
      SET status = 'rejected', decided_at = now(), decided_by = $2
-     WHERE id = $1 AND status = 'pending'`,
+     WHERE id = $1 AND status = 'pending' AND hostel_id = current_hostel_id()`,
     [requestId, ownerId],
   );
   if (rowCount === 0) await refuseDecision(db, requestId);
@@ -208,7 +209,8 @@ export async function approveRejoinRequest(
     // and is refused below.
     await c.query(
       `SELECT id FROM users
-       WHERE id = (SELECT student_id FROM rejoin_requests WHERE id = $1)
+       WHERE id = (SELECT student_id FROM rejoin_requests WHERE id = $1 AND hostel_id = current_hostel_id())
+         AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [requestId],
     );
@@ -216,7 +218,7 @@ export async function approveRejoinRequest(
     const request = await c.query<{ studentId: number; status: RejoinStatus }>(
       `SELECT student_id AS "studentId", status
        FROM rejoin_requests
-       WHERE id = $1
+       WHERE id = $1 AND hostel_id = current_hostel_id()
        FOR UPDATE`,
       [requestId],
     );

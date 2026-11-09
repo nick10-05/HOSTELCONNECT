@@ -43,7 +43,7 @@ export type FoodCounts = {
 // Read-only, outside a transaction; no names or phone numbers, counts only.
 export async function getFoodCounts(db: Queryable, date: string, pollId: number | null = null): Promise<FoodCounts> {
   if (pollId !== null) {
-    const { rowCount } = await db.query(`SELECT 1 FROM return_polls WHERE id = $1`, [pollId]);
+    const { rowCount } = await db.query(`SELECT 1 FROM return_polls WHERE id = $1 AND hostel_id = current_hostel_id()`, [pollId]);
     if (!rowCount) throw POLL_NOT_FOUND();
   }
 
@@ -69,6 +69,7 @@ export async function getFoodCounts(db: Queryable, date: string, pollId: number 
                       AND ($3::bigint IS NULL OR EXISTS (
                             SELECT 1 FROM return_poll_responses a
                             WHERE a.poll_id = $3 AND a.student_id = u.id AND a.response = 'returned'))
+     WHERE b.hostel_id = current_hostel_id()
      GROUP BY b.id
      ORDER BY lower(b.name), b.id`,
     [date, weekday, pollId],

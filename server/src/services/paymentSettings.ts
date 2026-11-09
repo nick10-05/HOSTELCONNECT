@@ -42,7 +42,8 @@ export async function getPaymentSettings(db: Queryable): Promise<PaymentSettings
   }>(
     `SELECT upi_id AS "upiId", upi_payee_name AS "upiPayeeName", qr_image IS NOT NULL AS "hasQr",
             updated_at AS "updatedAt"
-     FROM hostel_settings`,
+     FROM hostel_settings
+     WHERE hostel_id = current_hostel_id()`,
   );
   const r = rows[0];
   if (!r) return { upiId: null, upiPayeeName: null, qrUrl: null, updatedAt: null };
@@ -57,7 +58,7 @@ export async function getPaymentSettings(db: Queryable): Promise<PaymentSettings
 // The uploaded QR image, or null when there is none. Read-only.
 export async function getPaymentQr(db: Queryable): Promise<PaymentQr | null> {
   const { rows } = await db.query<PaymentQr>(
-    `SELECT qr_image AS bytes, qr_mime AS mime FROM hostel_settings WHERE qr_image IS NOT NULL`,
+    `SELECT qr_image AS bytes, qr_mime AS mime FROM hostel_settings WHERE qr_image IS NOT NULL AND hostel_id = current_hostel_id()`,
   );
   return rows[0] ?? null;
 }
@@ -84,6 +85,7 @@ export async function savePaymentSettings(db: Db, change: PaymentChange): Promis
     }>(
       `SELECT upi_id AS "upiId", upi_payee_name AS "upiPayeeName", qr_image AS "qrImage", qr_mime AS "qrMime"
        FROM hostel_settings
+       WHERE hostel_id = current_hostel_id()
        FOR UPDATE`,
     );
     const saved = rows[0] ?? null;
@@ -103,7 +105,7 @@ export async function savePaymentSettings(db: Db, change: PaymentChange): Promis
     await c.query(
       `INSERT INTO hostel_settings (upi_id, upi_payee_name, qr_image, qr_mime, updated_at)
        VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (id) DO UPDATE
+       ON CONFLICT (hostel_id) DO UPDATE
          SET upi_id = EXCLUDED.upi_id,
              upi_payee_name = EXCLUDED.upi_payee_name,
              qr_image = EXCLUDED.qr_image,
