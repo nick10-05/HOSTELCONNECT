@@ -2,6 +2,7 @@ import path from "node:path";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { createPool } from "./db";
+import { googleFromConfig } from "./lib/google";
 import { storageFromConfig } from "./lib/storage";
 import { loadDotEnv } from "./loadEnv";
 
@@ -27,6 +28,7 @@ const app = createApp({
   // Already https with no path (config), so it is the origin photo links point to.
   photoOrigin: config.SUPABASE_URL ?? null,
   cspReportOnly: config.CSP_REPORT_ONLY,
+  google: googleFromConfig(config),
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

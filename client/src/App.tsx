@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
-import { logout, me, type User } from "./api/auth";
+import { authOptions, logout, me, type Account, type User } from "./api/auth";
 import { signInPath, type Hostel } from "./api/hostels";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
-import { HostelContext } from "./auth/hostel";
+import { AccountContext, HostelContext } from "./auth/hostel";
 import { HostelAddress } from "./auth/HostelAddress";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
@@ -15,6 +15,7 @@ import { ComplaintsPage } from "./owner/ComplaintsPage";
 import { DashboardPage } from "./owner/DashboardPage";
 import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
+import { GoogleSignIn } from "./owner/GoogleSignIn";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
 import { ReturnPollsPage } from "./owner/ReturnPollsPage";
@@ -50,16 +51,25 @@ import { ThemeSwitch } from "./ui/theme";
 type Session =
   | { status: "loading" }
   | { status: "anonymous" }
-  | { status: "signed-in"; user: User; hostel: Hostel | null };
+  | { status: "signed-in"; user: User; hostel: Hostel | null; account: Account | null };
 
 export function App() {
   const [session, setSession] = useState<Session>({ status: "loading" });
+  const [googleEnabled, setGoogleEnabled] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Whether "Sign in with Google" is set up (phase 3b). Off if the server cannot say.
+  useEffect(() => {
+    authOptions()
+      .then((options) => setGoogleEnabled(options.google))
+      .catch(() => setGoogleEnabled(false));
+  }, []);
 
   // The cookie is httpOnly, so JavaScript cannot see it: ask the server who we are.
   const loadSession = () =>
     me()
-      .then(({ user, hostel }) => setSession({ status: "signed-in", user, hostel }))
+      .then(({ user, hostel, account }) => setSession({ status: "signed-in", user, hostel, account }))
       .catch(() => setSession({ status: "anonymous" }));
   useEffect(() => {
     void loadSession();
@@ -67,7 +77,9 @@ export function App() {
 
   // Signing in or choosing a password: ask again, for the hostel as well as the user.
   const signIn = (user: User) => {
-    setSession((s) => ({ status: "signed-in", user, hostel: s.status === "signed-in" ? s.hostel : null }));
+    setSession((s) =>
+      s.status === "signed-in" ? { ...s, user } : { status: "signed-in", user, hostel: null, account: null },
+    );
     void loadSession();
   };
   // Signed out, back to the sign-in page of the user's own hostel.
@@ -90,6 +102,9 @@ export function App() {
     );
   }
 
+  // What Google sign-in came back with, for the sign-in page (/login?google=…).
+  const googleOutcome = new URLSearchParams(location.search).get("google");
+
   // Signed out: the request form for former students, and the sign-in page everywhere else.
   if (session.status === "anonymous") {
     return (
@@ -97,7 +112,11 @@ export function App() {
         {/* Each hostel's own pages (phase 3a): the hostel comes from the address. */}
         <Route
           path="/h/:slug/login"
-          element={<HostelAddress>{(h) => <LoginPage onLoggedIn={signIn} hostel={withSlug(h)} />}</HostelAddress>}
+          element={
+            <HostelAddress>
+              {(h) => <LoginPage onLoggedIn={signIn} hostel={withSlug(h)} googleEnabled={googleEnabled} googleOutcome={googleOutcome} />}
+            </HostelAddress>
+          }
         />
         <Route
           path="/h/:slug/request-access"
@@ -106,12 +125,12 @@ export function App() {
         <Route path="/h/:slug" element={<SlugRedirect />} />
         {/* The old addresses: hostel #1's pages, until phase 6. */}
         <Route path="/request-access" element={<RequestAccessPage />} />
-        <Route path="*" element={<LoginPage onLoggedIn={signIn} />} />
+        <Route path="*" element={<LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} />} />
       </Routes>
     );
   }
 
-  const { user, hostel } = session;
+  const { user, hostel, account } = session;
 
   // A temporary password unlocks nothing else (the server enforces the same rule).
   if (user.mustChangePassword) {
@@ -122,6 +141,7 @@ export function App() {
   // On a phone the menu is a tab bar floating at the bottom; from md up it is a sidebar.
   return (
     <HostelContext.Provider value={hostel}>
+    <AccountContext.Provider value={account ? { ...account, googleEnabled } : null}>
     <ToastProvider>
       <div className="min-h-dvh bg-app">
         <header className="sticky top-0 z-40 px-3 pt-2.5 md:px-6">
@@ -171,7 +191,15 @@ export function App() {
                 <Route path="/return-polls/:id" element={<ReturnPollPage />} />
                 <Route path="/food-counts" element={<FoodCountsPage />} />
                 <Route path="/fees" element={<FeesPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
+                <Route
+                  path="/settings"
+                  element={
+                    <>
+                      <SettingsPage />
+                      <GoogleSignIn />
+                    </>
+                  }
+                />
                 {/* The owner starts on the dashboard; unknown addresses go there too
                     instead of showing a blank page. */}
                 <Route path="*" element={<Navigate to="/" replace />} />
@@ -197,6 +225,7 @@ export function App() {
         </div>
       </div>
     </ToastProvider>
+    </AccountContext.Provider>
     </HostelContext.Provider>
   );
 }

@@ -132,6 +132,38 @@ Log in on the Render URL with the temporary password. The app allows nothing els
 you choose a new one (the server enforces this too). If the script says an owner
 already exists, it changed nothing.
 
+## 5a. Google sign-in for owners (multi-tenant phase 3b)
+
+Owners sign in with their Google account. Until the three settings below are in Render,
+the sign-in page shows no Google button and nothing else changes.
+
+1. console.cloud.google.com → create a project, e.g. `HostelConnect`.
+2. **Google Auth Platform** (or APIs & Services → OAuth consent screen) → Get started:
+   app name `HostelConnect`, your email as support and developer contact, audience
+   **External**. Under Data access the app needs only `openid` and `.../auth/userinfo.email`,
+   which need no review by Google.
+3. **Clients** → Create client → **Web application**, name `HostelConnect web`.
+   - Authorized JavaScript origins: none needed.
+   - Authorized redirect URIs: `https://<service>.onrender.com/api/auth/google/callback`
+     (exactly, with https and no trailing slash).
+4. Copy the client ID and the client secret. The secret is shown in full only now; keep
+   it in your password manager.
+5. Render → Environment → add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+   `PUBLIC_URL` = `https://<service>.onrender.com` → save (redeploys).
+6. While the consent screen is in **Testing**, only the Google accounts listed under
+   Audience → Test users can sign in. Add yours. Publish the app (Audience → Publish)
+   before other owners sign up (phase 4).
+
+Then, for the existing owner account:
+
+1. Sign in with the password as before → Settings → **Sign-in** → **Link Google account**,
+   and choose your Google account. Settings then says it is linked.
+2. Sign out, and sign in with **Sign in with Google** to check it works.
+3. Back in Settings → **Remove password**, with the current password. From then on only
+   Google signs you in (decided in phase 0). If Google sign-in ever breaks before that
+   step, the password still works; after it, `npm run reset:owner-password` gives the
+   owner a password again (docs/RECOVERY.md).
+
 ## 6. First backup and restore drill
 
 1. Actions → **Backup database** → Run workflow. It then runs every night at 03:00 IST.

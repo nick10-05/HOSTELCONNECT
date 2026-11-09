@@ -5,7 +5,7 @@ import { z } from "zod";
 import { parseBody, sendError } from "../lib/http";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { SESSION_TTL_SECONDS, signSession, type Role } from "../lib/token";
-import { hostelWork, requireAuth, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
+import { hostelWork, requireAuth, requireRole, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
 import { activeHostelBySlug, slugSchema } from "../services/hostels";
 
 export type AuthRouteDeps = AuthDeps & {
@@ -65,17 +65,26 @@ function failedAttemptLimiter(message: string) {
   });
 }
 
-export function authRouter(deps: AuthRouteDeps): Router {
-  const { db, jwtSecret, secureCookies } = deps;
-  const inHostel = hostelWork(db);
-  const router = Router();
-
-  const cookieOptions: CookieOptions = {
+// The session cookie's settings, shared with Google sign-in (routes/google.ts).
+export function sessionCookieOptions(secureCookies: boolean): CookieOptions {
+  return {
     httpOnly: true, // JavaScript in the page cannot read it, so an XSS bug cannot steal it
     sameSite: "lax", // not sent on cross-site POSTs
     secure: secureCookies,
     path: "/",
   };
+}
+
+const removePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "is required").max(200),
+});
+
+export function authRouter(deps: AuthRouteDeps): Router {
+  const { db, jwtSecret, secureCookies } = deps;
+  const inHostel = hostelWork(db);
+  const router = Router();
+
+  const cookieOptions = sessionCookieOptions(secureCookies);
 
   router.post(
     "/login",
@@ -125,15 +134,22 @@ export function authRouter(deps: AuthRouteDeps): Router {
 
   router.get("/me", requireAuth(deps, { allowTemporaryPassword: true }), async (req, res) => {
     const { rows } = await inHostel(req, (tx) =>
-      tx.query<UserRow & { hostel_name: string; hostel_slug: string | null }>(
-        `SELECT u.id, u.name, u.role, u.must_change_password, h.name AS hostel_name, h.slug AS hostel_slug
+      tx.query<UserRow & { hostel_name: string; hostel_slug: string | null; google_linked: boolean; has_password: boolean }>(
+        `SELECT u.id, u.name, u.role, u.must_change_password, h.name AS hostel_name, h.slug AS hostel_slug,
+                u.google_sub IS NOT NULL AS google_linked, u.password_hash IS NOT NULL AS has_password
          FROM users u JOIN hostels h ON h.id = u.hostel_id
          WHERE u.id = $1 AND u.hostel_id = current_hostel_id()`,
         [req.user!.id],
       ),
     );
-    // The hostel too: its name for the page, and its address for signing in again.
-    res.json({ user: publicUser(rows[0]), hostel: { name: rows[0].hostel_name, slug: rows[0].hostel_slug } });
+    const row = rows[0];
+    // The hostel too: its name for the page, and its address for signing in again. And how
+    // the account signs in (phase 3b), for the owner's settings; never the Google id itself.
+    res.json({
+      user: publicUser(row),
+      hostel: { name: row.hostel_name, slug: row.hostel_slug },
+      account: { googleLinked: row.google_linked, hasPassword: row.has_password },
+    });
   });
 
   router.post(
@@ -151,9 +167,15 @@ export function authRouter(deps: AuthRouteDeps): Router {
       const userId = req.user!.id;
       // Two short transactions, not one: no connection is held while bcrypt works.
       const current = await inHostel(req, (tx) =>
-        tx.query<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = $1 AND hostel_id = current_hostel_id()", [userId]),
+        tx.query<{ password_hash: string | null }>("SELECT password_hash FROM users WHERE id = $1 AND hostel_id = current_hostel_id()", [userId]),
       );
-      if (!(await verifyPassword(body.currentPassword, current.rows[0].password_hash))) {
+      const currentHash = current.rows[0].password_hash;
+      // An owner who signs in with Google only has no password to change.
+      if (currentHash === null) {
+        sendError(res, 400, "no_password", "This account signs in with Google and has no password.");
+        return;
+      }
+      if (!(await verifyPassword(body.currentPassword, currentHash))) {
         // 400, not 401: the session is fine, only this form field is wrong.
         sendError(res, 400, "wrong_password", "Current password is incorrect.");
         return;
@@ -169,6 +191,49 @@ export function authRouter(deps: AuthRouteDeps): Router {
         ),
       );
       res.json({ user: publicUser(rows[0]) });
+    },
+  );
+
+  // An owner whose Google account is linked may drop the password, and from then on signs
+  // in with Google only (decided in phase 0). The current password confirms it is them.
+  router.post(
+    "/remove-password",
+    requireAuth(deps),
+    requireRole("owner"),
+    failedAttemptLimiter("Too many attempts. Try again in 15 minutes."),
+    async (req, res) => {
+      const body = parseBody(removePasswordSchema, req, res);
+      if (!body) return;
+      const userId = req.user!.id;
+      const { rows } = await inHostel(req, (tx) =>
+        tx.query<{ password_hash: string | null; google_linked: boolean }>(
+          `SELECT password_hash, google_sub IS NOT NULL AS google_linked
+           FROM users WHERE id = $1 AND hostel_id = current_hostel_id()`,
+          [userId],
+        ),
+      );
+      const { password_hash: hash, google_linked: googleLinked } = rows[0];
+      if (!googleLinked) {
+        sendError(res, 400, "google_not_linked", "Link your Google account before removing the password.");
+        return;
+      }
+      if (hash === null) {
+        sendError(res, 400, "no_password", "This account already signs in with Google only.");
+        return;
+      }
+      if (!(await verifyPassword(body.currentPassword, hash))) {
+        sendError(res, 400, "wrong_password", "Current password is incorrect.");
+        return;
+      }
+      // Only if Google is still linked (users_can_sign_in would refuse it otherwise).
+      await inHostel(req, (tx) =>
+        tx.query(
+          `UPDATE users SET password_hash = NULL
+           WHERE id = $1 AND hostel_id = current_hostel_id() AND google_sub IS NOT NULL`,
+          [userId],
+        ),
+      );
+      res.status(204).end();
     },
   );
 

@@ -225,3 +225,41 @@ describe("loadConfig: FEES_START_DATE", () => {
   });
 });
 
+
+describe("loadConfig: Google sign-in (multi-tenant phase 3b)", () => {
+  const google = {
+    GOOGLE_CLIENT_ID: "1234-abcdef.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: "GOCSPX-a-client-secret",
+    PUBLIC_URL: "https://hostelconnect-o8e6.onrender.com/",
+  };
+
+  it("is off without the three settings, also in production", () => {
+    const config = loadConfig(valid);
+    expect([config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET, config.PUBLIC_URL]).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("takes all three together, the address without its trailing slash", () => {
+    const config = loadConfig({ ...valid, ...google });
+    expect(config.PUBLIC_URL).toBe("https://hostelconnect-o8e6.onrender.com");
+    expect(loadConfig({ ...valid, ...google, PUBLIC_URL: "http://localhost:5173" }).PUBLIC_URL).toBe("http://localhost:5173");
+  });
+
+  it("names the missing ones when only some are set, without printing the others", () => {
+    let message = "";
+    try {
+      loadConfig({ ...valid, GOOGLE_CLIENT_ID: google.GOOGLE_CLIENT_ID });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/GOOGLE_CLIENT_SECRET: is required for Google sign-in/);
+    expect(message).toMatch(/PUBLIC_URL: is required for Google sign-in/);
+    expect(message).not.toContain("1234-abcdef");
+  });
+
+  it("refuses a client id, secret or address that cannot be right", () => {
+    expect(() => loadConfig({ ...valid, ...google, GOOGLE_CLIENT_ID: "1234-abcdef" })).toThrow(/GOOGLE_CLIENT_ID/);
+    expect(() => loadConfig({ ...valid, ...google, GOOGLE_CLIENT_SECRET: "short" })).toThrow(/GOOGLE_CLIENT_SECRET/);
+    expect(() => loadConfig({ ...valid, ...google, PUBLIC_URL: "http://hostelconnect.example" })).toThrow(/PUBLIC_URL: must start with https/);
+    expect(() => loadConfig({ ...valid, ...google, PUBLIC_URL: "https://hostelconnect.example/app" })).toThrow(/PUBLIC_URL: must be the site's address only/);
+  });
+});

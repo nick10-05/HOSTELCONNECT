@@ -11,6 +11,8 @@ import { securityHeaders } from "./middleware/securityHeaders";
 import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { hostelsRouter } from "./routes/hostels";
+import { googleRouter } from "./routes/google";
+import type { GoogleAuth } from "./lib/google";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
 import { feesRouter } from "./routes/fees";
@@ -57,6 +59,8 @@ export type AppDeps = {
   photoOrigin?: string | null;
   // CSP_REPORT_ONLY: browsers only report policy breaks instead of blocking them.
   cspReportOnly?: boolean;
+  // Google sign-in for owners (googleFromConfig); null or missing: it is off.
+  google?: GoogleAuth | null;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -79,6 +83,7 @@ export function createApp({
   clock = () => new Date(),
   photoOrigin = null,
   cspReportOnly = false,
+  google = null,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -105,6 +110,7 @@ export function createApp({
   });
 
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
+  app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google }));
   app.use("/api", hostelsRouter({ db }));
   app.use("/api", structureRouter({ db, jwtSecret }));
   app.use("/api", studentsRouter({ db, jwtSecret }));

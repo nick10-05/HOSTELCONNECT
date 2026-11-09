@@ -9,11 +9,27 @@ import { AuthShell, authCardClass } from "../ui/AuthShell";
 // slow first login is normal. After this long, say so instead of looking frozen.
 const SLOW_HINT_AFTER_MS = 4000;
 
+// What Google sign-in came back with (/login?google=…, routes/google.ts on the server).
+const GOOGLE_OUTCOMES: Record<string, string> = {
+  "no-account": "No HostelConnect owner account uses that Google account. Sign in with your password, then link Google in Settings.",
+  inactive: "That account cannot sign in: the account or its hostel is not active.",
+  cancelled: "Google sign-in was cancelled.",
+  failed: "Google sign-in did not work. Please try again.",
+};
+
 // `hostel`: the hostel whose address this page is at, /h/<slug>/login. Without one, the
 // page at the old address, which signs in to hostel #1 (until phase 6).
-type Props = { onLoggedIn: (user: User) => void; hostel?: Hostel & { slug: string } };
+// `googleEnabled`: show "Sign in with Google" (owners, phase 3b); `googleOutcome`: the
+// ?google= value Google sign-in came back with.
+type Props = {
+  onLoggedIn: (user: User) => void;
+  hostel?: Hostel & { slug: string };
+  googleEnabled?: boolean;
+  googleOutcome?: string | null;
+};
 
-export function LoginPage({ onLoggedIn, hostel }: Props) {
+export function LoginPage({ onLoggedIn, hostel, googleEnabled = false, googleOutcome = null }: Props) {
+  const googleMessage = googleOutcome ? GOOGLE_OUTCOMES[googleOutcome] : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -51,9 +67,9 @@ export function LoginPage({ onLoggedIn, hostel }: Props) {
           onSubmit={handleSubmit}
           className={authCardClass}
         >
-          {error && (
+          {(error ?? googleMessage) && (
             <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
-              {error}
+              {error ?? googleMessage}
             </p>
           )}
 
@@ -110,6 +126,16 @@ export function LoginPage({ onLoggedIn, hostel }: Props) {
             <p role="status" className="text-center text-sm text-muted">
               The server is waking up. This can take up to a minute.
             </p>
+          )}
+
+          {googleEnabled && (
+            <div className="space-y-2 border-t border-line pt-4 text-center">
+              <p className="text-sm text-muted">Hostel owner?</p>
+              {/* A plain link: the server sends the browser on to Google. */}
+              <a href="/api/auth/google/start" className={`${buttonClass("secondary")} min-h-12 w-full`}>
+                Sign in with Google
+              </a>
+            </div>
           )}
         </form>
 

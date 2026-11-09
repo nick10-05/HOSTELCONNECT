@@ -25,6 +25,7 @@ No secret is written here. Every account is on a free plan with no card.
 | `JOB_SECRET` | Render and GitHub secret `JOB_SECRET`, the same value | The hourly "Run jobs" call |
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Render only | Photo storage. The secret key reaches every bucket of the project |
 | `AGE_PUBLIC_KEY` | GitHub secret (safe to share) | Encrypts each backup |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL` | Render only; the client in Google Cloud Console (project `HostelConnect`) | Owners' Google sign-in. The secret lets anyone exchange sign-in codes as the app |
 | **Backup private key** `hostelconnect-backup.key` | Two places off this laptop (USB stick, password manager) | The only way to open a backup. **Lost key = useless backups** |
 | Owner's app password | The owner's own memory or password manager | Logging in; reset with section 6 |
 
@@ -147,6 +148,7 @@ Rotate when a secret may have leaked (pasted somewhere, a laptop lost) and once 
 | Backup database password | New password as in `docs/deploy.md`, step 1.4; put it in the `BACKUP_DATABASE_URL` value and run `scripts/backup-role.ts` (`docs/deploy.md`, step 3); then update the GitHub secret `BACKUP_DATABASE_URL` | Backups between the two steps fail; run **Backup database** by hand after |
 | Supabase admin password | Supabase → Project Settings → Database → reset password. Update GitHub `MIGRATION_DATABASE_URL` | None until the next migration |
 | `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API keys → create a new secret key, set it in Render, then delete the old key | Photo upload and viewing fail between the two edits |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console → Clients → HostelConnect web → Add secret; set it in Render; then disable and delete the old secret there | Google sign-in fails between the Render change and its redeploy; passwords unaffected |
 | Backup key pair | `age-keygen -o hostelconnect-backup-<year>.key`; put its public key in the GitHub secret `AGE_PUBLIC_KEY`. **Keep the old private key** for 90 days: older backups need it | None |
 
 ## 8. Moving to another host

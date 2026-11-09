@@ -1237,3 +1237,38 @@ page.
   Needs Nikhil's Google OAuth client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 - Phase 6 removes the requests that name no hostel, and the old `/login` and
   `/request-access` pages.
+
+## Multi-tenant SaaS, phase 3b: owners sign in with Google (2026-11-09)
+
+Owners can sign in with their Google account, link one to an existing owner account, and
+then drop the password. Google sign-in stays off until its three settings are in Render
+(`docs/deploy.md`, step 5a), so nothing changes in production before then.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| The flow, `src/lib/google.ts` | Claude, at Nikhil's request | Done | OpenID Connect's authorization code flow on the server, with PKCE (S256), state and nonce. The ID token is checked here against Google's published keys (RS256 only), issuer, audience, expiry, nonce and a Google-verified email; keys are cached as long as Google allows and fetched again for a new key. No new dependency. 15 tests in `google.test.ts` with a locally made key pair |
+| Routes, `src/routes/google.ts` | Claude | Done | `GET /api/auth/options`, `/api/auth/google/start`, `/link` (signed-in owners) and `/callback`. What a sign-in must remember travels in a 10-minute signed httpOnly cookie on `/api/auth/google` only, cleared by the callback. The account is found by Google's `sub`, never the email. 15 tests in `googleSignIn.test.ts` with a fake Google that checks the PKCE verifier and nonce |
+| Owner lookup by Google account (migration `020_google_sign_in.sql`) | Claude | Done | `auth_owner_by_google_sub`, like the lookups of migration 014: owners only, any hostel, callable by the app only |
+| Linking and removing the password | Claude | Done | Linking only for the owner who started it and is still signed in; never replaces a linked account; a Google account another account uses is refused. `POST /api/auth/remove-password` needs Google linked and the current password; change-password then answers `no_password`. `/me` says `account: { googleLinked, hasPassword }`, never the Google id |
+| Settings `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL` | Claude | Done | All three or none, checked at startup without printing values; 4 tests in `config.test.ts` |
+| Client | Claude | Done | "Sign in with Google" on the sign-in pages when the server has it; the outcome of a Google sign-in explained there; Settings → Sign-in links Google and removes the password. 13 tests in `GoogleSignIn.test.tsx` |
+| Docs | Claude | Done | `docs/deploy.md` step 5a (creating the OAuth client, Render settings, linking the existing owner), `docs/RECOVERY.md` (the new secret and rotating it), `.env.example` |
+
+Checks: server 1193 tests (1159 before), client 401 (388 before), both typechecks clean.
+Twenty-one planted bugs: eighteen caught at first. The replay test did not yet replay the
+same callback, so a callback that left its cookie behind went unnoticed; it now does, and
+catches it. Not caught, because another check already stops them: an explicit RS256 check
+removed (`jwt.verify` still allows only RS256), and linking without the owner check (only
+an owner can start linking, and the database refuses a Google id for a student). Checked
+in the browser with dummy settings: the button and the no-account message show, `/start`
+sends the browser to Google with PKCE, state, nonce and the flow cookie, and a stray
+callback lands on `/login?google=failed`.
+
+### Notes for later days
+
+- Nikhil's steps: create the OAuth client and add the three settings to Render
+  (`docs/deploy.md`, step 5a); then link Google to the owner account, check Google sign-in,
+  and remove the password.
+- Deployment: 020 goes with 016 to 019, after the code.
+- Phase 4 (sign-up) starts from `?google=no-account`: an unknown Google account will be
+  offered to create an owner account and a hostel instead.

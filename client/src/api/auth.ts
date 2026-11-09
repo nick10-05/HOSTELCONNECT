@@ -21,11 +21,26 @@ export async function login(email: string, password: string, hostel?: string): P
   return user;
 }
 
-// GET /api/auth/me: the current user and their hostel, or a 401 ApiError when not
-// logged in.
-export async function me(): Promise<{ user: User; hostel: Hostel | null }> {
-  const { user, hostel } = await apiFetch<{ user: User; hostel?: Hostel }>("/api/auth/me");
-  return { user, hostel: hostel ?? null };
+// How the account signs in (phase 3b): with a linked Google account, a password, or both.
+export type Account = { googleLinked: boolean; hasPassword: boolean };
+
+// GET /api/auth/me: the current user, their hostel and how they sign in, or a 401
+// ApiError when not logged in.
+export async function me(): Promise<{ user: User; hostel: Hostel | null; account: Account | null }> {
+  const { user, hostel, account } = await apiFetch<{ user: User; hostel?: Hostel; account?: Account }>("/api/auth/me");
+  return { user, hostel: hostel ?? null, account: account ?? null };
+}
+
+// GET /api/auth/options: whether "Sign in with Google" is set up on this server.
+export async function authOptions(): Promise<{ google: boolean }> {
+  const { google } = await apiFetch<{ google?: boolean }>("/api/auth/options");
+  return { google: google === true };
+}
+
+// POST /api/auth/remove-password: an owner with Google linked drops the password.
+// Wrong password: 400 "wrong_password"; Google not linked: 400 "google_not_linked".
+export async function removePassword(currentPassword: string): Promise<void> {
+  await apiFetch("/api/auth/remove-password", { method: "POST", body: { currentPassword } });
 }
 
 // POST /api/auth/change-password: returns the user with mustChangePassword false.
