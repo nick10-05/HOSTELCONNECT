@@ -1426,3 +1426,14 @@ request without a hostel answered 400.
   backup key) and record its output here; give the students `/h/sns-hostel/login`.
 - `FEES_START_DATE` and `adoptFeesStartDate` stay for now (production has none set, so
   they do nothing there); they can go in a later clean-up.
+
+### Rehearsal on the production backup (2026-11-09)
+
+`ops/rehearse-saas.sh` on `hostelconnect-2026-11-09T0109Z.dump.age` (production at
+012): migrations 013 to 022 applied in 0.2 s, and every check passed. Rows per table
+unchanged (3 users, 2 buildings, 2 floors, 2 rooms, 6 beds, 3 stays, 2 announcements, 1
+notification, 1 return poll, the rest empty); one hostel, #1, active, at `sns-hostel`; every
+row in hostel #1; one owner; every account with a password found by sign-in; the app sees
+all 3 accounts inside hostel #1 and is refused outside any hostel. Hostel #1 has no fees
+start date yet (the owner sets it in Settings after the move). The local copy was dropped
+afterwards.
