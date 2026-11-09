@@ -45,10 +45,12 @@ async function newHostel(c: Parameters<Parameters<typeof inRollback>[1]>[0], nam
 }
 
 describe("hostels", () => {
-  it("holds hostel #1 for today's data: HostelConnect, active, at sns-hostel (migration 019), the beta limits", () =>
+  // Its limits are not checked here: tests/globalSetup.ts lifts them for the test database
+  // (the next test checks the beta limits on a new hostel).
+  it("holds hostel #1 for today's data: HostelConnect, active, at sns-hostel (migration 019)", () =>
     inRollback(db, async (c) => {
       const { rows } = await c.query(
-        `SELECT id, name, slug, status, student_limit, building_limit, fees_start_date
+        `SELECT id, name, slug, status, fees_start_date
          FROM hostels WHERE id = 1`,
       );
       expect(rows).toEqual([
@@ -57,8 +59,6 @@ describe("hostels", () => {
           name: "HostelConnect",
           slug: "sns-hostel",
           status: "active",
-          student_limit: 300,
-          building_limit: 20,
           fees_start_date: null,
         },
       ]);

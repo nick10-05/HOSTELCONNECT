@@ -1,5 +1,6 @@
 import type { Queryable } from "../db";
 import { HttpError } from "../lib/http";
+import { requireBuildingPlace } from "./hostels";
 
 // Hostel structure: buildings, floors, rooms and beds (design doc, section 3).
 // tests/structure.test.ts describes what each function must do.
@@ -67,6 +68,9 @@ async function requireBuilding(db: Queryable, buildingId: number): Promise<void>
 
 export async function createBuilding(db: Queryable, name: string): Promise<Building> {
   const trimmed = name.trim();
+  // The hostel must have room for one more building (phase 5a). The route runs this in
+  // the request's transaction, which holds the hostel's lock until it ends.
+  await requireBuildingPlace(db);
   const [building] = await writeOr<Building>(
     db,
     `INSERT INTO buildings (name) VALUES ($1) RETURNING ${BUILDING}`,

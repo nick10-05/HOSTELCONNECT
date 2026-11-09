@@ -18,6 +18,25 @@ export async function updateHostel(changes: { name?: string; slug?: string }): P
   return hostel;
 }
 
+// The owner's own hostel with its fees start date, limits and use (phase 5a).
+export type HostelSettings = Hostel & {
+  feesStartDate: string | null;
+  limits: { students: number; buildings: number };
+  usage: { students: number; buildings: number };
+};
+
+// GET /api/hostel, owners only.
+export async function getHostelSettings(): Promise<HostelSettings> {
+  const { hostel } = await apiFetch<{ hostel: HostelSettings }>("/api/hostel");
+  return hostel;
+}
+
+// PATCH /api/hostel with the day fee rows start from (YYYY-MM-DD). It can be changed, not
+// removed.
+export async function setFeesStartDate(feesStartDate: string): Promise<void> {
+  await apiFetch("/api/hostel", { method: "PATCH", body: { feesStartDate } });
+}
+
 // Where a hostel's students sign in.
 export const signInPath = (slug: string) => `/h/${slug}/login`;
 export const requestAccessPath = (slug: string) => `/h/${slug}/request-access`;

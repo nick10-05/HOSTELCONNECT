@@ -35,4 +35,16 @@ export default async function setup(): Promise<void> {
     appUrl: toTestDatabaseUrl(DATABASE_URL),
     log: () => {},
   });
+
+  // Hostel #1 is where most test files put their rows, committed ones included, so in a
+  // full run it holds far more students and buildings than a real hostel may (phase 5a).
+  // Its limits are lifted here; tests/hostelLimits.test.ts checks the limits on hostels of
+  // its own.
+  const testDb = new Client({ connectionString: testAdminUrl });
+  await testDb.connect();
+  try {
+    await testDb.query("UPDATE hostels SET student_limit = 1000000, building_limit = 1000000 WHERE id = 1");
+  } finally {
+    await testDb.end();
+  }
 }

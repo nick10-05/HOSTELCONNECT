@@ -117,11 +117,12 @@ export async function createHostelWithOwner(db: Db, input: NewHostel): Promise<{
   }
 }
 
-// The owner renames their hostel or changes its address. Runs inside withHostel: it can
-// only ever change the hostel the transaction is marked with.
+// The owner renames their hostel, changes its address, or sets the day fees start (phase
+// 5a). Runs inside withHostel: it can only ever change the hostel the transaction is
+// marked with. The fees start date can be changed but not removed.
 export async function updateHostelProfile(
   tx: Queryable,
-  changes: { name?: string; slug?: string },
+  changes: { name?: string; slug?: string; feesStartDate?: string },
 ): Promise<{ name: string; slug: string | null }> {
   if (changes.slug !== undefined) {
     const { rows } = await tx.query<{ id: number }>("SELECT current_hostel_id() AS id");
@@ -129,14 +130,117 @@ export async function updateHostelProfile(
   }
   try {
     const { rows } = await tx.query<{ name: string; slug: string | null }>(
-      `UPDATE hostels SET name = coalesce($1, name), slug = coalesce($2, slug)
+      `UPDATE hostels SET name = coalesce($1, name), slug = coalesce($2, slug),
+                          fees_start_date = coalesce($3::date, fees_start_date)
        WHERE id = current_hostel_id()
        RETURNING name, slug`,
-      [changes.name ?? null, changes.slug ?? null],
+      [changes.name ?? null, changes.slug ?? null, changes.feesStartDate ?? null],
     );
     return rows[0];
   } catch (err) {
     if (constraintOf(err) === "hostels_slug_key") throw new HttpError(409, "slug_taken", SLUG_MESSAGES.taken);
     throw err;
   }
+}
+
+// ---- Each hostel's settings and limits (multi-tenant phase 5a) ----
+
+export type HostelSettings = {
+  name: string;
+  slug: string | null;
+  // The first day fee rows are created for (YYYY-MM-DD); null: fees are not tracked yet.
+  feesStartDate: string | null;
+  limits: { students: number; buildings: number };
+  usage: { students: number; buildings: number };
+};
+
+// The owner's view of their own hostel, inside withHostel. "Students" are current ones:
+// active accounts, the ones the limit counts.
+export async function getHostelSettings(tx: Queryable): Promise<HostelSettings> {
+  const { rows } = await tx.query<{
+    name: string;
+    slug: string | null;
+    feesStartDate: string | null;
+    studentLimit: number;
+    buildingLimit: number;
+    students: number;
+    buildings: number;
+  }>(
+    `SELECT h.name, h.slug, to_char(h.fees_start_date, 'YYYY-MM-DD') AS "feesStartDate",
+            h.student_limit AS "studentLimit", h.building_limit AS "buildingLimit",
+            (SELECT count(*)::int FROM users
+              WHERE hostel_id = h.id AND role = 'student' AND is_active) AS students,
+            (SELECT count(*)::int FROM buildings WHERE hostel_id = h.id) AS buildings
+       FROM hostels h
+      WHERE h.id = current_hostel_id()`,
+  );
+  const r = rows[0];
+  return {
+    name: r.name,
+    slug: r.slug,
+    feesStartDate: r.feesStartDate,
+    limits: { students: r.studentLimit, buildings: r.buildingLimit },
+    usage: { students: r.students, buildings: r.buildings },
+  };
+}
+
+// "1 building", "20 buildings".
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+// Locks the transaction's hostel row until the transaction ends, and returns its limits.
+// Every check below takes this lock first, so two admissions at once cannot both take the
+// last place: the second waits, then counts the first.
+async function lockedLimits(tx: Queryable): Promise<{ studentLimit: number; buildingLimit: number }> {
+  const { rows } = await tx.query<{ studentLimit: number; buildingLimit: number }>(
+    `SELECT student_limit AS "studentLimit", building_limit AS "buildingLimit"
+       FROM hostels WHERE id = current_hostel_id() FOR NO KEY UPDATE`,
+  );
+  if (!rows[0]) throw new Error("no hostel is marked for this transaction");
+  return rows[0];
+}
+
+// Before a student becomes current (admitted, imported, reactivated or let back in): the
+// hostel must have room under its student limit. Call it inside the transaction that
+// makes the student current.
+export async function requireStudentPlace(tx: Queryable): Promise<void> {
+  const { studentLimit } = await lockedLimits(tx);
+  const { rows } = await tx.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM users
+      WHERE hostel_id = current_hostel_id() AND role = 'student' AND is_active`,
+  );
+  if (rows[0].n >= studentLimit) {
+    throw new HttpError(
+      409,
+      "student_limit_reached",
+      `Your hostel has reached its limit of ${count(studentLimit, "current student")}. Move out students who have left, or ask HostelConnect for a higher limit.`,
+    );
+  }
+}
+
+// Before a building is added: the hostel must have room under its building limit.
+export async function requireBuildingPlace(tx: Queryable): Promise<void> {
+  const { buildingLimit } = await lockedLimits(tx);
+  const { rows } = await tx.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM buildings WHERE hostel_id = current_hostel_id()",
+  );
+  if (rows[0].n >= buildingLimit) {
+    throw new HttpError(
+      409,
+      "building_limit_reached",
+      `Your hostel has reached its limit of ${count(buildingLimit, "building")}. Ask HostelConnect for a higher limit.`,
+    );
+  }
+}
+
+// FEES_START_DATE, the setting from before each hostel had its own date, becomes hostel
+// #1's date: at startup it is written to hostel #1 if hostel #1 has none yet. From then on
+// the hostel's own date counts, and the owner changes it in Settings. Returns whether it
+// was written.
+export async function adoptFeesStartDate(db: Queryable, date: string | undefined): Promise<boolean> {
+  if (!date) return false;
+  const { rowCount } = await db.query(
+    "UPDATE hostels SET fees_start_date = $1::date WHERE id = 1 AND fees_start_date IS NULL",
+    [date],
+  );
+  return rowCount === 1;
 }

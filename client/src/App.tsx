@@ -18,6 +18,7 @@ import { DashboardPage } from "./owner/DashboardPage";
 import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { GoogleSignIn } from "./owner/GoogleSignIn";
+import { HostelFeesAndLimits } from "./owner/HostelFeesAndLimits";
 import { HostelProfile } from "./owner/HostelProfile";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
@@ -216,6 +217,7 @@ export function App() {
                     <>
                       <SettingsPage />
                       <HostelProfile onSaved={hostelSaved} />
+                      <HostelFeesAndLimits />
                       <GoogleSignIn />
                     </>
                   }

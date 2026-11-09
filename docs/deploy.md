@@ -238,6 +238,21 @@ These need the code in between, so the order matters:
    table). Until then the nightly backup fails: `hostel_app`, which it used before, now
    sees at most one hostel. Then run **Backup database** by hand to check it.
 
+## A hostel's limits (multi-tenant phase 5a)
+
+Every hostel may have 300 current students and 20 buildings during the beta. Admitting,
+reactivating or letting back a student past the limit, or adding a building past it, is
+refused with a message telling the owner to ask for more. The owner sees the numbers in
+Settings → Fees and limits. Only the migration credential can change a limit: in the
+Supabase SQL editor (or `psql "<MIGRATION_DATABASE_URL>"`):
+
+```sql
+SELECT id, name, slug, student_limit, building_limit FROM hostels ORDER BY id;
+UPDATE hostels SET student_limit = 400 WHERE slug = '<their-address>';
+```
+
+Before the real register goes into hostel #1, check its limits suit it.
+
 ## Free-plan limits to expect
 
 - Render sleeps after 15 minutes without visits; the next visit waits about a minute

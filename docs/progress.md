@@ -1337,3 +1337,35 @@ and dark.
   and a way to export a hostel's data would make them easier to keep.
 - Phase 5 (guardian consent recorded per student under 18) makes the minors' promise
   checkable in the app.
+
+## Multi-tenant SaaS, phase 5a: each hostel's limits and fees start date (2026-11-09)
+
+Each hostel now keeps to its limits (300 current students, 20 buildings in the beta), and
+starts tracking fees from its own date, which its owner sets in Settings. No migration:
+the columns came with migration 013.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Limits, `src/services/hostels.ts` | Claude, at Nikhil's request (phase 0) | Done | `requireStudentPlace` before a student becomes current (admission and the import script through `insertStudentWithStay`, reactivation and approved rejoin requests through `reactivateInTransaction`); `requireBuildingPlace` before a building is added. Both lock the hostel's row first, so two admissions at once cannot both take the last place. Former students do not count. 409 `student_limit_reached` / `building_limit_reached`, telling the owner what to do. Tests in `hostelLimits.test.ts` |
+| Each hostel's fees start date | Claude | Done | The hourly job creates fee rows for each hostel from `hostels.fees_start_date`; a hostel without one gets none. The owner sets or changes it with `PATCH /api/hostel` (2020-01-01 to a year ahead; it cannot be removed). `FEES_START_DATE` is written to hostel #1 at startup if hostel #1 has no date yet, then never again (`adoptFeesStartDate`). Tests in `jobsRoutes.test.ts`, `adoptFeesStartDate.test.ts`, `hostelLimits.test.ts` |
+| `GET /api/hostel` | Claude | Done | The owner's own hostel: name, address, fees start date, limits and how much of them is used |
+| Client | Claude | Done | Settings → Fees and limits: the start date (with what changing it does) and "102 of 300" for students and buildings, marked when full. 6 tests in `HostelFeesAndLimits.test.tsx`. Refusals at the limit show where they happen (checked in the browser on the Structure page) |
+| Tests' hostel #1 | Claude | Done | `tests/globalSetup.ts` lifts hostel #1's limits in the test database, where every test file puts its rows (a full run leaves about 360 students and 90 buildings there) |
+| Docs | Claude | Done | `docs/deploy.md` (raising a hostel's limits), `.env.example` (`FEES_START_DATE` is hostel #1's starting value only) |
+
+Checks: server 1232 tests (1218 before), client 435 (429 before), both typechecks clean.
+Fourteen planted bugs: eleven caught at first. Two now have tests: the limit check without
+the hostel's lock (a deterministic test holds one admission open and checks the second
+waits, then is refused), and Settings sending the old date instead of a changed one. Not
+caught, because row-level security already stops it: usage counted over every hostel.
+Checked in the browser against the test database with a hostel limited to one student and
+one building: Settings showed "0 of 1" and "1 of 1 (full)", saved a start date, and the
+Structure page showed the building-limit message.
+
+### Notes for later days
+
+- Deployment: no migration. Before it, decide hostel #1's limits (`docs/deploy.md`); if
+  `FEES_START_DATE` is ever set in Render, the first start after this deploy copies it to
+  hostel #1, and from then on the owner's Settings decide.
+- Phase 5b: the CSV import per hostel (through the same limit), guardians' consent for
+  students under 18, and photo storage per hostel.

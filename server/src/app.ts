@@ -41,8 +41,6 @@ export type AppDeps = {
   complaintLimits?: ComplaintLimits;
   // JOB_SECRET; without it POST /api/internal/run-jobs does not exist.
   jobSecret?: string;
-  // FEES_START_DATE ('YYYY-MM-DD'); without it the fee-rows job creates nothing.
-  feesStartDate?: string;
   // Supabase Storage for complaint photos (storageFromConfig); null or missing: photo
   // uploads are off.
   storage?: PhotoStorage | null;
@@ -78,7 +76,6 @@ export function createApp({
   clientDir,
   complaintLimits = DEFAULT_COMPLAINT_LIMITS,
   jobSecret,
-  feesStartDate,
   storage = null,
   photoMaxBytes = 1024 * 1024,
   photoLinkSeconds = 60,
@@ -142,7 +139,7 @@ export function createApp({
   app.use("/api", foodRouter({ db, jwtSecret, clock }));
   app.use("/api", feesRouter({ db, jwtSecret, clock }));
   app.use("/api", settingsRouter({ db, jwtSecret }));
-  app.use("/api", internalRouter({ db, jobSecret, feesStartDate, storage, clock }));
+  app.use("/api", internalRouter({ db, jobSecret, storage, clock }));
 
   app.use("/api", apiNotFound);
   if (clientDir) serveClient(app, clientDir);

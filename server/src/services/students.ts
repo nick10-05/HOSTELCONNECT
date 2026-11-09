@@ -3,6 +3,7 @@ import { HttpError } from "../lib/http";
 import { hashPassword } from "../lib/password";
 import { generateTemporaryPassword } from "../lib/tempPassword";
 import { nextDueDate } from "./fees";
+import { requireStudentPlace } from "./hostels";
 
 // Students: admission, the directory and the profile (design doc, sections 3, 5, 6 and 9).
 // tests/students.test.ts describes what admitStudent must do; tests/studentDirectory.test.ts
@@ -157,6 +158,9 @@ export async function insertStudentWithStay(
   input: AdmissionInput,
   passwordHash: string,
 ): Promise<number> {
+  // The hostel must have room for one more current student (phase 5a).
+  await requireStudentPlace(c);
+
   // Create the student account. Only the password hash is stored.
   const user = await c.query<{ id: number }>(
     `INSERT INTO users (
@@ -620,6 +624,10 @@ export async function reactivateInTransaction(
   if (formerStudent.isActive) {
     throw new HttpError(409, "student_active", "This student is already active.");
   }
+
+  // Coming back makes them a current student again: the hostel needs room (phase 5a).
+  // After the student's lock, as every caller locks the student first.
+  await requireStudentPlace(c);
 
   // Use the actual move-out day when available. MAX(ended_on) alone is
   // insufficient because a future booking cancelled before arrival ends on
