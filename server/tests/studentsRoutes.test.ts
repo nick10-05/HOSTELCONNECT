@@ -109,6 +109,7 @@ describe("POST /api/students", () => {
       foodPreference: "veg",
       vegDays: [],
       monthlyFee: 6500,
+      under18: false,
       buildingId: 1,
       roomId: null,
       bedId: null,
@@ -172,6 +173,15 @@ describe("POST /api/students", () => {
     expect(service.admitStudent.mock.calls[0][2]).toMatchObject({ designation: null });
   });
 
+  // Phase 5b: the owner confirms a parent's or guardian's consent for a student under 18.
+  it("admits a student under 18 once the owner confirms the guardian's consent", async () => {
+    service.admitStudent.mockResolvedValue(admission);
+    const res = await post(form({ under18: true, guardianConsent: true }));
+    expect(res.status).toBe(201);
+    expect(service.admitStudent.mock.calls[0][2]).toMatchObject({ under18: true });
+    expect(service.admitStudent.mock.calls[0][2]).not.toHaveProperty("guardianConsent");
+  });
+
   it("allows a joining date up to 30 days ahead and any past date", async () => {
     service.admitStudent.mockResolvedValue(admission);
     for (const joiningDate of [addDays(hostelToday(), 10), "2019-07-01"]) {
@@ -204,6 +214,8 @@ describe("POST /api/students", () => {
     ["fee with paise", { monthlyFee: 6500.5 }, "monthlyFee"],
     ["missing building", { buildingId: undefined }, "buildingId"],
     ["bed without a room", { bedId: 3 }, "roomId"],
+    ["under 18 without the guardian's consent", { under18: true }, "guardianConsent"],
+    ["under 18 not true or false", { under18: "yes", guardianConsent: true }, "under18"],
   ];
 
   it.each(invalid)("refuses %s with 400 before reaching the service", async (_name, overrides, field) => {
@@ -610,6 +622,7 @@ describe("PATCH /api/students/:id", () => {
   it("saves the cleaned details and answers with the profile as it is now, never cached", async () => {
     service.updateStudent.mockResolvedValue(undefined);
     service.getStudent.mockResolvedValue({ id: 7, name: "Asha Rao" } as never);
+    const owner = await insertOwner(db);
     const res = await patch(
       "7",
       editForm({
@@ -619,6 +632,7 @@ describe("PATCH /api/students/:id", () => {
         foodPreference: "non_veg",
         vegDays: [6, 2],
       }),
+      cookieFor(owner, "owner"),
     );
 
     expect(res.status).toBe(200);
@@ -638,7 +652,8 @@ describe("PATCH /api/students/:id", () => {
       foodPreference: "non_veg",
       vegDays: [2, 6],
       monthlyFee: 6500,
-    });
+      under18: false,
+    }, owner);
     expect(service.getStudent).toHaveBeenCalledWith(hostelTx(db), 7, hostelToday());
   });
 
@@ -658,6 +673,7 @@ describe("PATCH /api/students/:id", () => {
     ["negative fee", { monthlyFee: -1 }, "monthlyFee"],
     ["joining date (not editable)", { joiningDate: "2026-01-31" }, "joiningDate"],
     ["building (a move is a transfer)", { buildingId: 2 }, "buildingId"],
+    ["student under 18 without the guardian's consent", { under18: true }, "guardianConsent"],
   ])("refuses a %s with 400 before reaching the service", async (_name, overrides, field) => {
     const res = await patch("7", editForm(overrides));
     expect(res.status).toBe(400);

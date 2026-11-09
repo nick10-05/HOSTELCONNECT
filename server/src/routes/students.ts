@@ -47,6 +47,10 @@ const detailsObject = z.object({
   vegDays: z.array(z.number().int().min(1).max(7)).max(7).default([]),
   // Rupees; left out or null means "not set yet".
   monthlyFee: z.number().int().min(0).max(1_000_000).nullable().default(null),
+  // Under 18 (phase 5b): only with the owner's confirmation of a parent's or guardian's
+  // consent, which the app records.
+  under18: z.boolean().default(false),
+  guardianConsent: z.boolean().default(false),
 });
 
 type Details = z.infer<typeof detailsObject>;
@@ -67,6 +71,13 @@ function checkDetails(v: EditDetails & { joiningDate?: string }, ctx: z.Refineme
   if (v.category === "working" && !v.company) missing("company");
   if (new Set(v.vegDays).size !== v.vegDays.length) {
     ctx.addIssue({ code: "custom", path: ["vegDays"], message: "lists a day twice" });
+  }
+  if (v.under18 && !v.guardianConsent) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["guardianConsent"],
+      message: "must be confirmed for a student under 18",
+    });
   }
   if (v.vegDays.length > 0 && v.foodPreference !== "non_veg") {
     ctx.addIssue({ code: "custom", path: ["vegDays"], message: "are only for non-veg students" });
@@ -97,6 +108,7 @@ const pickEdit = (v: EditDetails): students.StudentEdit => ({
   foodPreference: v.foodPreference,
   vegDays: [...v.vegDays].sort((a, b) => a - b),
   monthlyFee: v.monthlyFee,
+  under18: v.under18,
 });
 
 const pickDetails = (v: Details): StudentDetails => ({ ...pickEdit(v), joiningDate: v.joiningDate });
@@ -229,7 +241,7 @@ export function studentsRouter(deps: AuthDeps): Router {
     const body = parseBody(studentEditSchema, req, res);
     if (!body) return;
     const student = await inHostel(req, async (tx) => {
-      await students.updateStudent(tx, id, body);
+      await students.updateStudent(tx, id, body, req.user!.id);
       return students.getStudent(tx, id, hostelToday());
     });
     // The profile as it is now. Phone numbers are in it: no browser or proxy may keep a copy.

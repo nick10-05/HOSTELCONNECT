@@ -156,6 +156,29 @@ describe("AdmitStudentPage", () => {
     expect(posts[0]).toMatchObject({ foodPreference: "non_veg", vegDays: [2, 6] });
   });
 
+  // Phase 5b: the owner confirms a guardian's consent before adding a student under 18.
+  it("asks for the guardian's consent for a student under 18, and sends both", async () => {
+    const { posts } = fakeServer([blockA]);
+    const user = renderPage();
+    await screen.findByRole("option", { name: "Block A" });
+    await fillValidForm(user);
+
+    const consent = /parent's or guardian's consent/;
+    expect(screen.queryByRole("checkbox", { name: consent })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Under 18" }));
+    await user.click(screen.getByRole("button", { name: "Admit student" }));
+    expect(screen.getByRole("checkbox", { name: consent })).toHaveAccessibleDescription(
+      "Confirm you have a parent's or guardian's consent.",
+    );
+    expect(posts).toEqual([]);
+
+    await user.click(screen.getByRole("checkbox", { name: consent }));
+    expect(screen.getByRole("checkbox", { name: consent })).not.toHaveAccessibleDescription();
+    await user.click(screen.getByRole("button", { name: "Admit student" }));
+    await screen.findByRole("heading", { name: "Student admitted" });
+    expect(posts[0]).toMatchObject({ under18: true, guardianConsent: true });
+  });
+
   it("shows the college fields for a college student and the company fields for a working one", async () => {
     fakeServer([blockA]);
     const user = renderPage();

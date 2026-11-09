@@ -5,6 +5,7 @@ import { markHostel, type Db } from "../src/db";
 import { hashPassword } from "../src/lib/password";
 import { generateTemporaryPassword } from "../src/lib/tempPassword";
 import { studentDetailsSchema, type StudentDetails } from "../src/routes/students";
+import { count } from "../src/services/hostels";
 import { insertStudentWithStay } from "../src/services/students";
 
 // The one-time import of the existing students (design doc, section 9): the owner's
@@ -36,10 +37,13 @@ export const COLUMNS = [
   "room",
   "bed",
 ] as const;
-type Column = (typeof COLUMNS)[number];
+// Columns a file may leave out (phase 5b): "yes" for a student under 18, and "yes" to
+// confirm a parent's or guardian's consent for them. Empty or "no" means no.
+export const OPTIONAL_COLUMNS = ["under_18", "guardian_consent"] as const;
+type Column = (typeof COLUMNS)[number] | (typeof OPTIONAL_COLUMNS)[number];
 
 // The CSV column behind each field of the admission rules, for messages.
-const COLUMN_OF: Record<keyof StudentDetails, Column> = {
+const COLUMN_OF: Record<keyof StudentDetails | "guardianConsent", Column> = {
   name: "name",
   email: "email",
   phone: "phone",
@@ -54,7 +58,17 @@ const COLUMN_OF: Record<keyof StudentDetails, Column> = {
   foodPreference: "food",
   vegDays: "veg_days",
   monthlyFee: "monthly_fee",
+  under18: "under_18",
+  guardianConsent: "guardian_consent",
 };
+
+// "yes" or "no" (any case), or empty for no; null for anything else.
+function toYesNo(text: string): boolean | null {
+  const t = text.toLowerCase();
+  if (t === "yes") return true;
+  if (t === "" || t === "no") return false;
+  return null;
+}
 
 // row is the spreadsheet's row number (the header is row 1), or null for the whole file.
 export type ImportProblem = { row: number | null; message: string };
@@ -113,7 +127,8 @@ export function readStudentsCsv(text: string): { rows: ImportRow[]; problems: Im
   const header = (records[0] ?? []).map((h) => h.toLowerCase());
 
   const missing = COLUMNS.filter((c) => !header.includes(c));
-  const unknown = header.filter((h) => !(COLUMNS as readonly string[]).includes(h));
+  const known: readonly string[] = [...COLUMNS, ...OPTIONAL_COLUMNS];
+  const unknown = header.filter((h) => !known.includes(h));
   const fileProblems: ImportProblem[] = [];
   if (missing.length) fileProblems.push({ row: null, message: `Missing column: ${missing.join(", ")}` });
   if (unknown.length) fileProblems.push({ row: null, message: `Unknown column: ${unknown.join(", ")}` });
@@ -136,6 +151,10 @@ export function readStudentsCsv(text: string): { rows: ImportRow[]; problems: Im
     if (!joiningDate) problem("joining_date must be a real date such as 14-01-2025");
     const vegDays = toVegDays(cell("veg_days"));
     if (!vegDays) problem("veg_days has an unknown day; use Mon, Tue, Wed, Thu, Fri, Sat or Sun");
+    const under18 = toYesNo(cell("under_18"));
+    if (under18 === null) problem("under_18 must be yes or no");
+    const guardianConsent = toYesNo(cell("guardian_consent"));
+    if (guardianConsent === null) problem("guardian_consent must be yes or no");
     const number = (c: Column) => (cell(c) === "" ? undefined : Number(cell(c).replace(/,/g, "")));
     const optional = (c: Column) => (cell(c) === "" ? undefined : cell(c));
 
@@ -155,10 +174,12 @@ export function readStudentsCsv(text: string): { rows: ImportRow[]; problems: Im
       foodPreference: cell("food").toLowerCase(),
       vegDays: vegDays ?? [],
       monthlyFee: number("monthly_fee") ?? null,
+      under18: under18 ?? false,
+      guardianConsent: guardianConsent ?? false,
     });
     if (!result.success) {
       for (const issue of result.error.issues) {
-        const field = issue.path[0] as keyof StudentDetails | undefined;
+        const field = issue.path[0] as keyof typeof COLUMN_OF | undefined;
         problem(`${field ? COLUMN_OF[field] : "row"} ${issue.message}`);
       }
     }
@@ -198,6 +219,8 @@ export function readStudentsCsv(text: string): { rows: ImportRow[]; problems: Im
 // ---- Importing ----
 
 type ImportOptions = {
+  // The hostel the students join (phase 5b); `ownerId` must be its owner.
+  hostelId: number;
   // Called after each temporary password is hashed (the slow part, about 0.25 s each).
   onProgress?: (done: number, total: number) => void;
   // Called with the credentials just before COMMIT; if it fails, nothing is imported.
@@ -208,14 +231,15 @@ type ImportOptions = {
 
 const floorName = (n: number) => (n === 0 ? "Ground floor" : `Floor ${n}`);
 
-// Imports the rows in one transaction, on behalf of the owner `ownerId`, and returns the
-// credentials sheet. Throws ImportRefused, with nothing imported, if the database shows
-// a problem with any row.
+// Imports the rows in one transaction into the hostel `hostelId`, on behalf of its owner
+// `ownerId`, and returns the credentials sheet. Throws ImportRefused, with nothing
+// imported, if the database shows a problem with any row, or the hostel's limits
+// (phase 5a) would be passed.
 export async function importStudents(
   db: Db,
   ownerId: number,
   rows: ImportRow[],
-  { onProgress, beforeCommit }: ImportOptions,
+  { hostelId, onProgress, beforeCommit }: ImportOptions,
 ): Promise<Credential[]> {
   // Hash before BEGIN, so the transaction stays short.
   const passwords: { temporaryPassword: string; hash: string }[] = [];
@@ -229,9 +253,37 @@ export async function importStudents(
   let broken = false;
   try {
     await c.query("BEGIN");
-    // Hostel #1, where every account is until new hostels can sign up (phase 4).
-    await markHostel(c, 1);
+    await markHostel(c, hostelId);
+    // Row-level security shows this hostel's accounts only: the owner must be among them.
+    const owner = await c.query("SELECT 1 FROM users WHERE id = $1 AND role = 'owner' AND hostel_id = current_hostel_id()", [ownerId]);
+    if (!owner.rowCount) throw new Error(`Account ${ownerId} is not an owner of hostel ${hostelId}.`);
     const problems: ImportProblem[] = [];
+
+    // The hostel's limits, for the whole file at once; the hostel's row stays locked until
+    // the end, as at admission. insertStudentWithStay checks each student again.
+    const { rows: [limits] } = await c.query<{ studentLimit: number; buildingLimit: number; students: number; buildings: number }>(
+      `SELECT student_limit AS "studentLimit", building_limit AS "buildingLimit",
+              (SELECT count(*)::int FROM users WHERE hostel_id = h.id AND role = 'student' AND is_active) AS students,
+              (SELECT count(*)::int FROM buildings WHERE hostel_id = h.id) AS buildings
+         FROM hostels h WHERE h.id = current_hostel_id() FOR NO KEY UPDATE OF h`,
+    );
+    if (limits.students + rows.length > limits.studentLimit) {
+      problems.push({
+        row: null,
+        message: `The hostel has ${count(limits.students, "current student")} and a limit of ${limits.studentLimit}: the file's ${count(rows.length, "student")} would pass it.`,
+      });
+    }
+    const existingBuildings = new Set(
+      (await c.query<{ name: string }>("SELECT lower(name) AS name FROM buildings")).rows.map((b) => b.name),
+    );
+    const newBuildings = new Set(rows.map((r) => r.place.building.toLowerCase()).filter((b) => !existingBuildings.has(b)));
+    if (limits.buildings + newBuildings.size > limits.buildingLimit) {
+      problems.push({
+        row: null,
+        message: `The file adds ${count(newBuildings.size, "new building")}; the hostel has ${limits.buildings} of its limit of ${count(limits.buildingLimit, "building")}.`,
+      });
+      throw new ImportRefused(problems);
+    }
     const placed: { buildingId: number; roomId: number | null; bedId: number | null; text: string }[] = [];
 
     // Find or create each row's place, and look for problems the database can see.

@@ -54,6 +54,11 @@ export function AdmitStudentPage() {
       vegDays: v.vegDays.includes(day) ? v.vegDays.filter((d) => d !== day) : [...v.vegDays, day],
     }));
 
+  const setFlag = (name: "under18" | "guardianConsent", value: boolean) => {
+    setValues((v) => ({ ...v, [name]: value }));
+    setErrors((e) => ({ ...e, guardianConsent: undefined }));
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setServerError(null);
@@ -120,6 +125,7 @@ export function AdmitStudentPage() {
               type="tel"
               inputMode="tel"
             />
+            <AgeField {...fieldProps} setFlag={setFlag} />
           </Section>
 
           <Section title="College or work">
@@ -327,6 +333,52 @@ export function FoodField({
           </div>
         </fieldset>
       )}
+    </div>
+  );
+}
+
+// Phase 5b: a student under 18, added only with a parent's or guardian's consent, which
+// the owner confirms here (the Terms ask for it; the app records who and when).
+export function AgeField({
+  values,
+  errors,
+  setFlag,
+  consentOn,
+}: Omit<FieldProps, "set"> & {
+  setFlag: (name: "under18" | "guardianConsent", value: boolean) => void;
+  // When a consent is already recorded (editing), it is shown instead of asked for again.
+  consentOn?: string;
+}) {
+  const { error, errorId, aria } = useFieldIds(errors, "guardianConsent");
+  return (
+    <div className="space-y-1 sm:col-span-2">
+      <label className="flex min-h-11 items-center gap-2 text-base text-ink">
+        <input
+          type="checkbox"
+          checked={values.under18}
+          onChange={(e) => setFlag("under18", e.target.checked)}
+          className="size-4 accent-indigo-600"
+        />
+        Under 18
+      </label>
+      {values.under18 &&
+        (consentOn ? (
+          <p className="text-sm text-muted">Guardian's consent confirmed on {consentOn}.</p>
+        ) : (
+          <>
+            <label className="flex items-start gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={values.guardianConsent}
+                onChange={(e) => setFlag("guardianConsent", e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-indigo-600"
+                {...aria}
+              />
+              I have their parent's or guardian's consent to add them to HostelConnect.
+            </label>
+            <FieldError id={errorId} error={error} />
+          </>
+        ))}
     </div>
   );
 }

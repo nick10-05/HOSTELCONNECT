@@ -506,8 +506,10 @@ function nextMonthStart(month: string): string {
 }
 
 // Section 10: how much of Supabase's free storage and monthly bandwidth the photos use.
-// Amber from AMBER_PERCENT of either limit; photo uploads switch off at
-// UPLOADS_OFF_PERCENT; a warning when photos keep failing to delete.
+// Amber from AMBER_PERCENT of any limit; photo uploads switch off at
+// UPLOADS_OFF_PERCENT; a warning when photos keep failing to delete. The owner sees their
+// own photos against their hostel's share of storage (phase 5b); all hostels' photos
+// together only once those near the whole limit, since that can switch uploads off too.
 function UsageCardView({ usage }: { usage: UsageCard }) {
   if (!usage.photosConfigured) {
     return (
@@ -520,13 +522,14 @@ function UsageCardView({ usage }: { usage: UsageCard }) {
   if (usage.egress.percent >= UPLOADS_OFF_PERCENT) {
     reasons.push(`The bandwidth count starts again on ${nextMonthStart(usage.egress.month)}.`);
   }
-  if (usage.storage.percent >= UPLOADS_OFF_PERCENT) {
+  if (Math.max(usage.storage.percent, usage.hostelStorage.percent) >= UPLOADS_OFF_PERCENT) {
     reasons.push("Space frees up as photos are deleted 48 hours after upload.");
   }
   return (
     <Card id="card-usage" title="Storage and bandwidth">
       <dl className="space-y-3">
-        <UsageLine label="Photos stored" used={usage.storage} />
+        <UsageLine label="Photos stored" used={usage.hostelStorage} />
+        {usage.storage.percent >= AMBER_PERCENT && <UsageLine label="Photos of all hostels" used={usage.storage} />}
         <UsageLine label={`Bandwidth in ${monthText(usage.egress.month)}`} used={usage.egress} />
       </dl>
       {usage.level === "uploads_off" ? (

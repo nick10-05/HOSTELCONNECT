@@ -253,6 +253,33 @@ UPDATE hostels SET student_limit = 400 WHERE slug = '<their-address>';
 
 Before the real register goes into hostel #1, check its limits suit it.
 
+Photo storage is shared too: each hostel's photos are counted against an equal share of
+`STORAGE_LIMIT_MB` (the limit divided by the number of active hostels), and that hostel's
+photo uploads switch off at 85% of its share. All hostels' photos together still count
+against the whole limit. The owner sees their share on the dashboard.
+
+## Importing a hostel's register (multi-tenant phase 5b)
+
+The import goes into one hostel, named by its address (its slug), on behalf of its one
+owner, within its limits. From `server/`, with `DATABASE_URL` set to the app's
+connection:
+
+```
+npm run import:students -- --hostel sns-hostel --file C:\path\students.csv --out C:\Users\you\Documents\credentials.html
+```
+
+Start from `docs/import-template.csv`. The last two columns may be left out: `under_18`
+(`yes` for a student under 18) and `guardian_consent` (`yes` once the owner has a
+parent's or guardian's consent for them, which `under_18` needs). The import records
+the owner as having confirmed it.
+
+## Students under 18 (multi-tenant phase 5b)
+
+Migration 022 adds `users.under_18`, and who confirmed a guardian's consent and when. The
+owner ticks "Under 18" and confirms the consent when admitting or editing a student; the
+profile shows who confirmed it and on which day. The record is kept after the student is
+unmarked. Apply 022 with **Migrate production database** before deploying this code.
+
 ## Free-plan limits to expect
 
 - Render sleeps after 15 minutes without visits; the next visit waits about a minute

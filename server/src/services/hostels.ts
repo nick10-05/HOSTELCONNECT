@@ -185,7 +185,7 @@ export async function getHostelSettings(tx: Queryable): Promise<HostelSettings> 
 }
 
 // "1 building", "20 buildings".
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+export const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 // Locks the transaction's hostel row until the transaction ends, and returns its limits.
 // Every check below takes this lock first, so two admissions at once cannot both take the

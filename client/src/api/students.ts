@@ -22,6 +22,10 @@ export type AdmissionForm = {
   // Weekdays a non-veg student eats veg: 1 = Monday ... 7 = Sunday.
   vegDays?: number[];
   monthlyFee: number | null;
+  // A student under 18 (phase 5b), sent only with the owner's confirmation of a parent's
+  // or guardian's consent. Left out means not under 18.
+  under18?: true;
+  guardianConsent?: true;
   buildingId: number;
   roomId: number | null;
   bedId: number | null;
@@ -88,6 +92,10 @@ export type StudentProfile = {
   foodPreference: FoodPreference;
   vegDays: number[];
   monthlyFee: number | null;
+  under18: boolean;
+  // Who confirmed a parent's or guardian's consent, and on which day (India); kept after
+  // the student is no longer marked under 18. Null when no one ever did.
+  guardianConsent: { on: string; by: string } | null;
   isActive: boolean;
   deactivatedAt: string | null;
   mustChangePassword: boolean;

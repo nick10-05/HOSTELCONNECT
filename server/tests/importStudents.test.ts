@@ -76,6 +76,7 @@ describe("readStudentsCsv", () => {
         foodPreference: "veg",
         vegDays: [],
         monthlyFee: 6500,
+        under18: false,
       },
       place: { building: "Sample Block A", floor: 1, room: "101", bed: "A" },
     });
@@ -159,7 +160,7 @@ describe("importStudents", { timeout: 60_000 }, () => {
     );
     const progress: number[] = [];
 
-    const sheet = await importStudents(db, owner, rows, { onProgress: (done) => progress.push(done) });
+    const sheet = await importStudents(db, owner, rows, { hostelId: 1, onProgress: (done) => progress.push(done) });
 
     expect(sheet).toHaveLength(10);
     expect(progress).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -227,7 +228,7 @@ describe("importStudents", { timeout: 60_000 }, () => {
     );
     await db.query("INSERT INTO beds (room_id, bed_number) VALUES ($1, 'A')", [r[0].id]);
 
-    await importStudents(db, owner, rowsOf(csv(line({ building: `OLD ${t}`, room: "7", bed: "A" }))), {});
+    await importStudents(db, owner, rowsOf(csv(line({ building: `OLD ${t}`, room: "7", bed: "A" }))), { hostelId: 1 });
 
     const { rows: counts } = await db.query(
       `SELECT (SELECT count(*)::int FROM buildings WHERE lower(name) = lower($1)) AS buildings,
@@ -241,7 +242,7 @@ describe("importStudents", { timeout: 60_000 }, () => {
   // Each of these refuses the whole file: nothing is imported, and every problem is named.
   async function expectRefused(rows: ImportRow[], owner: number, messages: string[]) {
     const emails = rows.map((r) => r.details.email);
-    const err = await importStudents(db, owner, rows, {}).catch((e: unknown) => e);
+    const err = await importStudents(db, owner, rows, { hostelId: 1 }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ImportRefused);
     expect((err as ImportRefused).problems.map((p) => `Row ${p.row}: ${p.message}`)).toEqual(messages);
     const { rows: found } = await db.query("SELECT 1 FROM users WHERE email = ANY($1)", [emails]);
@@ -295,6 +296,7 @@ describe("importStudents", { timeout: 60_000 }, () => {
     const owner = await insertOwner(db);
     const rows = rowsOf(csv(line({ building: `B ${tag()}` })));
     const err = await importStudents(db, owner, rows, {
+      hostelId: 1,
       beforeCommit: async () => {
         throw new Error("could not write the sheet");
       },

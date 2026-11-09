@@ -1369,3 +1369,31 @@ Structure page showed the building-limit message.
   hostel #1, and from then on the owner's Settings decide.
 - Phase 5b: the CSV import per hostel (through the same limit), guardians' consent for
   students under 18, and photo storage per hostel.
+
+## Multi-tenant SaaS, phase 5b: the import per hostel, guardians' consent, storage shares (2026-11-09)
+
+The CSV import now goes into one chosen hostel within its limits; an owner confirms a
+parent's or guardian's consent before adding a student under 18, and the app records who
+and when; and each hostel's photos count against its own share of storage.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Migration 022 | Claude, at Nikhil's request (phase 0) | Done | `users.under_18`, `guardian_consent_at`, `guardian_consent_by` (an account of the same hostel). Checks: only students may be under 18, a student under 18 has a consent, and the time and the owner come together. Tests in `guardianConsent.test.ts` |
+| Consent at admission and editing | Claude | Done | The route refuses `under18` without `guardianConsent` (400 naming `guardianConsent`); the service records the owner and the time the first time a student is marked, keeps them when another owner saves again, and keeps them after the student is unmarked (they turned 18). `GET /api/students/:id` shows `under18` and `guardianConsent: {on, by}` |
+| The import, `scripts/importStudents.ts` | Claude | Done | `--hostel <address>` names the hostel; its one owner imports. The owner must belong to it. The whole file is checked against the hostel's limits first (students, and the new buildings it names) with the hostel's row locked. Optional columns `under_18` and `guardian_consent` (yes/no, empty for no). Tests in `importIntoHostel.test.ts` |
+| Storage shares, `src/services/usage.ts` | Claude | Done | `hostelStorage`: this hostel's photos against the storage limit divided by the number of active hostels. Uploads switch off at 85% of the share or of the whole limit. Tests in `usage.test.ts` (a new hostel's share; one hostel's full share does not stop another's uploads) |
+| Client | Claude | Done | "Under 18" on the admit and edit forms, with the consent checkbox when there is no consent yet; the profile shows "Guardian's consent confirmed by X on date"; the dashboard shows this hostel's photos against its share, and every hostel's photos once those pass 70% |
+| Docs | Claude | Done | `docs/deploy.md` (storage shares, importing a register with `--hostel`, students under 18 and migration 022), `docs/import-template.csv` (the two optional columns) |
+
+Checks: server 1255 tests (1232 before), client 443 (435 before), both typechecks clean.
+Fifteen planted bugs: fourteen caught at first. The one missed (the edit form not carrying
+a recorded consent, which would have stopped every save of a student under 18 without
+saying why) now has a test. Checked in the browser against the test database: the admit
+form asked for the consent, the profile named who confirmed it, saving again did not ask
+twice, and the dashboard showed a 64.3 MB share.
+
+### Notes for later days
+
+- Deployment: apply migration 022 with **Migrate production database** before deploying
+  this code. The import command now needs `--hostel sns-hostel` for hostel #1.
+- Phase 6: remove the hostel #1 fallbacks, rehearse on a restored production backup.

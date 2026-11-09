@@ -4,8 +4,8 @@ import type { AdmissionForm, Category, FoodPreference, StudentEditForm } from ".
 // owner sees a mistake at once instead of after a round trip. The server still checks
 // everything; this only gives faster feedback.
 
-// What the inputs hold: text as typed, except the veg-day checkboxes.
-export type AdmissionValues = TextValues & { vegDays: number[] };
+// What the inputs hold: text as typed, except the checkboxes.
+export type AdmissionValues = TextValues & { vegDays: number[]; under18: boolean; guardianConsent: boolean };
 export type TextValues = {
   name: string;
   email: string;
@@ -41,6 +41,8 @@ export const emptyAdmission = (today: string): AdmissionValues => ({
   joiningDate: today,
   foodPreference: "",
   vegDays: [],
+  under18: false,
+  guardianConsent: false,
   monthlyFee: "",
   buildingId: "",
   roomId: "",
@@ -128,6 +130,9 @@ export function checkAdmission(
 
   if (!v.buildingId) errors.buildingId = "Choose a building.";
 
+  // Phase 5b: a student under 18 needs a parent's or guardian's consent first.
+  if (v.under18 && !v.guardianConsent) errors.guardianConsent = "Confirm you have a parent's or guardian's consent.";
+
   if (Object.keys(errors).length > 0) return { errors };
 
   const category = v.category as Category;
@@ -153,6 +158,7 @@ export function checkAdmission(
       ...(v.foodPreference === "non_veg" &&
         v.vegDays.length > 0 && { vegDays: [...v.vegDays].sort((a, b) => a - b) }),
       monthlyFee,
+      ...(v.under18 && { under18: true as const, guardianConsent: true as const }),
       buildingId: Number(v.buildingId),
       roomId: v.roomId ? Number(v.roomId) : null,
       bedId: v.bedId ? Number(v.bedId) : null,

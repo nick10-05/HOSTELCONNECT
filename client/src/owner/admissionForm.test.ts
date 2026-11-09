@@ -140,3 +140,21 @@ describe("checkAdmission", () => {
     }
   });
 });
+
+// Phase 5b: a student under 18 needs the owner's confirmation of a guardian's consent.
+describe("checkAdmission: students under 18", () => {
+  it("asks for the guardian's consent before a student under 18 is sent", () => {
+    expect(errorsOf(filled({ under18: true }))).toEqual({
+      guardianConsent: "Confirm you have a parent's or guardian's consent.",
+    });
+  });
+
+  it("sends under18 and the consent together, and neither for anyone else", () => {
+    const marked = checkAdmission(filled({ under18: true, guardianConsent: true }), TODAY);
+    expect("form" in marked && marked.form).toMatchObject({ under18: true, guardianConsent: true });
+    // A consent ticked and the student then unmarked sends nothing about it.
+    const unmarked = checkAdmission(filled({ guardianConsent: true }), TODAY);
+    expect("form" in unmarked && unmarked.form).not.toHaveProperty("under18");
+    expect("form" in unmarked && unmarked.form).not.toHaveProperty("guardianConsent");
+  });
+});
