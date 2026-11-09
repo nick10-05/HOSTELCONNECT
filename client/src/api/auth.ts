@@ -11,12 +11,12 @@ export type User = {
 };
 
 // POST /api/auth/login: sets the session cookie and returns the user. `hostel` is the
-// slug of the sign-in page's address; without it the server means hostel #1.
+// slug of the sign-in page's address, which every sign-in names (phase 6).
 // Wrong email or password: 401 "invalid_credentials"; too many attempts: 429.
-export async function login(email: string, password: string, hostel?: string): Promise<User> {
+export async function login(email: string, password: string, hostel: string): Promise<User> {
   const { user } = await apiFetch<{ user: User }>("/api/auth/login", {
     method: "POST",
-    body: hostel === undefined ? { email, password } : { hostel, email, password },
+    body: { hostel, email, password },
   });
   return user;
 }

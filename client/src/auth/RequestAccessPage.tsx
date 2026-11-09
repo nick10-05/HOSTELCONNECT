@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
-import { signInPath, type Hostel } from "../api/hostels";
+import { requestAccessPath, signInPath, type Hostel } from "../api/hostels";
 import { requestAccess } from "../api/rejoin";
 import { buttonClass, fieldClass } from "../ui";
 import { AuthShell, authCardClass } from "../ui/AuthShell";
+import { FindHostel } from "./FindHostel";
 
 // The public "Request access" page (design doc, section 9), for former students, who
 // cannot log in. The server answers the same sentence whoever the email belongs to, and
@@ -14,8 +15,26 @@ export const MESSAGE_LIMIT = 500;
 const inputClass = `${fieldClass} mt-1`;
 
 // `hostel`: the hostel whose address this page is at, /h/<slug>/request-access. Without
-// one, the page at the old address, which asks hostel #1 (until phase 6).
+// one (/request-access), the page asks for the hostel's address first (phase 6).
 export function RequestAccessPage({ hostel }: { hostel?: Hostel & { slug: string } } = {}) {
+  if (!hostel) {
+    return (
+      <AuthShell title="Request access" subtitle="Find your hostel first">
+        <div className={authCardClass}>
+          <FindHostel pathFor={requestAccessPath} />
+        </div>
+        <p className="mt-6 text-center text-sm">
+          <a href="/" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+            Back to sign in
+          </a>
+        </p>
+      </AuthShell>
+    );
+  }
+  return <RequestAccessForm hostel={hostel} />;
+}
+
+function RequestAccessForm({ hostel }: { hostel: Hostel & { slug: string } }) {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +51,7 @@ export function RequestAccessPage({ hostel }: { hostel?: Hostel & { slug: string
     setSubmitting(true);
     setError(null);
     try {
-      setAnswer(await requestAccess(email.trim(), message.trim(), hostel?.slug));
+      setAnswer(await requestAccess(email.trim(), message.trim(), hostel.slug));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       setSubmitting(false);
@@ -42,7 +61,7 @@ export function RequestAccessPage({ hostel }: { hostel?: Hostel & { slug: string
   return (
     <AuthShell
       title="Request access"
-      subtitle={hostel ? `For former residents of ${hostel.name} who would like to come back` : "For former residents who would like to come back"}
+      subtitle={`For former residents of ${hostel.name} who would like to come back`}
     >
 
         {answer ? (
@@ -114,7 +133,7 @@ export function RequestAccessPage({ hostel }: { hostel?: Hostel & { slug: string
 
         <p className="mt-6 text-center text-sm">
           {/* A plain link: the sign-in page is the same app, loaded fresh. */}
-          <a href={hostel ? signInPath(hostel.slug) : "/"} className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+          <a href={signInPath(hostel.slug)} className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
             Back to sign in
           </a>
         </p>

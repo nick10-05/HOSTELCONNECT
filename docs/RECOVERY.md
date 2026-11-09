@@ -117,7 +117,7 @@ window (the variable dies with it):
 ```powershell
 cd C:\Users\NICK\projects\HOSTELCONNECT\server
 $s = Read-Host "Paste production DATABASE_URL" -AsSecureString; $env:DATABASE_URL = [Net.NetworkCredential]::new('', $s).Password; Remove-Variable s
-npm run reset:owner-password -- --email <owner's email> --production
+npm run reset:owner-password -- --hostel <hostel's address, e.g. sns-hostel> --email <owner's email> --production
 ```
 
 - `DATABASE_URL` is the app's URL from Render (the `no-verify` one). With `--production`
@@ -193,6 +193,23 @@ The dump is made exactly as the nightly backup makes it, and encrypted to the sa
 Compare the row counts with the local database
 (`docker exec -i hostelconnect-db psql -U hostel_admin -d hostelconnect -c "SELECT count(*) FROM users"`).
 Record each drill in `docs/progress.md`: date, file, rows per table, result.
+
+**Rehearsing the move to hostels** (multi-tenant phase 6), before migrations 013 to 022
+reach production. With the newest production backup, in Git Bash from the repository
+folder:
+
+```bash
+bash ops/rehearse-saas.sh hostelconnect-<date>.dump.age /path/to/hostelconnect-backup.key
+```
+
+It loads the backup into the local `restore_drill` database (as the drill does), runs
+the new migrations on it, and checks: every table keeps its rows, there is one hostel
+(#1, active, at `sns-hostel`), every row is hostel #1's, there is one owner, every
+account with a password is found by sign-in, the app sees all accounts inside hostel #1
+and is refused outside any hostel, and nobody is marked under 18. It prints counts and
+PASS or FAIL only, never a name or an email. It ends with "Every check passed" or exits
+with an error. Drop `restore_drill` afterwards, and record the result in
+`docs/progress.md`.
 
 ## 10. Monthly check (15 minutes)
 

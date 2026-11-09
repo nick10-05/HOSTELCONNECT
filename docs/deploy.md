@@ -128,7 +128,8 @@ clear the screen, remove the variable and close the window:
 Clear-Host; Remove-Item Env:DATABASE_URL
 ```
 
-Log in on the Render URL with the temporary password. The app allows nothing else until
+Sign in at `<Render URL>/h/sns-hostel/login` (hostel #1's address, migration 019) with
+the temporary password. The app allows nothing else until
 you choose a new one (the server enforces this too). If the script says an owner
 already exists, it changed nothing.
 
@@ -225,18 +226,31 @@ A pull request with a new migration: run **Migrate production database** on that
 first, then merge. Migrations only ever add, so the running code keeps working while the
 new tables arrive, and the new code never starts without them.
 
-### Moving an existing deployment to hostels (migrations 013 to 018)
+### Moving an existing deployment to hostels (migrations 013 to 022)
 
-These need the code in between, so the order matters:
+Production is at 012. The hostels code needs every migration up to 022, and the code
+before it stops working after 016 (rows need a hostel) and 018 (row-level security), so
+the move is one short break, at a quiet hour:
 
-1. Run **Backup database**, and keep that backup.
-2. Migrate with the code before the hostels change: 013, 014 and 015 only.
-3. Deploy the hostels code (Render).
-4. Migrate again: 016, 017 and 018.
-5. At once after 018: make `<BACKUP_PW>`, run `scripts/backup-role.ts` (step 3), and
-   set the GitHub secret `BACKUP_DATABASE_URL` to the `hostel_backup` URL (step 1's
-   table). Until then the nightly backup fails: `hostel_app`, which it used before, now
-   sees at most one hostel. Then run **Backup database** by hand to check it.
+1. Run **Backup database**, and download that backup.
+2. Rehearse on it, on your laptop (`docs/RECOVERY.md`, section 9): every check must pass.
+3. Tell the students their new sign-in address, `<Render URL>/h/sns-hostel/login`. From
+   this deploy on, the plain `/login` asks for the hostel's address first (phase 6), and
+   the owner signs in there with Google or at the same address with the password.
+4. Render → the service → **Suspend**.
+5. Run **Migrate production database** on the branch being deployed: 013 to 022.
+6. Deploy that branch's code and **Resume** the service.
+7. At once: make `<BACKUP_PW>`, run `scripts/backup-role.ts` (step 3), and set the
+   GitHub secret `BACKUP_DATABASE_URL` to the `hostel_backup` URL (step 1's table).
+   Until then the nightly backup fails: `hostel_app`, which it used before, now sees at
+   most one hostel. Then run **Backup database** by hand to check it.
+8. Check: `/api/health`; a student signs in at `/h/sns-hostel/login`; the owner signs in;
+   the dashboard and the students list look as before; Settings → Fees and limits shows
+   the fees start date to set and the limits (step "A hostel's limits").
+
+If step 5 fails, nothing changed (each migration is all or nothing): resume the old
+service and look at the log. If a problem shows after step 6, restore the step 1 backup
+(section 5 of `docs/RECOVERY.md`) and deploy the previous code.
 
 ## A hostel's limits (multi-tenant phase 5a)
 

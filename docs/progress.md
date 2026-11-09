@@ -1397,3 +1397,32 @@ twice, and the dashboard showed a 64.3 MB share.
 - Deployment: apply migration 022 with **Migrate production database** before deploying
   this code. The import command now needs `--hostel sns-hostel` for hostel #1.
 - Phase 6: remove the hostel #1 fallbacks, rehearse on a restored production backup.
+
+## Multi-tenant SaaS, phase 6: no more hostel #1 fallbacks, and the rehearsal (2026-11-09)
+
+Every password sign-in and every request to come back now names its hostel; the plain
+`/login` and `/request-access` ask for the hostel's address first (Nikhil chose this over
+a temporary redirect to SNS). The database side of "contract" was already done (global
+uniques dropped in 017, `DEFAULT 1` replaced in 016). A script rehearses the whole move
+on a restored production backup.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Sign-in and the request form | Claude, at Nikhil's request | Done | `hostel` is required in `POST /api/auth/login` and `POST /api/rejoin-requests`; without it, 400 "hostel: open your hostel's own sign-in page, /h/<address>/login" (no account looked up, nothing filed). Tests in `authRoutes.test.ts`, `hostelSignIn.test.ts`; every other sign-in in the tests names `sns-hostel` |
+| `/login` and `/request-access` | Claude | Done | `FindHostel`: the hostel's address (or a pasted sign-in link), looked up, then on to `/h/<address>/login` or `/request-access`; "No hostel has this address" otherwise. Owners still sign in with Google on `/login`, and new owners set up a hostel there. 9 tests in `FindHostel.test.tsx` |
+| Owner password reset script | Claude | Done | `--hostel <address>` required; refuses an unknown hostel. Tried by hand: without `--hostel` it stops before connecting |
+| Rehearsal, `ops/rehearse-saas.sh` + `server/scripts/rehearse-saas.ts` | Claude | Done, not yet run on a production backup | Restores the backup into the local `restore_drill`, runs 013 to 022, checks rows per table unchanged, one hostel (#1 at `sns-hostel`), every row in hostel #1, one owner, every password account found by sign-in, the app sees everything inside hostel #1 and is refused outside, nobody under 18. Prints counts only. Refuses any database but a local copy. Tried on a copy of the local demo database (at 012, 104 accounts): all migrations applied in 0.2 s, every check passed; with a planted change, the check failed and the script exited 1 |
+| Docs | Claude | Done | `docs/deploy.md` (the move from 012 to 022 as one short break, with the new sign-in address for students first; first sign-in at `/h/sns-hostel/login`), `docs/RECOVERY.md` (the rehearsal; the reset script's `--hostel`) |
+
+Checks: server 1257 tests (1255 before), client 452 (443 before), both typechecks clean.
+Fourteen planted bugs, all caught. Checked in the browser against the test database:
+`/login` asked for the address, refused an unknown one, and went on to
+`/h/sns-hostel/login` for "SNS-Hostel"; `/request-access` asked first; sign-in and the
+request without a hostel answered 400.
+
+### Notes for later days
+
+- Before deploying: run the rehearsal on the newest production backup (Nikhil, with the
+  backup key) and record its output here; give the students `/h/sns-hostel/login`.
+- `FEES_START_DATE` and `adoptFeesStartDate` stay for now (production has none set, so
+  they do nothing there); they can go in a later clean-up.

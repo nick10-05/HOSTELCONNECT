@@ -4,13 +4,13 @@ import type { Admission, ReactivationForm } from "./students";
 // Rejoin requests. Shapes match server/src/routes/rejoin.ts.
 
 // POST /api/rejoin-requests, public. Returns the server's sentence, which is the same
-// whoever the email belongs to. `hostel` is the slug of the page's address; without it
-// the server means hostel #1. Refusals arrive as ApiError: 400 "invalid_input",
+// whoever the email belongs to. `hostel` is the slug of the page's address, which every
+// request names (phase 6). Refusals arrive as ApiError: 400 "invalid_input",
 // 404 "hostel_not_found", 429 "rate_limited".
-export async function requestAccess(email: string, message: string, hostel?: string): Promise<string> {
+export async function requestAccess(email: string, message: string, hostel: string): Promise<string> {
   const answer = await apiFetch<{ message: string }>("/api/rejoin-requests", {
     method: "POST",
-    body: hostel === undefined ? { email, message } : { hostel, email, message },
+    body: { hostel, email, message },
   });
   return answer.message;
 }

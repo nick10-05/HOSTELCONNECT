@@ -23,7 +23,7 @@ beforeAll(async () => {
 afterAll(() => db.end());
 
 async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post("/api/auth/login").send({ email, password });
+  const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password });
   expect(res.status).toBe(200);
   const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
   const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
@@ -32,7 +32,7 @@ async function login(email: string, password: string): Promise<string> {
 }
 
 const loginStatus = async (email: string, password: string) =>
-  (await request(app).post("/api/auth/login").send({ email, password })).status;
+  (await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password })).status;
 
 describe("a student's password reset", { timeout: 60_000 }, () => {
   it("replaces the password at once, and the new one must be changed first", async () => {

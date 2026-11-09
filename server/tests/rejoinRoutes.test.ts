@@ -14,7 +14,7 @@ afterAll(() => db.end());
 
 const freshApp = () => createApp({ db, jwtSecret: SECRET });
 const send = (app: ReturnType<typeof freshApp>, body: object) =>
-  request(app).post("/api/rejoin-requests").send(body);
+  request(app).post("/api/rejoin-requests").send({ hostel: "sns-hostel", ...body });
 
 const emailOf = async (id: number) =>
   (await db.query<{ email: string }>("SELECT email FROM users WHERE id = $1", [id])).rows[0].email;
@@ -140,7 +140,7 @@ describe("POST /api/rejoin-requests", () => {
     const res = await request(freshApp())
       .post("/api/rejoin-requests")
       .set("Origin", "https://elsewhere.example")
-      .send({ email: await emailOf(former) });
+      .send({ hostel: "sns-hostel", email: await emailOf(former) });
     expect(res.status).toBe(403);
     expect(await requestsOf(former)).toEqual([]);
   });

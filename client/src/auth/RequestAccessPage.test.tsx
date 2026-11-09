@@ -7,12 +7,14 @@ import { jsonResponse, mockFetch } from "../test/fetch";
 import { LoginPage } from "./LoginPage";
 import { RequestAccessPage } from "./RequestAccessPage";
 
+// The hostel whose address the page is at, /h/sns-hostel/request-access.
+const SNS = { name: "SNS Hostel", slug: "sns-hostel" };
 const ANSWER = "If this email belongs to a former student, the owner will review the request.";
 
 function renderPage(answer: () => Response = () => jsonResponse(202, { message: ANSWER })) {
   const fetch = mockFetch(async () => answer());
   const user = userEvent.setup();
-  render(<RequestAccessPage />);
+  render(<RequestAccessPage hostel={SNS} />);
   return { user, fetch };
 }
 
@@ -28,7 +30,7 @@ describe("RequestAccessPage", () => {
     const [url, init] = fetch.mock.calls[0];
     expect(url).toBe("/api/rejoin-requests");
     expect(init?.method).toBe("POST");
-    expect(JSON.parse(init!.body as string)).toEqual({ email: "ravi@example.com", message: "Back in June." });
+    expect(JSON.parse(init!.body as string)).toEqual({ hostel: "sns-hostel", email: "ravi@example.com", message: "Back in June." });
     expect(screen.queryByRole("button", { name: "Send request" })).not.toBeInTheDocument();
   });
 
@@ -64,7 +66,7 @@ describe("RequestAccessPage", () => {
 
   it("links back to sign in", () => {
     renderPage();
-    expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute("href", "/h/sns-hostel/login");
   });
 });
 
@@ -82,6 +84,8 @@ describe("getting to the request form", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole("heading", { name: "Request access" })).toBeInTheDocument();
+    // No hostel in the address: the page asks for it first (phase 6).
+    expect(screen.getByLabelText("Your hostel's address")).toBeInTheDocument();
     unmount();
 
     render(
@@ -89,6 +93,7 @@ describe("getting to the request form", () => {
         <App />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Your hostel's address")).toBeInTheDocument();
   });
 });

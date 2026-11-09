@@ -138,7 +138,7 @@ export function App() {
         <Route path="/h/:slug" element={<SlugRedirect />} />
         {/* A new owner, back from Google with a sign-up ticket (phase 4a). */}
         <Route path="/signup" element={<SignupPage onSignedUp={signIn} />} />
-        {/* The old addresses: hostel #1's pages, until phase 6. */}
+        {/* No hostel in the address: these ask for it first (phase 6). */}
         <Route path="/request-access" element={<RequestAccessPage />} />
         <Route
           path="*"

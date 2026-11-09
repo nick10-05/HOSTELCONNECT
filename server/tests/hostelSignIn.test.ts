@@ -11,8 +11,8 @@ import { toTestDatabaseUrl } from "./helpers/testDatabase";
 
 // Multi-tenant phase 3a: every hostel has its own address, /h/<slug>/. Its students sign
 // in there, and former students ask to come back there; the hostel comes from the
-// address, never from anything else in the request. Without a hostel, sign-in and the
-// form still mean hostel #1 (sns-hostel, migration 019) until phase 6 removes that.
+// address, never from anything else in the request. Since phase 6 a request that names no
+// hostel is refused; hostel #1 is sns-hostel (migration 019).
 const SECRET = "test-secret-that-is-at-least-32-characters";
 const PASSWORD = "Correct-Horse-7";
 const OTHER_PASSWORD = "Other-Horse-8";
@@ -109,9 +109,10 @@ describe("signing in at a hostel's address", { timeout: 30_000 }, () => {
       .post("/api/auth/login")
       .send({ hostel: "sns-hostel", email, password: OTHER_PASSWORD });
     expect(one.body.user.id).toBe(inOne);
-    // And without a hostel, still hostel #1 (until phase 6).
+    // And without a hostel, no one (phase 6): the request is refused.
     const none = await request(newApp()).post("/api/auth/login").send({ email, password: OTHER_PASSWORD });
-    expect(none.body.user.id).toBe(inOne);
+    expect(none.status).toBe(400);
+    expect(none.headers["set-cookie"]).toBeUndefined();
   });
 
   it("never signs in an account of another hostel, with the same answer as a wrong password", async () => {
@@ -175,6 +176,15 @@ describe("asking to come back, at a hostel's address", () => {
     const res = await request(newApp()).post("/api/rejoin-requests").send({ hostel: h.slug, email });
     expect(res.status).toBe(202);
     expect(await pendingFor(h.id, inH)).toBe(1);
+    expect(await pendingFor(1, inOne)).toBe(0);
+  });
+
+  it("refuses a request that names no hostel, and files nothing (phase 6)", async () => {
+    const email = `former-${randomUUID()}@test.local`;
+    const inOne = await studentIn(1, { email, isActive: false });
+    const res = await request(newApp()).post("/api/rejoin-requests").send({ email });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe("hostel: open your hostel's own page, /h/<address>/request-access");
     expect(await pendingFor(1, inOne)).toBe(0);
   });
 

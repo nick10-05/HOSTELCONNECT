@@ -24,7 +24,7 @@ beforeAll(async () => {
 afterAll(() => db.end());
 
 async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post("/api/auth/login").send({ email, password });
+  const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password });
   expect(res.status).toBe(200);
   const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
   const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
@@ -33,7 +33,7 @@ async function login(email: string, password: string): Promise<string> {
 }
 
 const loginStatus = async (email: string, password: string) =>
-  (await request(app).post("/api/auth/login").send({ email, password })).status;
+  (await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password })).status;
 
 describe("moving out and coming back", { timeout: 60_000 }, () => {
   it("locks a student out at once, and lets them back only with a new temporary password", async () => {

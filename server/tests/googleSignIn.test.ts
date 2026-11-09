@@ -91,7 +91,7 @@ async function asAdmin(sql: string, params: unknown[]) {
 
 async function signedIn(app: ReturnType<typeof appWith>, email: string) {
   const agent = request.agent(app);
-  expect((await agent.post("/api/auth/login").send({ email, password: PASSWORD })).status).toBe(200);
+  expect((await agent.post("/api/auth/login").send({ hostel: "sns-hostel", email, password: PASSWORD })).status).toBe(200);
   return agent;
 }
 
@@ -271,7 +271,7 @@ describe("POST /api/auth/remove-password", { timeout: 30_000 }, () => {
     expect(await accountOf(o.id)).toEqual({ google_sub: sub, has_password: false });
     expect((await agent.get("/api/auth/me")).body.account).toEqual({ googleLinked: true, hasPassword: false });
     // The password no longer works; Google does.
-    expect((await request(app).post("/api/auth/login").send({ email: o.email, password: PASSWORD })).status).toBe(401);
+    expect((await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email: o.email, password: PASSWORD })).status).toBe(401);
     expect((await viaGoogle(request.agent(app), `code:${sub}`)).headers.location).toBe("/");
     // Nothing left to change or remove.
     const change = await agent.post("/api/auth/change-password").send({ currentPassword: PASSWORD, newPassword: "A-new-password-9" });

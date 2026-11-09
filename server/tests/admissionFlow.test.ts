@@ -22,7 +22,7 @@ beforeAll(async () => {
 afterAll(() => db.end());
 
 async function login(email: string, password: string): Promise<string> {
-  const res = await request(app).post("/api/auth/login").send({ email, password });
+  const res = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password });
   expect(res.status).toBe(200);
   const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
   const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
@@ -75,7 +75,7 @@ describe("admission to first login", { timeout: 60_000 }, () => {
     expect(after.body.error.code).toBe("forbidden");
 
     // The temporary password no longer works.
-    const old = await request(app).post("/api/auth/login").send({ email, password: temporaryPassword });
+    const old = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: temporaryPassword });
     expect(old.status).toBe(401);
   });
 });

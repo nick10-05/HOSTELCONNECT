@@ -14,8 +14,9 @@ export type AuthRouteDeps = AuthDeps & {
 };
 
 const loginSchema = z.object({
-  // The address of the sign-in page, /h/<slug>/login. Missing: hostel #1 (see below).
-  hostel: slugSchema.optional(),
+  // The address of the sign-in page, /h/<slug>/login (phase 3a). Required since phase 6:
+  // an email may belong to accounts in two hostels.
+  hostel: z.string({ error: "open your hostel's own sign-in page, /h/<address>/login" }).pipe(slugSchema),
   email: z.string().trim().min(1, "is required").max(254),
   password: z.string().min(1, "is required").max(200),
 });
@@ -40,11 +41,6 @@ type UserRow = {
 function publicUser(row: UserRow) {
   return { id: row.id, name: row.name, role: row.role, mustChangePassword: row.must_change_password };
 }
-
-// Password sign-in names its hostel by the sign-in page's address (phase 3a). A request
-// without one is from the sign-in page as it was before, which was hostel #1's, where
-// every account then was: it means hostel #1 until phase 6 removes that.
-const UNNAMED_SIGN_IN_HOSTEL = 1;
 
 // A hash of a random password nobody knows, made once. Login compares against it when
 // the email is unknown, so "no such email" takes as long as "wrong password" and the
@@ -95,8 +91,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
 
       // The hostel at the page's address; an unknown or suspended one finds no account,
       // and gets the same answer, after the same work, as a wrong password.
-      const hostelId =
-        body.hostel === undefined ? UNNAMED_SIGN_IN_HOSTEL : (await activeHostelBySlug(db, body.hostel))?.id;
+      const hostelId = (await activeHostelBySlug(db, body.hostel))?.id;
       // Through auth_user_by_email (migration 014), which finds the account in one hostel
       // before anything else about the request is known.
       const { rows } =

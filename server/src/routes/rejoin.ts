@@ -30,13 +30,10 @@ export const REJOIN_LIMIT_PER_IP = 10; // per hour
 export const REJOIN_LIMIT_PER_EMAIL = 3; // per 24 hours
 export const REJOIN_ANSWER = "If this email belongs to a former student, the owner will review the request.";
 
-// The form names its hostel by the page's address, /h/<slug>/request-access (phase 3a).
-// A request without one is from the form as it was before, hostel #1's: it means hostel
-// #1 until phase 6 removes that, like password sign-in (routes/auth.ts).
-const UNNAMED_FORM_HOSTEL = 1;
-
+// The form names its hostel by the page's address, /h/<slug>/request-access (phase 3a);
+// required since phase 6, like password sign-in (routes/auth.ts).
 export const rejoinSchema = z.object({
-  hostel: slugSchema.optional(),
+  hostel: z.string({ error: "open your hostel's own page, /h/<address>/request-access" }).pipe(slugSchema),
   email: z.string().trim().toLowerCase().max(254).pipe(z.email("must be a valid email address")),
   message: z
     .string()
@@ -97,8 +94,7 @@ export function rejoinRouter(deps: AuthDeps): Router {
   router.post("/rejoin-requests", perIp, perEmail, async (req, res) => {
     const body = parseBody(rejoinSchema, req, res);
     if (!body) return;
-    const hostelId =
-      body.hostel === undefined ? UNNAMED_FORM_HOSTEL : (await activeHostelBySlug(db, body.hostel))?.id;
+    const hostelId = (await activeHostelBySlug(db, body.hostel))?.id;
     // Whether a hostel has an address is public (GET /api/hostels/:slug), so an unknown
     // one may say so; whether an email belongs to it never is (REJOIN_ANSWER).
     if (hostelId === undefined) {
