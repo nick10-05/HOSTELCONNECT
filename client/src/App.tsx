@@ -5,8 +5,10 @@ import { signInPath, type Hostel } from "./api/hostels";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { AccountContext, HostelContext } from "./auth/hostel";
 import { HostelAddress } from "./auth/HostelAddress";
+import { LegalPage } from "./auth/LegalPage";
 import { LoginPage } from "./auth/LoginPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
+import { SignupPage } from "./auth/SignupPage";
 import { NotificationBell } from "./components/NotificationBell";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { AnnouncementsPage } from "./owner/AnnouncementsPage";
@@ -16,6 +18,7 @@ import { DashboardPage } from "./owner/DashboardPage";
 import { FeesPage } from "./owner/FeesPage";
 import { FoodCountsPage } from "./owner/FoodCountsPage";
 import { GoogleSignIn } from "./owner/GoogleSignIn";
+import { HostelProfile } from "./owner/HostelProfile";
 import { RejoinRequestsPage } from "./owner/RejoinRequestsPage";
 import { ReturnPollPage } from "./owner/ReturnPollPage";
 import { ReturnPollsPage } from "./owner/ReturnPollsPage";
@@ -56,13 +59,17 @@ type Session =
 export function App() {
   const [session, setSession] = useState<Session>({ status: "loading" });
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [signupsOpen, setSignupsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   // Whether "Sign in with Google" is set up (phase 3b). Off if the server cannot say.
   useEffect(() => {
     authOptions()
-      .then((options) => setGoogleEnabled(options.google))
+      .then((options) => {
+        setGoogleEnabled(options.google);
+        setSignupsOpen(options.signupsOpen);
+      })
       .catch(() => setGoogleEnabled(false));
   }, []);
 
@@ -102,6 +109,11 @@ export function App() {
     );
   }
 
+  // The Terms and the Privacy Policy, for everyone, signed in or not (phase 4a).
+  if (location.pathname === "/terms" || location.pathname === "/privacy") {
+    return <LegalPage document={location.pathname === "/terms" ? "terms" : "privacy"} />;
+  }
+
   // What Google sign-in came back with, for the sign-in page (/login?google=…).
   const googleOutcome = new URLSearchParams(location.search).get("google");
 
@@ -123,14 +135,21 @@ export function App() {
           element={<HostelAddress>{(h) => <RequestAccessPage hostel={withSlug(h)} />}</HostelAddress>}
         />
         <Route path="/h/:slug" element={<SlugRedirect />} />
+        {/* A new owner, back from Google with a sign-up ticket (phase 4a). */}
+        <Route path="/signup" element={<SignupPage onSignedUp={signIn} />} />
         {/* The old addresses: hostel #1's pages, until phase 6. */}
         <Route path="/request-access" element={<RequestAccessPage />} />
-        <Route path="*" element={<LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} />} />
+        <Route
+          path="*"
+          element={<LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} signupsOpen={signupsOpen} />}
+        />
       </Routes>
     );
   }
 
   const { user, hostel, account } = session;
+  // The owner renamed the hostel or moved its address (Settings > Hostel).
+  const hostelSaved = (saved: Hostel) => setSession((s) => (s.status === "signed-in" ? { ...s, hostel: saved } : s));
 
   // A temporary password unlocks nothing else (the server enforces the same rule).
   if (user.mustChangePassword) {
@@ -196,6 +215,7 @@ export function App() {
                   element={
                     <>
                       <SettingsPage />
+                      <HostelProfile onSaved={hostelSaved} />
                       <GoogleSignIn />
                     </>
                   }

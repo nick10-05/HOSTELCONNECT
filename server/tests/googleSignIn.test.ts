@@ -98,13 +98,13 @@ async function signedIn(app: ReturnType<typeof appWith>, email: string) {
 describe("whether Google sign-in is on", () => {
   it("is off without the settings: the sign-in page hides it and its addresses do not exist", async () => {
     const app = appWith(null);
-    expect((await request(app).get("/api/auth/options")).body).toEqual({ google: false });
+    expect((await request(app).get("/api/auth/options")).body).toEqual({ google: false, signupsOpen: false });
     expect((await request(app).get("/api/auth/google/start")).status).toBe(404);
     expect((await request(app).get("/api/auth/google/callback?state=x&code=y")).status).toBe(404);
   });
 
   it("is on with them", async () => {
-    expect((await request(appWith(fakeGoogle())).get("/api/auth/options")).body).toEqual({ google: true });
+    expect((await request(appWith(fakeGoogle())).get("/api/auth/options")).body).toEqual({ google: true, signupsOpen: false });
   });
 });
 

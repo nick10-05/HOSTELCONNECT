@@ -20,15 +20,17 @@ const GOOGLE_OUTCOMES: Record<string, string> = {
 // `hostel`: the hostel whose address this page is at, /h/<slug>/login. Without one, the
 // page at the old address, which signs in to hostel #1 (until phase 6).
 // `googleEnabled`: show "Sign in with Google" (owners, phase 3b); `googleOutcome`: the
-// ?google= value Google sign-in came back with.
+// ?google= value Google sign-in came back with. `signupsOpen`: new hostels may sign up
+// (phase 4a), through the same Google button.
 type Props = {
   onLoggedIn: (user: User) => void;
   hostel?: Hostel & { slug: string };
   googleEnabled?: boolean;
   googleOutcome?: string | null;
+  signupsOpen?: boolean;
 };
 
-export function LoginPage({ onLoggedIn, hostel, googleEnabled = false, googleOutcome = null }: Props) {
+export function LoginPage({ onLoggedIn, hostel, googleEnabled = false, googleOutcome = null, signupsOpen = false }: Props) {
   const googleMessage = googleOutcome ? GOOGLE_OUTCOMES[googleOutcome] : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -135,6 +137,15 @@ export function LoginPage({ onLoggedIn, hostel, googleEnabled = false, googleOut
               <a href="/api/auth/google/start" className={`${buttonClass("secondary")} min-h-12 w-full`}>
                 Sign in with Google
               </a>
+              {/* Not on a hostel's own page: its visitors are that hostel's people. */}
+              {signupsOpen && !hostel && (
+                <p className="text-sm text-muted">
+                  New to HostelConnect?{" "}
+                  <a href="/api/auth/google/start" className="inline-flex min-h-11 items-center px-1 font-semibold text-accent hover:underline">
+                    Set up your hostel with Google
+                  </a>
+                </p>
+              )}
             </div>
           )}
         </form>

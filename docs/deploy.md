@@ -164,6 +164,25 @@ Then, for the existing owner account:
    step, the password still works; after it, `npm run reset:owner-password` gives the
    owner a password again (docs/RECOVERY.md).
 
+## 5b. Opening sign-up to new hostels (multi-tenant phase 4a)
+
+Anyone with a Google account can then create a hostel and become its owner. Sign-up stays
+closed (`SIGNUPS_OPEN` unset or `false`) until all of these are true:
+
+1. Google sign-in works (step 5a), and the consent screen is **published** (Audience →
+   Publish), so that any Google account can sign in, not only the test users.
+2. The Terms of Service and the Privacy Policy (`/terms`, `/privacy`) are final and a
+   lawyer has reviewed them. Whenever either changes in substance, change `TERMS_VERSION`
+   in `server/src/lib/legal.ts`: each owner's account records the version they accepted.
+3. Render → Environment → `SIGNUPS_OPEN` = `true` → save (redeploys). The server refuses
+   to start with it on and Google sign-in off.
+
+How it works: an unknown Google account at **Sign in with Google** is sent to `/signup`
+instead of being told it has no account. There the owner names themself and the hostel,
+chooses its address (`/h/<address>/login`) and accepts the terms. Five hostels an hour at
+most from one IP address. To close sign-up again, set `SIGNUPS_OPEN` = `false`: hostels
+that signed up keep working.
+
 ## 6. First backup and restore drill
 
 1. Actions → **Backup database** → Run workflow. It then runs every night at 03:00 IST.

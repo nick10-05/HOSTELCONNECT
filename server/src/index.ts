@@ -29,6 +29,7 @@ const app = createApp({
   photoOrigin: config.SUPABASE_URL ?? null,
   cspReportOnly: config.CSP_REPORT_ONLY,
   google: googleFromConfig(config),
+  signupsOpen: config.SIGNUPS_OPEN,
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

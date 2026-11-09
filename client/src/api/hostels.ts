@@ -11,6 +11,13 @@ export async function getHostel(slug: string): Promise<Hostel> {
   return hostel;
 }
 
+// PATCH /api/hostel, owners only (phase 4a): rename the owner's own hostel or change its
+// address. Address taken: 409 "slug_taken"; not allowed: 400 "invalid_slug".
+export async function updateHostel(changes: { name?: string; slug?: string }): Promise<Hostel> {
+  const { hostel } = await apiFetch<{ hostel: Hostel }>("/api/hostel", { method: "PATCH", body: changes });
+  return hostel;
+}
+
 // Where a hostel's students sign in.
 export const signInPath = (slug: string) => `/h/${slug}/login`;
 export const requestAccessPath = (slug: string) => `/h/${slug}/request-access`;

@@ -7,6 +7,7 @@ import { pkcePair, randomToken, type GoogleAuth } from "../lib/google";
 import { SESSION_TTL_SECONDS, signSession, verifySession, type Role } from "../lib/token";
 import { requireAuth, requireRole, SESSION_COOKIE, type AuthDeps } from "../middleware/auth";
 import { sessionCookieOptions } from "./auth";
+import { giveSignupTicket } from "./signup";
 
 // Google sign-in for owners (multi-tenant phase 3b; src/lib/google.ts has the flow).
 //
@@ -19,12 +20,15 @@ import { sessionCookieOptions } from "./auth";
 // verifier, and for linking the owner) travels in a short-lived, signed, httpOnly cookie
 // readable only on these paths. The callback always ends with a redirect to a page, which
 // reads the outcome from ?google=…:
-//   signing in, to /login:  no-account, inactive, cancelled, failed (or "/" when signed in)
+//   signing in, to /login:  no-account, inactive, cancelled, failed (or "/" when signed in,
+//                           or /signup with a sign-up ticket for a new owner, phase 4a)
 //   linking, to /settings:  linked, taken, already-linked, cancelled, failed
 export type GoogleRouteDeps = AuthDeps & {
   secureCookies: boolean;
   // Null when GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and PUBLIC_URL are not set.
   google: GoogleAuth | null;
+  // A Google account no owner has may sign up (SIGNUPS_OPEN, phase 4a).
+  signupsOpen?: boolean;
 };
 
 export const FLOW_COOKIE = "hc_google";
@@ -58,12 +62,12 @@ function sameText(a: string, b: string): boolean {
 }
 
 export function googleRouter(deps: GoogleRouteDeps): Router {
-  const { db, jwtSecret, secureCookies, google } = deps;
+  const { db, jwtSecret, secureCookies, google, signupsOpen = false } = deps;
   const router = Router();
   const flowCookie: CookieOptions = { httpOnly: true, sameSite: "lax", secure: secureCookies, path: FLOW_PATH };
 
   router.get("/options", (_req, res) => {
-    res.json({ google: google !== null });
+    res.json({ google: google !== null, signupsOpen });
   });
 
   // Sends the browser to Google, remembering this sign-in in the flow cookie.
@@ -106,9 +110,10 @@ export function googleRouter(deps: GoogleRouteDeps): Router {
     }
 
     let sub: string;
+    let email: string;
     try {
       const idToken = await google.exchangeCode(code, flow.verifier);
-      sub = (await google.verifyIdToken(idToken, flow.nonce)).sub;
+      ({ sub, email } = await google.verifyIdToken(idToken, flow.nonce));
     } catch (err) {
       // The reason (never a secret or a token) helps the operator; the owner sees "failed".
       console.warn("Google sign-in failed:", err instanceof Error ? err.message : err);
@@ -121,7 +126,12 @@ export function googleRouter(deps: GoogleRouteDeps): Router {
         [sub],
       );
       const owner = rows[0];
-      if (!owner) return done("no-account");
+      if (!owner) {
+        // A new owner, while sign-up is open: on to the sign-up page with a ticket.
+        if (!signupsOpen) return done("no-account");
+        giveSignupTicket(res, { sub, email }, jwtSecret, secureCookies);
+        return res.redirect(302, "/signup");
+      }
       if (!owner.is_active || !owner.hostel_active) return done("inactive");
       res.cookie(SESSION_COOKIE, signSession({ userId: owner.id, role: owner.role }, jwtSecret), {
         ...sessionCookieOptions(secureCookies),

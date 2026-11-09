@@ -1272,3 +1272,40 @@ callback lands on `/login?google=failed`.
 - Deployment: 020 goes with 016 to 019, after the code.
 - Phase 4 (sign-up) starts from `?google=no-account`: an unknown Google account will be
   offered to create an owner account and a hostel instead.
+
+## Multi-tenant SaaS, phase 4a: sign-up and the hostel's profile (2026-11-09)
+
+A new owner signs up with Google, names the hostel, chooses its address and accepts the
+terms, and is signed in to an empty hostel of their own. The owner can later rename the
+hostel or move its address. Sign-up stays off until `SIGNUPS_OPEN=true` is in Render
+(`docs/deploy.md`, step 5b), which waits for the reviewed Terms and Privacy Policy.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| Accepted terms, migration `021_signup.sql` | Claude, at Nikhil's request | Done | `users.terms_version` and `terms_accepted_at`: both or neither, owners only, the version trimmed and 1 to 40 characters. `TERMS_VERSION` in `src/lib/legal.ts` |
+| Making a hostel, `src/services/hostels.ts` | Claude | Done | `createHostelWithOwner`: the hostel and its one owner in one transaction (Google only, no password). It is the only way an owner is made, and it always makes a new hostel, so every hostel has one owner and a Google account owns one hostel at most (`users_google_sub_key`). `checkSlug` adds reserved addresses (`admin`, `api`, `signup`, …) |
+| Sign-up routes, `src/routes/signup.ts` | Claude | Done | The Google callback gives an unknown account a 30-minute signed ticket (httpOnly cookie on `/api/signup` only, its own audience, so a session token is no ticket) and sends it to `/signup`. `GET /api/signup`, `GET /api/signup/slug`, `POST /api/signup` (terms accepted, the shown version or 409 `terms_changed`; five hostels an hour per IP, refused forms not counted). 15 tests in `signup.test.ts`, including that sign-up never adds an owner to an existing hostel |
+| The hostel's profile, `PATCH /api/hostel` | Claude | Done | Owners only, their own hostel only (`withHostel`); a moved address frees the old one. 6 tests in `hostelProfile.test.ts` |
+| Setting `SIGNUPS_OPEN` | Claude | Done | Off by default; the server will not start with it on and Google sign-in off; `/api/auth/options` says `signupsOpen`. 2 tests in `config.test.ts` |
+| Client | Claude | Done | `/signup` (the address follows the hostel's name until edited, checked live; the terms checkbox also confirms guardians' consent for students under 18), placeholder `/terms` and `/privacy` (phase 4b), Settings → Hostel (rename, move the address with a warning that students' link changes), and "Set up your hostel with Google" on the main sign-in page while sign-up is open. 24 tests in `SignupPage.test.tsx` and `HostelProfile.test.tsx` |
+| Docs | Claude | Done | `docs/deploy.md` step 5b, `.env.example` |
+
+Checks: server 1216 tests (1193 before), client 425 (401 before), both typechecks clean.
+Eighteen planted bugs: sixteen caught at first. The two misses now have tests: a token
+signed with the server's secret and shaped like a ticket but without the sign-up audience
+(a session token was already refused, as it has no email), and the sign-up page showing
+what the server said about the previous address for a new one. Checked in the browser
+against the test database, with a locally made ticket in place of Google: the main sign-in
+page offers sign-up, `/signup` without a ticket sends you to Google, `/terms` shows the
+placeholder; with the ticket the address follows the hostel's name and shows as free,
+"Create my hostel" signs the owner in, and Settings → Hostel moved the address (the old one
+then answers 404).
+
+### Notes for later days
+
+- Phase 4b: the plain-language Terms of Service and Privacy Policy on `/terms` and
+  `/privacy`, marked as under legal review. Then a lawyer's review, then `SIGNUPS_OPEN`.
+- Deployment: 021 goes with 016 to 020, after the code. With `SIGNUPS_OPEN` unset nothing
+  changes for users, apart from Settings → Hostel.
+- A new hostel starts empty: the owner sets up its buildings before admitting students.
+  Its limits (300 students, 20 buildings) are enforced in phase 5.

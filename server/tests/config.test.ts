@@ -263,3 +263,22 @@ describe("loadConfig: Google sign-in (multi-tenant phase 3b)", () => {
     expect(() => loadConfig({ ...valid, ...google, PUBLIC_URL: "https://hostelconnect.example/app" })).toThrow(/PUBLIC_URL: must be the site's address only/);
   });
 });
+
+describe("loadConfig: SIGNUPS_OPEN (multi-tenant phase 4a)", () => {
+  const google = {
+    GOOGLE_CLIENT_ID: "1234-abcdef.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: "GOCSPX-a-client-secret",
+    PUBLIC_URL: "https://hostelconnect-o8e6.onrender.com",
+  };
+
+  it("is off unless set to true", () => {
+    expect(loadConfig(valid).SIGNUPS_OPEN).toBe(false);
+    expect(loadConfig({ ...valid, ...google, SIGNUPS_OPEN: "false" }).SIGNUPS_OPEN).toBe(false);
+    expect(loadConfig({ ...valid, ...google, SIGNUPS_OPEN: "true" }).SIGNUPS_OPEN).toBe(true);
+    expect(() => loadConfig({ ...valid, ...google, SIGNUPS_OPEN: "yes" })).toThrow(/SIGNUPS_OPEN: must be true or false/);
+  });
+
+  it("needs Google sign-in: owners sign up with Google", () => {
+    expect(() => loadConfig({ ...valid, SIGNUPS_OPEN: "true" })).toThrow(/SIGNUPS_OPEN: needs Google sign-in/);
+  });
+});

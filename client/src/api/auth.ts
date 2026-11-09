@@ -31,10 +31,11 @@ export async function me(): Promise<{ user: User; hostel: Hostel | null; account
   return { user, hostel: hostel ?? null, account: account ?? null };
 }
 
-// GET /api/auth/options: whether "Sign in with Google" is set up on this server.
-export async function authOptions(): Promise<{ google: boolean }> {
-  const { google } = await apiFetch<{ google?: boolean }>("/api/auth/options");
-  return { google: google === true };
+// GET /api/auth/options: whether "Sign in with Google" is set up on this server, and
+// whether new hostels may sign up (phase 4a).
+export async function authOptions(): Promise<{ google: boolean; signupsOpen: boolean }> {
+  const { google, signupsOpen } = await apiFetch<{ google?: boolean; signupsOpen?: boolean }>("/api/auth/options");
+  return { google: google === true, signupsOpen: google === true && signupsOpen === true };
 }
 
 // POST /api/auth/remove-password: an owner with Google linked drops the password.

@@ -103,6 +103,10 @@ const fields = z.object({
   ),
   GOOGLE_CLIENT_SECRET: optional(z.string().min(10, "must be at least 10 characters")),
   PUBLIC_URL: optional(publicUrl),
+
+  // "true" lets new owners sign up with Google (multi-tenant phase 4a). Off by default:
+  // sign-up stays closed until the Terms and Privacy Policy have been reviewed.
+  SIGNUPS_OPEN: optional(z.enum(["true", "false"], "must be true or false")).transform((value) => value === "true"),
 });
 
 // Settings that only make sense together, or that production cannot run without: a
@@ -122,6 +126,9 @@ const schema = fields.superRefine((config, ctx) => {
     for (const name of google) {
       if (!config[name]) missing(name, "is required for Google sign-in, with the other two GOOGLE_ settings and PUBLIC_URL");
     }
+  }
+  if (config.SIGNUPS_OPEN && !config.GOOGLE_CLIENT_ID) {
+    missing("SIGNUPS_OPEN", "needs Google sign-in (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PUBLIC_URL): owners sign up with Google");
   }
   if (config.NODE_ENV === "production") {
     for (const name of ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "JOB_SECRET"] as const) {

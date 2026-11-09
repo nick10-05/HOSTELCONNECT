@@ -12,6 +12,7 @@ import { announcementsRouter } from "./routes/announcements";
 import { authRouter } from "./routes/auth";
 import { hostelsRouter } from "./routes/hostels";
 import { googleRouter } from "./routes/google";
+import { signupRouter } from "./routes/signup";
 import type { GoogleAuth } from "./lib/google";
 import { complaintsRouter } from "./routes/complaints";
 import { dashboardRouter } from "./routes/dashboard";
@@ -61,6 +62,8 @@ export type AppDeps = {
   cspReportOnly?: boolean;
   // Google sign-in for owners (googleFromConfig); null or missing: it is off.
   google?: GoogleAuth | null;
+  // SIGNUPS_OPEN: new owners may sign up (with Google). Off when not given.
+  signupsOpen?: boolean;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -84,6 +87,7 @@ export function createApp({
   photoOrigin = null,
   cspReportOnly = false,
   google = null,
+  signupsOpen = false,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -110,8 +114,11 @@ export function createApp({
   });
 
   app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
-  app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google }));
-  app.use("/api", hostelsRouter({ db }));
+  // Sign-up needs Google: without it, it stays closed whatever SIGNUPS_OPEN says.
+  const signupsOn = signupsOpen && google !== null;
+  app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google, signupsOpen: signupsOn }));
+  app.use("/api", signupRouter({ db, jwtSecret, secureCookies: production, signupsOpen: signupsOn }));
+  app.use("/api", hostelsRouter({ db, jwtSecret }));
   app.use("/api", structureRouter({ db, jwtSecret }));
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
