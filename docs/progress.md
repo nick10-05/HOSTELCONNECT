@@ -1309,3 +1309,31 @@ then answers 404).
   changes for users, apart from Settings → Hostel.
 - A new hostel starts empty: the owner sets up its buildings before admitting students.
   Its limits (300 students, 20 buildings) are enforced in phase 5.
+
+## Multi-tenant SaaS, phase 4b: draft Terms of Service and Privacy Policy (2026-11-09)
+
+Plain-language drafts on `/terms` and `/privacy`, written to match what the app does,
+marked as under legal review. Sign-up stays closed until a lawyer has reviewed them.
+
+| Part | Who | Status | Evidence |
+|---|---|---|---|
+| The text, `client/src/legal/documents.ts` | Claude, at Nikhil's request (phase 0) | Draft | Terms: the free beta and 30 days' notice before it stops or costs money, one hostel per Google account, the beta limits, the owner as Data Fiduciary and HostelConnect as Data Processor (DPDP Act 2023), guardians' consent for students under 18, no sensitive ID numbers in free text, fees paid outside the app, deletion on request within 30 days, no guarantee, changes re-accepted. Privacy Policy: what is recorded about owners and students, why, who sees it, the services used (Render, Supabase in Singapore; Google; GitHub backups, encrypted), how long it is kept, cookies, security, children, rights and grievances |
+| The pages, `LegalPage.tsx` | Claude | Done | A readable page for each, its version, the under-review note, a link to the other; works on a phone and in both themes. 4 tests in `LegalPage.test.tsx` |
+| Keeping the text true | Claude | Done | `server/tests/legalVersion.test.ts`: the documents' version is the one sign-up asks owners to accept, and the photo (48 hours), notification (60 days) and sign-in (7 days) periods are the server's. Changing any of the three on the server fails it (checked) |
+
+Checks: server 1218 tests (1216 before), client 429 (425 before), both typechecks clean.
+Checked in the browser: both pages, at phone width (no sideways scrolling) and in light
+and dark.
+
+### Notes for later days
+
+- Still to fill in, in square brackets: the operator's legal name and address, the
+  contact email, the grievance officer, the city for jurisdiction, and the liability
+  limit. Then the lawyer's review; remove `UNDER_REVIEW` and set a final version (both
+  `LEGAL_VERSION` and `TERMS_VERSION`) once it is approved.
+- Promises the drafts make that rely on someone doing them by hand for now: deleting a
+  hostel within 30 days of a request (with a copy if asked), answering rights requests
+  within 30 days, and notice in the app before changes or stopping. A deletion script
+  and a way to export a hostel's data would make them easier to keep.
+- Phase 5 (guardian consent recorded per student under 18) makes the minors' promise
+  checkable in the app.
