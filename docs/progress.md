@@ -1437,3 +1437,24 @@ row in hostel #1; one owner; every account with a password found by sign-in; the
 all 3 accounts inside hostel #1 and is refused outside any hostel. Hostel #1 has no fees
 start date yet (the owner sets it in Settings after the move). The local copy was dropped
 afterwards.
+
+## The nightly backup makes its own login (2026-11-13)
+
+After the move to hostels the nightly backup failed four nights running (10 to 13
+November): it needed `hostel_backup`'s login, which was to be set by hand with
+`scripts/backup-role.ts` and a new `BACKUP_DATABASE_URL` secret, and that step was too
+fiddly. Nikhil chose to have the workflow do it.
+
+| Part | Status | Evidence |
+|---|---|---|
+| `server/scripts/backup-login.ts open` / `close` | Done | `open` gives `hostel_backup` a new random 48-character password with `MIGRATION_DATABASE_URL`, checks it can read every hostel, hides the password and URL in the log (`::add-mask::`), and hands `BACKUP_DATABASE_URL` to the later steps through `$GITHUB_ENV`. `close` sets `NOLOGIN PASSWORD NULL`. 7 new tests in `backupRole.test.ts` (URL built from the migration URL, password, log masking, a line break refused, the role locked) |
+| `.github/workflows/backup.yml` | Done | Reads `MIGRATION_DATABASE_URL` instead of `BACKUP_DATABASE_URL`; opens the login before the dump; locks it again in a step that runs even when the dump failed |
+| Docs | Done | `docs/deploy.md` (no backup password or secret to make), `docs/RECOVERY.md` (no backup password to keep or rotate; a new admin password also matters to the backup) |
+
+Tried locally against the test database: `open` made the login (1 hostel read), `pg_dump`
+as `hostel_backup` with `--enable-row-security` wrote 99 KB, `close` left the role with
+no login and no password.
+
+Trade-off, agreed: the backup job now holds the migration credential, as the migrate job
+does, in the same protected `production` environment. In return `hostel_backup` has a
+login only while a backup runs. The old `BACKUP_DATABASE_URL` secret is no longer read.

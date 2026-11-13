@@ -28,18 +28,36 @@ jobs:
     timeout-minutes: 15
     environment: production
     env:
-      # hostel_backup through Supabase's session pooler, with sslmode=require (pg_dump
-      # reads the URL the libpq way). Since migration 018, row-level security shows
-      # hostel_app one hostel's rows at most; hostel_backup may read every row of every
-      # hostel and write none, so neither the app's nor the admin password is here.
-      # Its login is set once with server/scripts/backup-role.ts (docs/deploy.md).
-      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      # The dump reads as hostel_backup: since migration 018, row-level security shows
+      # hostel_app one hostel's rows at most, while hostel_backup may read every row of
+      # every hostel and write none. hostel_backup has no login between backups. Each
+      # night the job gives it a new random password with the migration credential (the
+      # same secret the migrate workflow uses), dumps, and locks it again
+      # (server/scripts/backup-login.ts). The password and URL are hidden in the log.
+      MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
       AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
     steps:
       - name: Check the secrets are set
         run: |
-          test -n "$BACKUP_DATABASE_URL" || { echo "BACKUP_DATABASE_URL secret is missing"; exit 1; }
+          test -n "$MIGRATION_DATABASE_URL" || { echo "MIGRATION_DATABASE_URL secret is missing"; exit 1; }
           case "$AGE_PUBLIC_KEY" in age1*) ;; *) echo "AGE_PUBLIC_KEY must be an age1... public key"; exit 1;; esac
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install the server's packages
+        working-directory: server
+        run: npm ci
+
+      # Sets BACKUP_DATABASE_URL for the steps below, through $GITHUB_ENV.
+      - name: Open the backup login for this run
+        working-directory: server
+        run: npx tsx scripts/backup-login.ts open
 
       - name: Install age
         run: sudo apt-get update -qq && sudo apt-get install -y -qq age
@@ -75,3 +93,9 @@ jobs:
           retention-days: 90
           # Already compressed and encrypted; zipping again gains nothing.
           compression-level: 0
+
+      # Even when a step above failed: hostel_backup goes back to having no login.
+      - name: Lock the backup login again
+        if: always()
+        working-directory: server
+        run: npx tsx scripts/backup-login.ts close
