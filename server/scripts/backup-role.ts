@@ -3,6 +3,8 @@ import { databaseUrlProblem } from "../src/lib/databaseUrl";
 import { backupPassword, backupUrlProblem, forNodePg, setBackupLogin } from "./backupRole";
 
 // Gives the nightly backup's role, hostel_backup, its login (multi-tenant phase 2d).
+// Since 2026-11-13 the backup workflow does this itself on each run
+// (scripts/backup-login.ts); this script is only for a dump made by hand elsewhere.
 // Run once, after migration 018 is applied, from the server folder:
 //   npx tsx scripts/backup-role.ts
 // with two variables set in this window only (never saved in .env):

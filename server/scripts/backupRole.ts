@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { ClientBase } from "pg";
 import { databaseUrlProblem } from "../src/lib/databaseUrl";
 
@@ -62,4 +63,48 @@ export async function setBackupLogin(admin: ClientBase, password: string): Promi
     await admin.query("ROLLBACK");
     throw err;
   }
+}
+
+// The nightly backup's login, made by the backup workflow itself (2026-11-13). Setting
+// BACKUP_DATABASE_URL by hand (scripts/backup-role.ts) was a step easy to miss, and the
+// nightly backup failed until it was done. Now scripts/backup-login.ts gives hostel_backup
+// a new random password each night, with the migration credential the workflow already
+// has, and locks the role again once the dump is done.
+
+// 24 random bytes as hex: 48 characters, nothing to percent-encode.
+export function newBackupPassword(): string {
+  return randomBytes(24).toString("hex");
+}
+
+// hostel_backup's URL on the same server as the migration URL: Supabase's pooler logs in
+// as "role.projectref", so the project ref is kept. sslmode=require is what pg_dump needs
+// (forNodePg turns it into no-verify for Node). Errors never quote the URL.
+export function backupUrlFrom(migrationUrl: string, password: string): string {
+  const problem = databaseUrlProblem(migrationUrl);
+  if (problem) throw new Error(`MIGRATION_DATABASE_URL ${problem}`);
+  const url = new URL(migrationUrl.trim());
+  const ref = decodeURIComponent(url.username).split(".")[1];
+  url.username = encodeURIComponent(ref ? `hostel_backup.${ref}` : "hostel_backup");
+  url.password = encodeURIComponent(password);
+  // A local server without SSL (sslmode=disable) stays without it; anything else encrypts.
+  if (url.searchParams.get("sslmode") !== "disable") url.searchParams.set("sslmode", "require");
+  return url.toString();
+}
+
+// Hides a value in every later line of the GitHub Actions log.
+export function maskCommand(value: string): string {
+  return `::add-mask::${value}`;
+}
+
+// The line for $GITHUB_ENV that hands the URL to the workflow's later steps. A line break
+// in the value would let it set another variable, so it is refused.
+export function githubEnvLine(url: string): string {
+  if (/[\r\n]/.test(url)) throw new Error("The backup URL must be one line");
+  return `BACKUP_DATABASE_URL=${url}\n`;
+}
+
+// After the backup: hostel_backup can no longer log in, and its password is gone, so the
+// night's password is useless even if it leaked. `admin` is the migration role.
+export async function lockBackupLogin(admin: ClientBase): Promise<void> {
+  await admin.query("ALTER ROLE hostel_backup NOLOGIN PASSWORD NULL");
 }
