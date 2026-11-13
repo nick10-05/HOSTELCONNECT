@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { authOptions, logout, me, type Account, type User } from "./api/auth";
 import { signInPath, type Hostel } from "./api/hostels";
+import { isAppPage } from "./appPages";
 import { ChangePasswordPage } from "./auth/ChangePasswordPage";
 import { AccountContext, HostelContext } from "./auth/hostel";
 import { HostelAddress } from "./auth/HostelAddress";
 import { LegalPage } from "./auth/LegalPage";
 import { LoginPage } from "./auth/LoginPage";
+import { NotFoundPage } from "./auth/NotFoundPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { SignupPage } from "./auth/SignupPage";
 import { NotificationBell } from "./components/NotificationBell";
@@ -120,10 +122,14 @@ export function App() {
 
   // Signed out: the request form for former students, and the sign-in page everywhere else.
   if (session.status === "anonymous") {
+    // caseSensitive: React Router ignores case unless told not to, but the server answers
+    // 404 at any address not on its list (src/appPages.ts), /H/sns-hostel/login included,
+    // and those addresses must show "Page not found" here too, not a sign-in form.
     return (
       <Routes>
         {/* Each hostel's own pages (phase 3a): the hostel comes from the address. */}
         <Route
+          caseSensitive
           path="/h/:slug/login"
           element={
             <HostelAddress>
@@ -132,17 +138,26 @@ export function App() {
           }
         />
         <Route
+          caseSensitive
           path="/h/:slug/request-access"
           element={<HostelAddress>{(h) => <RequestAccessPage hostel={withSlug(h)} />}</HostelAddress>}
         />
-        <Route path="/h/:slug" element={<SlugRedirect />} />
+        <Route caseSensitive path="/h/:slug" element={<SlugRedirect />} />
         {/* A new owner, back from Google with a sign-up ticket (phase 4a). */}
-        <Route path="/signup" element={<SignupPage onSignedUp={signIn} />} />
+        <Route caseSensitive path="/signup" element={<SignupPage onSignedUp={signIn} />} />
         {/* No hostel in the address: these ask for it first (phase 6). */}
-        <Route path="/request-access" element={<RequestAccessPage />} />
+        <Route caseSensitive path="/request-access" element={<RequestAccessPage />} />
+        {/* The sign-in page at the app's own addresses (a signed-out visit to /students
+            lands here too); anywhere else, "Page not found". */}
         <Route
           path="*"
-          element={<LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} signupsOpen={signupsOpen} />}
+          element={
+            isAppPage(location.pathname) ? (
+              <LoginPage onLoggedIn={signIn} googleEnabled={googleEnabled} googleOutcome={googleOutcome} signupsOpen={signupsOpen} />
+            ) : (
+              <NotFoundPage />
+            )
+          }
         />
       </Routes>
     );

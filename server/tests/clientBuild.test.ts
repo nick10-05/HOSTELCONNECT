@@ -33,11 +33,25 @@ describe("serving the client build", () => {
     expect(res.headers["cache-control"]).toBe("no-cache");
   });
 
-  it("serves index.html for any other page, so reloading a deep link works", async () => {
-    const res = await request(app).get("/owner/structure/12");
-    expect(res.status).toBe(200);
-    expect(res.text).toContain("HostelConnect");
-  });
+  it.each(["/students/12", "/h/sns-hostel/login", "/terms"])(
+    "serves index.html for the app's other pages, so reloading %s works",
+    async (page) => {
+      const res = await request(app).get(page);
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("HostelConnect");
+    },
+  );
+
+  it.each(["/paypal/signin", "/office365/verify-account", "/wp-login.php"])(
+    "answers 404 at %s, an address the app has no page for, with the page that says so",
+    async (page) => {
+      const res = await request(app).get(page);
+      expect(res.status).toBe(404);
+      expect(res.type).toBe("text/html");
+      expect(res.text).toContain("HostelConnect");
+      expect(res.headers["cache-control"]).toBe("no-cache");
+    },
+  );
 
   it("caches hashed assets for a year", async () => {
     const res = await request(app).get("/assets/index-Bx12ab.js");

@@ -18,8 +18,30 @@ export function AuthShell({ title, subtitle, children }: { title: ReactNode; sub
           {subtitle && <p className="mt-1.5 text-sm text-muted">{subtitle}</p>}
         </div>
         {children}
+        <AboutFooter />
       </div>
     </main>
+  );
+}
+
+// What HostelConnect is, with the Terms and the Privacy Policy, on every page before
+// sign-in: a sign-in page that says none of this is what Google Safe Browsing flags as
+// deceptive. Who runs it ("Run by …") and a Contact link (OPERATOR.email) are to join
+// once the operator's details are decided (src/legal/operator.ts); no placeholder until then.
+function AboutFooter() {
+  const link = "inline-flex min-h-11 items-center px-2 font-semibold text-accent hover:underline";
+  return (
+    <footer className="mt-8 text-center text-xs leading-relaxed text-muted">
+      <p>HostelConnect helps hostel owners run their hostel, and their students reach them.</p>
+      <nav aria-label="About HostelConnect" className="mt-1 flex justify-center gap-1">
+        <a href="/terms" className={link}>
+          Terms
+        </a>
+        <a href="/privacy" className={link}>
+          Privacy
+        </a>
+      </nav>
+    </footer>
   );
 }
 
