@@ -32,6 +32,15 @@ async function login(email: string, password: string): Promise<string> {
   return cookie!.split(";")[0];
 }
 
+// The session a response sets: a password change signs this browser in again, and ends
+// every session from before it (migration 023).
+function sessionFrom(res: request.Response): string {
+  const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
+  const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+  expect(cookie).toBeDefined();
+  return cookie!.split(";")[0];
+}
+
 const loginStatus = async (email: string, password: string) =>
   (await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password })).status;
 
@@ -59,12 +68,13 @@ describe("moving out and coming back", { timeout: 60_000 }, () => {
       });
     expect(admitted.status).toBe(201);
     const id: number = admitted.body.student.id;
-    const session = await login(email, admitted.body.temporaryPassword);
-    await request(app)
-      .post("/api/auth/change-password")
-      .set("Cookie", session)
-      .send({ currentPassword: admitted.body.temporaryPassword, newPassword: "Meera-Own-Password-1" })
-      .expect(200);
+    const session = sessionFrom(
+      await request(app)
+        .post("/api/auth/change-password")
+        .set("Cookie", await login(email, admitted.body.temporaryPassword))
+        .send({ currentPassword: admitted.body.temporaryPassword, newPassword: "Meera-Own-Password-1" })
+        .expect(200),
+    );
     await request(app).get("/api/auth/me").set("Cookie", session).expect(200);
 
     // Moved out: the open session stops working and logging in again fails.

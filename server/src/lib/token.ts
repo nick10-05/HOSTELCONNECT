@@ -2,7 +2,10 @@ import jwt from "jsonwebtoken";
 
 export type Role = "student" | "owner";
 
-export type SessionClaims = { userId: number; role: Role };
+// sessionVersion: the account's users.session_version when the session was signed
+// (migration 023). The database raises it when the password changes, and requireAuth then
+// refuses every session signed before. A token from before migration 023 has none: 0.
+export type SessionClaims = { userId: number; role: Role; sessionVersion?: number };
 
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -11,6 +14,7 @@ export function signSession(claims: SessionClaims, secret: string): string {
     {
       userId: claims.userId,
       role: claims.role,
+      sv: claims.sessionVersion ?? 0,
     },
     secret,
     {
@@ -23,7 +27,7 @@ export function signSession(claims: SessionClaims, secret: string): string {
 export function verifySession(
   token: string,
   secret: string
-): SessionClaims | null {
+): Required<SessionClaims> | null {
   try {
     const payload = jwt.verify(token, secret, {
       algorithms: ["HS256"],
@@ -32,7 +36,8 @@ export function verifySession(
     if (
       typeof payload === "string" ||
       typeof payload.userId !== "number" ||
-      (payload.role !== "student" && payload.role !== "owner")
+      (payload.role !== "student" && payload.role !== "owner") ||
+      (payload.sv !== undefined && !Number.isSafeInteger(payload.sv))
     ) {
       return null;
     }
@@ -40,6 +45,7 @@ export function verifySession(
     return {
       userId: payload.userId,
       role: payload.role,
+      sessionVersion: payload.sv ?? 0,
     };
   } catch {
     return null;

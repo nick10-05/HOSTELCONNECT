@@ -31,6 +31,15 @@ async function login(email: string, password: string): Promise<string> {
   return cookie!.split(";")[0];
 }
 
+// The session a response sets: a password change signs this browser in again, and ends
+// every session from before it (migration 023).
+function sessionFrom(res: request.Response): string {
+  const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
+  const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+  expect(cookie).toBeDefined();
+  return cookie!.split(";")[0];
+}
+
 const loginStatus = async (email: string, password: string) =>
   (await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password })).status;
 
@@ -58,12 +67,13 @@ describe("a student's password reset", { timeout: 60_000 }, () => {
       });
     expect(admitted.status).toBe(201);
     const id: number = admitted.body.student.id;
-    const session = await login(email, admitted.body.temporaryPassword);
-    await request(app)
-      .post("/api/auth/change-password")
-      .set("Cookie", session)
-      .send({ currentPassword: admitted.body.temporaryPassword, newPassword: "Ravi-Own-Password-1" })
-      .expect(200);
+    const session = sessionFrom(
+      await request(app)
+        .post("/api/auth/change-password")
+        .set("Cookie", await login(email, admitted.body.temporaryPassword))
+        .send({ currentPassword: admitted.body.temporaryPassword, newPassword: "Ravi-Own-Password-1" })
+        .expect(200),
+    );
     await request(app).get("/api/notifications").set("Cookie", session).expect(200);
 
     // The owner resets it.
@@ -72,21 +82,25 @@ describe("a student's password reset", { timeout: 60_000 }, () => {
     expect(reset.headers["cache-control"]).toBe("no-store");
     const temporary: string = reset.body.temporaryPassword;
 
-    // The old password is gone; the open session is held until the password is changed.
+    // The old password is gone, and so is the open session (security audit, F1): a reset
+    // shuts out whoever holds it, even after the student has chosen a new password.
     expect(await loginStatus(email, "Ravi-Own-Password-1")).toBe(401);
-    const held = await request(app).get("/api/notifications").set("Cookie", session);
-    expect(held.status).toBe(403);
-    expect(held.body.error.code).toBe("password_change_required");
+    const ended = await request(app).get("/api/notifications").set("Cookie", session);
+    expect(ended.status).toBe(401);
+    expect(ended.body.error.code).toBe("unauthenticated");
 
     // The temporary password logs in, must be changed, and then everything works again.
     const fresh = await login(email, temporary);
     expect((await request(app).get("/api/notifications").set("Cookie", fresh)).status).toBe(403);
-    await request(app)
-      .post("/api/auth/change-password")
-      .set("Cookie", fresh)
-      .send({ currentPassword: temporary, newPassword: "Ravi-New-Password-2" })
-      .expect(200);
-    await request(app).get("/api/notifications").set("Cookie", fresh).expect(200);
+    const chosen = sessionFrom(
+      await request(app)
+        .post("/api/auth/change-password")
+        .set("Cookie", fresh)
+        .send({ currentPassword: temporary, newPassword: "Ravi-New-Password-2" })
+        .expect(200),
+    );
+    await request(app).get("/api/notifications").set("Cookie", chosen).expect(200);
+    expect((await request(app).get("/api/notifications").set("Cookie", session)).status).toBe(401);
     expect(await loginStatus(email, temporary)).toBe(401);
     expect(await loginStatus(email, "Ravi-New-Password-2")).toBe(200);
 

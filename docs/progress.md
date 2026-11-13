@@ -1483,3 +1483,20 @@ no login and no password.
 Trade-off, agreed: the backup job now holds the migration credential, as the migrate job
 does, in the same protected `production` environment. In return `hostel_backup` has a
 login only while a backup runs. The old `BACKUP_DATABASE_URL` secret is no longer read.
+
+## Security audit (2026-11-13)
+
+A check of every way in, run locally and against the test database only (never the live
+site). What was checked: sign-in, sessions, cookies, cross-site requests, Google sign-in,
+sign-up, the public "Request access" form, who may call each route, one hostel or student
+reading another's data, inputs and uploads, rate limits, error messages, SQL building,
+the database role, secrets in the code and its history, dependencies (`npm audit`: 0) and
+the GitHub workflows.
+
+| Finding | Severity | Fix | Evidence |
+|---|---|---|---|
+| F1. A sign-in lasted its full 7 days whatever happened to the password: a stolen session kept working after the student changed the password, or after the owner reset it (it was only held until the new password was chosen) | High | Migration 023: `users.session_version`, raised by the database on every password change; sessions carry it (`sv`) and `requireAuth` refuses an old one. Changing or removing the password signs this browser in again at the new number | `sessionRevocation.test.ts` (8 tests); flow tests now expect the old session to end |
+| No test checked that every route has a guard | Gap | `routeGuards.test.ts`: lists all 64 API routes (a new route fails it until classified) and calls each signed out, with a forged session, as the wrong role and with a temporary password | 201 checks pass |
+
+Deploy: apply migration 023 with **Migrate production database** (see `docs/deploy.md`).
+

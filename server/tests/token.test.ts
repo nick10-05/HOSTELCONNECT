@@ -22,12 +22,12 @@ describe("session tokens", () => {
   });
 
   it("round-trips the user id and role", () => {
-    expect(verifySession(signSession(claims, SECRET), SECRET)).toEqual(claims);
+    expect(verifySession(signSession(claims, SECRET), SECRET)).toEqual({ ...claims, sessionVersion: 0 });
   });
 
-  it("carries only the id, role and timestamps, no personal data", () => {
+  it("carries only the id, role, session version and timestamps, no personal data", () => {
     const keys = Object.keys(payloadOf(signSession(claims, SECRET))).sort();
-    expect(keys).toEqual(["exp", "iat", "role", "userId"]);
+    expect(keys).toEqual(["exp", "iat", "role", "sv", "userId"]);
   });
 
   it("rejects a token signed with another secret", () => {
@@ -61,7 +61,7 @@ describe("session tokens", () => {
     const token = signSession(claims, SECRET);
 
     vi.setSystemTime(new Date("2026-11-10T09:59:00Z"));
-    expect(verifySession(token, SECRET)).toEqual(claims);
+    expect(verifySession(token, SECRET)).toEqual({ ...claims, sessionVersion: 0 });
 
     vi.setSystemTime(new Date("2026-11-10T10:01:00Z"));
     expect(verifySession(token, SECRET)).toBeNull();

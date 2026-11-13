@@ -121,7 +121,7 @@ export function googleRouter(deps: GoogleRouteDeps): Router {
     }
 
     if (flow.intent === "signin") {
-      const { rows } = await db.query<{ id: number; role: Role; is_active: boolean; hostel_active: boolean }>(
+      const { rows } = await db.query<{ id: number; role: Role; is_active: boolean; hostel_active: boolean; session_version?: number }>(
         "SELECT * FROM auth_owner_by_google_sub($1)",
         [sub],
       );
@@ -133,7 +133,7 @@ export function googleRouter(deps: GoogleRouteDeps): Router {
         return res.redirect(302, "/signup");
       }
       if (!owner.is_active || !owner.hostel_active) return done("inactive");
-      res.cookie(SESSION_COOKIE, signSession({ userId: owner.id, role: owner.role }, jwtSecret), {
+      res.cookie(SESSION_COOKIE, signSession({ userId: owner.id, role: owner.role, sessionVersion: owner.session_version ?? 0 }, jwtSecret), {
         ...sessionCookieOptions(secureCookies),
         maxAge: SESSION_TTL_SECONDS * 1000,
       });
@@ -143,12 +143,17 @@ export function googleRouter(deps: GoogleRouteDeps): Router {
     // Linking: only for the owner who started it, and still signed in as them.
     const session = verifySession(String(req.cookies?.[SESSION_COOKIE] ?? ""), jwtSecret);
     if (!session || session.userId !== flow.userId) return done("failed");
-    const { rows: users } = await db.query<{ hostel_id: number; role: Role; is_active: boolean; hostel_active: boolean }>(
-      "SELECT hostel_id, role, is_active, hostel_active FROM auth_user_by_id($1)",
-      [flow.userId],
-    );
+    const { rows: users } = await db.query<{
+      hostel_id: number;
+      role: Role;
+      is_active: boolean;
+      hostel_active: boolean;
+      session_version?: number;
+    }>("SELECT * FROM auth_user_by_id($1)", [flow.userId]);
     const user = users[0];
     if (!user || user.role !== "owner" || !user.is_active || !user.hostel_active) return done("failed");
+    // A session from before a password change has ended (migration 023), as in requireAuth.
+    if (session.sessionVersion !== (user.session_version ?? 0)) return done("failed");
     try {
       const { rowCount } = await withHostel(db, user.hostel_id, (tx) =>
         tx.query(

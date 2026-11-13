@@ -267,7 +267,10 @@ describe("POST /api/auth/remove-password", { timeout: 30_000 }, () => {
     expect(wrong.status).toBe(400);
     expect(wrong.body.error.code).toBe("wrong_password");
 
+    const otherDevice = await signedIn(app, o.email);
     expect((await agent.post("/api/auth/remove-password").send({ currentPassword: PASSWORD })).status).toBe(204);
+    // This device stays signed in; any other sign-in made with the password ends.
+    expect((await otherDevice.get("/api/auth/me")).status).toBe(401);
     expect(await accountOf(o.id)).toEqual({ google_sub: sub, has_password: false });
     expect((await agent.get("/api/auth/me")).body.account).toEqual({ googleLinked: true, hasPassword: false });
     // The password no longer works; Google does.

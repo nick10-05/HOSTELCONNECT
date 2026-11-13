@@ -35,6 +35,8 @@ type UserRow = {
   name: string;
   role: Role;
   must_change_password: boolean;
+  // Missing only before migration 023 is applied.
+  session_version?: number;
 };
 
 // The only user fields the auth endpoints ever send. Never the hash, never contact details.
@@ -113,7 +115,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
         return;
       }
 
-      res.cookie(SESSION_COOKIE, signSession({ userId: user.id, role: user.role }, jwtSecret), {
+      res.cookie(SESSION_COOKIE, signSession({ userId: user.id, role: user.role, sessionVersion: user.session_version ?? 0 }, jwtSecret), {
         ...cookieOptions,
         maxAge: SESSION_TTL_SECONDS * 1000,
       });
@@ -181,9 +183,16 @@ export function authRouter(deps: AuthRouteDeps): Router {
         tx.query<UserRow>(
           `UPDATE users SET password_hash = $1, must_change_password = false
            WHERE id = $2 AND hostel_id = current_hostel_id()
-           RETURNING id, name, role, must_change_password`,
+           RETURNING id, name, role, must_change_password, session_version`,
           [newHash, userId],
         ),
+      );
+      // The new hash raised session_version (migration 023), which ends every other
+      // sign-in of this account; this one carries on with a session at the new number.
+      res.cookie(
+        SESSION_COOKIE,
+        signSession({ userId, role: rows[0].role, sessionVersion: rows[0].session_version ?? 0 }, jwtSecret),
+        { ...cookieOptions, maxAge: SESSION_TTL_SECONDS * 1000 },
       );
       res.json({ user: publicUser(rows[0]) });
     },
@@ -221,13 +230,22 @@ export function authRouter(deps: AuthRouteDeps): Router {
         return;
       }
       // Only if Google is still linked (users_can_sign_in would refuse it otherwise).
-      await inHostel(req, (tx) =>
-        tx.query(
+      const removed = await inHostel(req, (tx) =>
+        tx.query<{ session_version?: number }>(
           `UPDATE users SET password_hash = NULL
-           WHERE id = $1 AND hostel_id = current_hostel_id() AND google_sub IS NOT NULL`,
+           WHERE id = $1 AND hostel_id = current_hostel_id() AND google_sub IS NOT NULL
+           RETURNING session_version`,
           [userId],
         ),
       );
+      // As after a password change: other sign-ins end (migration 023), this one carries on.
+      if (removed.rows[0]) {
+        res.cookie(
+          SESSION_COOKIE,
+          signSession({ userId, role: "owner", sessionVersion: removed.rows[0].session_version ?? 0 }, jwtSecret),
+          { ...cookieOptions, maxAge: SESSION_TTL_SECONDS * 1000 },
+        );
+      }
       res.status(204).end();
     },
   );

@@ -30,6 +30,15 @@ async function login(email: string, password: string): Promise<string> {
   return cookie!.split(";")[0];
 }
 
+// The session a response sets: a password change signs this browser in again, and ends
+// every session from before it (migration 023).
+function sessionFrom(res: request.Response): string {
+  const cookies = ([] as string[]).concat(res.headers["set-cookie"] ?? []);
+  const cookie = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+  expect(cookie).toBeDefined();
+  return cookie!.split(";")[0];
+}
+
 describe("admission to first login", { timeout: 60_000 }, () => {
   it("admits a student who must change the temporary password before anything else", async () => {
     const s = await insertStructure(db);
@@ -70,11 +79,12 @@ describe("admission to first login", { timeout: 60_000 }, () => {
       .send({ currentPassword: temporaryPassword, newPassword: "My-Own-Password-1" });
     expect(changed.status).toBe(200);
 
-    const after = await request(app).get("/api/structure").set("Cookie", student);
+    const after = await request(app).get("/api/structure").set("Cookie", sessionFrom(changed));
     expect(after.status).toBe(403);
     expect(after.body.error.code).toBe("forbidden");
 
-    // The temporary password no longer works.
+    // The session signed in with the temporary password has ended; so has the password.
+    expect((await request(app).get("/api/auth/me").set("Cookie", student)).status).toBe(401);
     const old = await request(app).post("/api/auth/login").send({ hostel: "sns-hostel", email, password: temporaryPassword });
     expect(old.status).toBe(401);
   });
