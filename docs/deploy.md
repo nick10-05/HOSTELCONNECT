@@ -55,11 +55,12 @@ Build these URLs (replace the `<…>` parts):
 |---|---|
 | `MIGRATION_DATABASE_URL` | `postgres://postgres.<ref>:<ADMIN_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
 | `DATABASE_URL` | `postgres://hostel_app.<ref>:<APP_PW>@<pooler-host>:5432/postgres?sslmode=no-verify` |
-| `BACKUP_DATABASE_URL` | `postgres://hostel_backup.<ref>:<BACKUP_PW>@<pooler-host>:5432/postgres?sslmode=require` |
 
-`<BACKUP_PW>` is a third password, made the same way as the app's. `hostel_backup` is
-the nightly backup's own role: it may read every hostel's rows and write nothing. It is
-created by migration 018 without a login; step 3 gives it this password.
+`hostel_backup` is the nightly backup's own role: it may read every hostel's rows and
+write nothing. Migration 018 creates it without a login, and it needs no password or
+secret of its own: each **Backup database** run gives it a new random password with
+`MIGRATION_DATABASE_URL`, dumps as `hostel_backup`, and locks it again afterwards
+(`server/scripts/backup-login.ts`).
 
 Why two `sslmode`s: both encrypt the connection. The Node `pg` driver reads `require`
 as "also verify the certificate against the public CAs", which fails for Supabase's
@@ -69,8 +70,9 @@ Verifying Supabase's certificate is a later hardening step.
 ## 2. GitHub secrets
 
 Repository → Settings → Environments → **New environment** `production` → add secrets:
-`MIGRATION_DATABASE_URL`, `DATABASE_URL`, `BACKUP_DATABASE_URL`, and `AGE_PUBLIC_KEY`
-(the `age1…` line). Only the migrate and backup workflows use this environment.
+`MIGRATION_DATABASE_URL`, `DATABASE_URL`, and `AGE_PUBLIC_KEY` (the `age1…` line).
+Only the migrate and backup workflows use this environment. A `BACKUP_DATABASE_URL`
+secret from before 2026-11-13 is no longer read and can be deleted.
 
 ## 3. Create the tables
 
@@ -85,16 +87,9 @@ select grantee, table_name from information_schema.role_table_grants
 where table_schema = 'public' and grantee in ('anon', 'authenticated');
 ```
 
-Then give the backup its login (migration 018 on): from `server/`, in PowerShell, with
-the two URLs set in this window only, never in `.env`:
-```powershell
-$env:MIGRATION_DATABASE_URL = Read-Host "Paste MIGRATION_DATABASE_URL"
-$env:BACKUP_DATABASE_URL = Read-Host "Paste BACKUP_DATABASE_URL"
-npx tsx scripts/backup-role.ts
-Remove-Item Env:MIGRATION_DATABASE_URL, Env:BACKUP_DATABASE_URL
-```
-It prints `hostel_backup can log in and read every hostel: …`. Running it again sets the
-password again (to change it).
+The backup needs no login set up by hand: the **Backup database** workflow makes one
+for each run and removes it afterwards. Its log shows `hostel_backup can log in and read
+every hostel: …` and, at the end, `hostel_backup is locked again`.
 
 ## 4. Render
 
@@ -207,8 +202,7 @@ password, rotating secrets) is [RECOVERY.md](RECOVERY.md). In short, for a lost 
 
 1. Create a new Supabase project (step 1) and update the three URL secrets (step 2).
 2. Run **Migrate production database** on the commit that matches the backup, so the
-   empty schema has the same migrations as the backup. Then give the backup its login
-   again (`scripts/backup-role.ts`, step 3): the new project's `hostel_backup` has none.
+   empty schema has the same migrations as the backup.
 3. Load the rows, in Git Bash. Paste the admin URL (ending in `?sslmode=require` here)
    at the hidden `read` prompt: Bash saves typed commands to a history file, and only
    the name `$RESTORE_URL` ends up there, never the URL.
@@ -240,10 +234,9 @@ the move is one short break, at a quiet hour:
 4. Render → the service → **Suspend**.
 5. Run **Migrate production database** on the branch being deployed: 013 to 022.
 6. Deploy that branch's code and **Resume** the service.
-7. At once: make `<BACKUP_PW>`, run `scripts/backup-role.ts` (step 3), and set the
-   GitHub secret `BACKUP_DATABASE_URL` to the `hostel_backup` URL (step 1's table).
-   Until then the nightly backup fails: `hostel_app`, which it used before, now sees at
-   most one hostel. Then run **Backup database** by hand to check it.
+7. Run **Backup database** by hand and check it is green. From 018 on it dumps as
+   `hostel_backup`, with a login it makes for the run (`hostel_app`, which it used
+   before, now sees at most one hostel).
 8. Check: `/api/health`; a student signs in at `/h/sns-hostel/login`; the owner signs in;
    the dashboard and the students list look as before; Settings → Fees and limits shows
    the fees start date to set and the limits (step "A hostel's limits").
