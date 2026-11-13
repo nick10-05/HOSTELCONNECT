@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -349,7 +349,9 @@ describe("signed out", () => {
       expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /sign in with google/i })).not.toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/login");
-      expect(document.title).toBe("Page not found · HostelConnect");
+      // The page sets the title in an effect, which can run just after the heading shows
+      // (CI run #91 read it too early once).
+      await waitFor(() => expect(document.title).toBe("Page not found · HostelConnect"));
     },
   );
 
