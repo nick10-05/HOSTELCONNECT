@@ -1,3 +1,4 @@
+import { SignOutOtherDevices } from "../components/SignOutOtherDevices";
 import { MyComplaintsPage } from "./MyComplaintsPage";
 import { MyFeesCard } from "./MyFeesPage";
 import { ImportantNotices } from "./NoticesPage";
@@ -42,6 +43,7 @@ export function StudentHome({ name }: { name: string }) {
           <MyFeesCard />
         </div>
       </div>
+      <SignOutOtherDevices className="max-w-2xl" />
     </div>
   );
 }

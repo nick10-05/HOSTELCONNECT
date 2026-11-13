@@ -71,12 +71,15 @@ export function requireAuth(
         must_change_password: boolean;
         is_active: boolean;
         hostel_active: boolean;
+        // Missing only before migration 023 is applied.
+        session_version?: number;
       }>("SELECT * FROM auth_user_by_id($1)", [claims.userId]);
 
       const user = result.rows[0];
 
       // 4. Check the user exists and is active, in a hostel that is not suspended
-      if (!user || !user.is_active || !user.hostel_active) {
+      // A session signed before the password last changed has ended (migration 023).
+      if (!user || !user.is_active || !user.hostel_active || claims.sessionVersion !== (user.session_version ?? 0)) {
         res.status(401).json({
           error: {
             code: "unauthenticated",

@@ -30,7 +30,7 @@ describe("auth_user_by_id", () => {
       const id = await insertStudent(c, { mustChangePassword: true });
       const { rows } = await c.query("SELECT * FROM auth_user_by_id($1)", [id]);
       expect(rows).toEqual([
-        { id, hostel_id: 1, role: "student", must_change_password: true, is_active: true, hostel_active: true },
+        { id, hostel_id: 1, role: "student", must_change_password: true, is_active: true, hostel_active: true, session_version: 0 },
       ]);
     }));
 
@@ -71,6 +71,7 @@ describe("auth_user_by_id", () => {
         "must_change_password",
         "is_active",
         "hostel_active",
+        "session_version",
       ]);
     }));
 });
@@ -91,6 +92,7 @@ describe("auth_user_by_email", () => {
           is_active: true,
           hostel_active: true,
           password_hash: "hash-for-lookup",
+          session_version: 0,
         },
       ]);
     }));

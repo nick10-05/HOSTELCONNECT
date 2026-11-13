@@ -8,6 +8,7 @@ import { categoryLabel, foodText, formatDate, formatMobile, formatRupees, placeT
 import { MoveOutConfirm } from "./MoveOutConfirm";
 import { ReactivateForm } from "./ReactivateForm";
 import { ResetPasswordConfirm } from "./ResetPasswordConfirm";
+import { SignOutStudentConfirm } from "./SignOutStudentConfirm";
 import { buttonClass, IconTile, Skeleton, type Tone } from "../ui";
 import { BedIcon, BuildingIcon, ClockIcon, MessageIcon } from "../ui/icons";
 import { Avatar, backLinkClass } from "../ui/ListParts";
@@ -24,7 +25,7 @@ import { TransferForm } from "./TransferForm";
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
 
-type Action = "transfer" | "moveOut" | "reactivate" | "resetPassword" | "edit";
+type Action = "transfer" | "moveOut" | "reactivate" | "resetPassword" | "signOut" | "edit";
 
 export function StudentProfilePage() {
   const { id } = useParams();
@@ -230,6 +231,16 @@ export function StudentProfilePage() {
           }}
           onCancel={() => setAction(null)}
         />
+      ) : action === "signOut" ? (
+        <SignOutStudentConfirm
+          studentId={s.id}
+          name={s.name}
+          onDone={() => {
+            setAction(null);
+            setNotice(`${s.name} is signed out on every device.`);
+          }}
+          onCancel={() => setAction(null)}
+        />
       ) : action === "transfer" && s.currentStay ? (
         <TransferForm studentId={s.id} stay={s.currentStay} onDone={transferred} onCancel={() => setAction(null)} />
       ) : action === "moveOut" ? (
@@ -267,6 +278,11 @@ export function StudentProfilePage() {
           {s.isActive && (
             <button type="button" onClick={() => open("resetPassword")} className={secondaryButton}>
               Reset password
+            </button>
+          )}
+          {s.isActive && (
+            <button type="button" onClick={() => open("signOut")} className={secondaryButton}>
+              Sign out everywhere
             </button>
           )}
           {s.isActive ? (

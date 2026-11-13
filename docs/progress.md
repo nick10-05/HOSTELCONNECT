@@ -1483,3 +1483,26 @@ no login and no password.
 Trade-off, agreed: the backup job now holds the migration credential, as the migrate job
 does, in the same protected `production` environment. In return `hostel_backup` has a
 login only while a backup runs. The old `BACKUP_DATABASE_URL` secret is no longer read.
+
+## Security audit (2026-11-13)
+
+A check of every way in, run locally and against the test database only (never the live
+site). What was checked: sign-in, sessions, cookies, cross-site requests, Google sign-in,
+sign-up, the public "Request access" form, who may call each route, one hostel or student
+reading another's data, inputs and uploads, rate limits, error messages, SQL building,
+the database role, secrets in the code and its history, dependencies (`npm audit`: 0) and
+the GitHub workflows.
+
+| Finding | Severity | Fix | Evidence |
+|---|---|---|---|
+| F1. A sign-in lasted its full 7 days whatever happened to the password: a stolen session kept working after the student changed the password, or after the owner reset it (it was only held until the new password was chosen) | High | Migration 023: `users.session_version`, raised by the database on every password change; sessions carry it (`sv`) and `requireAuth` refuses an old one. Changing or removing the password signs this browser in again at the new number | `sessionRevocation.test.ts` (8 tests); flow tests now expect the old session to end |
+| No test checked that every route has a guard | Gap | `routeGuards.test.ts`: lists every API route (a new route fails it until classified) and calls each signed out, with a forged session, as the wrong role and with a temporary password | 201 checks pass |
+| F2. Failed logins were counted per internet address only. Students on one hostel Wi-Fi share one address, so anyone there typing 10 wrong passwords, for any email, locked every student on that Wi-Fi out for 15 minutes, right password or not. Changing a password was counted the same way | Medium | 10 failures lock one account at one address (the hostel and email hashed, never kept); 100 per address still stop guessing across many accounts. Changing or removing a password counts per signed-in account | `loginLimits.test.ts` (6 tests) |
+| F3. Signing out ended only that browser's sign-in; a copied session kept working until it expired or the password changed | Low | "Sign out of other devices" for everyone (`POST /api/auth/sign-out-others`; this browser stays signed in) and an owner's "Sign out everywhere" on a student's profile (`POST /api/students/:id/sign-out`); both raise `session_version` | `sessionRevocation.test.ts`, `SignOutOtherDevices.test.tsx`, `StudentProfilePage.test.tsx` |
+
+Checked and private: the complaint-photo bucket (`public: false`; files, links and listings refused without a key).
+
+Still open: whether Render puts exactly one proxy in front of the app (`trust proxy` 1), which the per-address counts rely on; the counts are kept in memory and reset when the server restarts.
+
+Deploy: apply migration 023 with **Migrate production database** (see `docs/deploy.md`).
+

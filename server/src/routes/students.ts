@@ -283,6 +283,14 @@ export function studentsRouter(deps: AuthDeps): Router {
     res.json(result);
   });
 
+  // Signs the student out on every device; the password stays (security audit).
+  router.post("/students/:id/sign-out", auth, isOwner, async (req, res) => {
+    const id = idParam(req, res);
+    if (id === undefined) return;
+    await inHostel(req, (tx) => students.signOutStudent(tx, id));
+    res.status(204).end();
+  });
+
   router.post("/students/:id/reactivate", auth, isOwner, async (req, res) => {
     const id = idParam(req, res);
     if (id === undefined) return;

@@ -58,3 +58,9 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export async function logout(): Promise<void> {
   await apiFetch("/api/auth/logout", { method: "POST" });
 }
+
+// POST /api/auth/sign-out-others: ends every other sign-in of this account (a lost phone,
+// a shared computer). This browser stays signed in; the password is unchanged.
+export async function signOutOtherDevices(): Promise<void> {
+  await apiFetch("/api/auth/sign-out-others", { method: "POST" });
+}
