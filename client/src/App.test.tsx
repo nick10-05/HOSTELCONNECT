@@ -311,3 +311,56 @@ describe("student pages", () => {
     expect(screen.queryByRole("heading", { name: "Complaints" })).not.toBeInTheDocument();
   });
 });
+
+// Signed out (Safe Browsing "Deceptive pages", 2026-11-10): the sign-in form only at the
+// app's own addresses; anywhere else "Page not found", never a password field.
+describe("signed out", () => {
+  function renderSignedOutAt(path: string) {
+    mockFetch(async (url) => {
+      if (url === "/api/auth/options") return jsonResponse(200, { google: true, signupsOpen: false });
+      if (url === "/api/hostels/sns-hostel") return jsonResponse(200, { hostel: { name: "SNS Hostel", slug: "sns-hostel" } });
+      return jsonResponse(401, { error: { code: "unauthenticated", message: "Please sign in." } });
+    });
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+  }
+
+  // The mixed-case ones: React Router ignores case unless told not to, while the server's
+  // list of pages does not, so these answer 404 and must not show a form either.
+  it.each([
+    "/paypal/signin",
+    "/office365/verify-account",
+    "/login/verify",
+    "/h/sns-hostel/verify",
+    "/H/sns-hostel/login",
+    "/h/sns-hostel/LOGIN",
+    "/H/sns-hostel/request-access",
+    "/SIGNUP",
+    "/Request-Access",
+    "/LOGIN",
+  ])(
+    "%s says the page was not found, with no sign-in form",
+    async (path) => {
+      renderSignedOutAt(path);
+      expect(await screen.findByRole("heading", { name: "Page not found", level: 1 })).toBeInTheDocument();
+      expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /sign in with google/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Go to sign in" })).toHaveAttribute("href", "/login");
+      expect(document.title).toBe("Page not found · HostelConnect");
+    },
+  );
+
+  it.each(["/", "/login", "/students/12"])("%s still shows sign-in", async (path) => {
+    renderSignedOutAt(path);
+    expect(await screen.findByLabelText("Your hostel's address")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Page not found" })).not.toBeInTheDocument();
+  });
+
+  it("a hostel's own page still shows its password sign-in", async () => {
+    renderSignedOutAt("/h/sns-hostel/login");
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument();
+  });
+});

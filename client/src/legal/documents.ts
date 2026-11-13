@@ -1,3 +1,5 @@
+import { OPERATOR } from "./operator";
+
 // The Terms of Service and the Privacy Policy (multi-tenant phase 4b): plain-language
 // drafts, written to match what the app actually does, for a lawyer to review before
 // sign-up opens (SIGNUPS_OPEN). Words in [square brackets] are still to be filled in.
@@ -15,7 +17,7 @@ export type Block = string | { list: string[] };
 export type Section = { heading: string; blocks: Block[] };
 export type LegalDocument = { title: string; summary: string; sections: Section[] };
 
-const CONTACT = "[contact email]";
+const CONTACT = OPERATOR.email;
 
 export const TERMS: LegalDocument = {
   title: "Terms of Service",
@@ -25,7 +27,7 @@ export const TERMS: LegalDocument = {
     {
       heading: "1. Who we are, and who these terms are for",
       blocks: [
-        "HostelConnect is run by [operator's legal name], [address] (\"we\", \"us\"). These terms apply to the hostel owner who creates a hostel on HostelConnect (\"you\"). By ticking the box at sign-up you accept them, for yourself and for the hostel business you run.",
+        `HostelConnect is run by ${OPERATOR.legalName}, ${OPERATOR.address} ("we", "us"). These terms apply to the hostel owner who creates a hostel on HostelConnect (\"you\"). By ticking the box at sign-up you accept them, for yourself and for the hostel business you run.`,
         "Your students use HostelConnect through the accounts you give them. Their use is covered by our Privacy Policy and by the rules of your hostel; you are responsible for telling them how their information is used (section 5).",
       ],
     },
@@ -88,7 +90,7 @@ export const TERMS: LegalDocument = {
       heading: "9. No guarantee, and limits on our responsibility",
       blocks: [
         "We work to keep HostelConnect running and your information safe, with nightly encrypted backups, but a free beta comes with no guarantee: the service is provided as it is. Keep your own record of anything you cannot afford to lose.",
-        "As far as the law allows, we are not responsible for indirect losses, such as lost income, and our total responsibility to you is limited to [amount]. Nothing in these terms limits responsibility that the law does not allow to be limited.",
+        `As far as the law allows, we are not responsible for indirect losses, such as lost income, and our total responsibility to you is limited to ${OPERATOR.liabilityCap}. Nothing in these terms limits responsibility that the law does not allow to be limited.`,
       ],
     },
     {
@@ -100,7 +102,7 @@ export const TERMS: LegalDocument = {
     {
       heading: "11. Law, and contact",
       blocks: [
-        `These terms are governed by the laws of India, and the courts of [city] have jurisdiction. Questions or complaints: ${CONTACT}.`,
+        `These terms are governed by the laws of India, and the courts of ${OPERATOR.city} have jurisdiction. Questions or complaints: ${CONTACT}.`,
       ],
     },
   ],
@@ -114,7 +116,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "1. Who is responsible",
       blocks: [
-        "Each hostel decides what its owner records about its students. For students' information the hostel owner is responsible (the \"Data Fiduciary\" under India's Digital Personal Data Protection Act, 2023), and HostelConnect, run by [operator's legal name], processes it on the owner's behalf. For owners' own accounts, HostelConnect is responsible.",
+        `Each hostel decides what its owner records about its students. For students' information the hostel owner is responsible (the \"Data Fiduciary\" under India's Digital Personal Data Protection Act, 2023), and HostelConnect, run by ${OPERATOR.legalName}, processes it on the owner's behalf. For owners' own accounts, HostelConnect is responsible.`,
       ],
     },
     {
@@ -205,7 +207,7 @@ export const PRIVACY: LegalDocument = {
     {
       heading: "11. Changes, and contact",
       blocks: [
-        `If we change this policy in a way that matters, we will say so in the app before the change applies. Grievance officer: [name], ${CONTACT}.`,
+        `If we change this policy in a way that matters, we will say so in the app before the change applies. Grievance officer: ${OPERATOR.grievanceOfficer}, ${CONTACT}.`,
       ],
     },
   ],

@@ -1438,6 +1438,31 @@ all 3 accounts inside hostel #1 and is refused outside any hostel. Hostel #1 has
 start date yet (the owner sets it in Settings after the move). The local copy was dropped
 afterwards.
 
+## Going live with hostels, and a "Deceptive pages" flag (2026-11-10)
+
+The move to hostels went live in one short break: Backup database, Render suspended,
+**Migrate production database** #10 on `saas-isolation` applied 013 to 022 (001 to 012
+skipped), PR #16 merged (`793894f`, CI green), Render resumed. Resuming alone brought
+back the old code, which cannot sign anyone in against 022; a Manual Deploy of
+`793894f` fixed it. Checked live: `/api/health` ok, `sns-hostel` found, sign-in without a
+hostel refused, Google sign-in on, sign-up closed.
+
+Chrome then showed "Dangerous site", and Search Console (verified through PR #17)
+reported "Deceptive pages", with no sample URLs. A read-only check found nothing
+compromised: all 16 files the live site serves are byte-for-byte a build of `main`, every
+commit is Nikhil's, no dependency changed since before the hostels work, `npm audit`
+finds nothing, there are no open redirects. What a phishing detector would read as
+deceptive:
+
+| Signal | Fix |
+|---|---|
+| Any made-up address (`/paypal/signin`, `/office365/verify-account`) showed a password form, with 200 | The server answers addresses the app has no page for with 404 (`server/src/lib/appPages.ts`, the same list as `client/src/appPages.ts`, a test checks), and the app says "Page not found" there, with no form |
+| No page before sign-in said who runs the site; the Terms and Privacy still had `[placeholders]` | A footer on every page before sign-in: what HostelConnect is, with Terms and Privacy. Who runs it and a Contact link wait for Nikhil's decision on the operator's details (`client/src/legal/operator.ts`, still `[placeholders]`, also used by the Terms and Privacy); published without them at his choice, 2026-11-13 |
+| A sign-in page with "Sign in with Google" on a free shared host (`onrender.com`) | Not changed; a domain of HostelConnect's own is the lasting fix |
+
+Also: signed-out pages match letter case exactly (`/H/sns-hostel/login` is "Page not found", as the server's 404 says).
+
+After this deploy: Search Console → Security issues → **Request review**.
 ## The nightly backup makes its own login (2026-11-13)
 
 After the move to hostels the nightly backup failed four nights running (10 to 13

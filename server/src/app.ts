@@ -3,6 +3,7 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express, { type Express } from "express";
 import type { Db } from "./db";
+import { isAppPage } from "./lib/appPages";
 import { sendError } from "./lib/http";
 import type { PhotoStorage } from "./lib/storage";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
@@ -167,8 +168,9 @@ function serveClient(app: Express, clientDir: string): void {
   app.use(express.static(clientDir, { index: false }));
   // Every other page is the React app, which picks the screen from the URL. no-cache
   // makes the browser check for a new index.html on each visit, so a deploy shows at once.
-  app.get("/{*path}", (_req, res) => {
+  // An address the app has no page for gets 404, and the app says "Page not found".
+  app.get("/{*path}", (req, res) => {
     res.set("Cache-Control", "no-cache");
-    res.sendFile(indexHtml);
+    res.status(isAppPage(req.path) ? 200 : 404).sendFile(indexHtml);
   });
 }
