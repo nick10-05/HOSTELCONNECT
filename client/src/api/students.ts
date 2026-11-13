@@ -179,6 +179,12 @@ export async function resetStudentPassword(id: number): Promise<{ temporaryPassw
   return apiFetch<{ temporaryPassword: string }>(`/api/students/${id}/reset-password`, { method: "POST" });
 }
 
+// POST /api/students/:id/sign-out: the student is signed out on every device; the password
+// stays. Refusals arrive as ApiError: 404 "student_not_found".
+export async function signOutStudent(id: number): Promise<void> {
+  await apiFetch(`/api/students/${id}/sign-out`, { method: "POST" });
+}
+
 // POST /api/students/:id/reactivate: a new joining date, stay and temporary password
 // (shown once). Refusals arrive as ApiError: 409 "student_active",
 // "joining_before_leaving", "bed_occupied", "bed_retired"; 400 "invalid_input".

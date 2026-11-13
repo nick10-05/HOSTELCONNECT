@@ -970,6 +970,21 @@ export async function resetStudentPassword(
   return { temporaryPassword };
 }
 
+
+// Signs a student out on every device (security audit), for a lost phone or a session
+// someone else may have; POST /api/students/:id/sign-out. Raising session_version
+// (migration 023) ends every session signed before; the password does not change, so the
+// student signs in again as usual. A student who moved out is signed out already, but
+// this changes nothing harmful for them either.
+//   404 student_not_found   no student with this id (an owner's id counts as missing)
+export async function signOutStudent(db: Queryable, studentId: number): Promise<void> {
+  const { rowCount } = await db.query(
+    `UPDATE users SET session_version = session_version + 1
+     WHERE id = $1 AND role = 'student' AND hostel_id = current_hostel_id()`,
+    [studentId],
+  );
+  if (rowCount === 0) throw new HttpError(404, "student_not_found", "That student does not exist.");
+}
 // ---- Directory and profile (owner only) ----
 
 export type Category = AdmissionInput["category"];

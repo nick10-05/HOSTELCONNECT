@@ -292,8 +292,10 @@ unmarked. Apply 022 with **Migrate production database** before deploying this c
 Migration 023 adds `users.session_version`, which the database raises whenever a password
 changes (a student changing it, an owner's reset, a reactivation, an owner removing it for
 Google). Every sign-in carries the number it was made with, and one made before the change
-stops working. Sign-ins from before 023 count as number 0, so nobody is signed out by the
-upgrade itself. Changing a password reads the new column, so apply 023 with **Migrate
+stops working. The app may also raise the number, never lower it: "Sign out of other
+devices" (Settings for owners, the home page for students) and an owner's "Sign out
+everywhere" on a student's profile. Sign-ins from before 023 count as number 0, so nobody
+is signed out by the upgrade itself. Changing a password reads the new column, so apply 023 with **Migrate
 production database** before deploying this code.
 
 ## Free-plan limits to expect

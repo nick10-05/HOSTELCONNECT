@@ -10,7 +10,7 @@ import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
 import { securityHeaders } from "./middleware/securityHeaders";
 import { announcementsRouter } from "./routes/announcements";
-import { authRouter } from "./routes/auth";
+import { authRouter, type LoginLimits } from "./routes/auth";
 import { hostelsRouter } from "./routes/hostels";
 import { googleRouter } from "./routes/google";
 import { signupRouter } from "./routes/signup";
@@ -63,6 +63,9 @@ export type AppDeps = {
   google?: GoogleAuth | null;
   // SIGNUPS_OPEN: new owners may sign up (with Google). Off when not given.
   signupsOpen?: boolean;
+  // How many failed sign-ins lock an account or an address (routes/auth.ts LOGIN_LIMITS
+  // when not given); tests pass smaller ones.
+  loginLimits?: LoginLimits;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -86,6 +89,7 @@ export function createApp({
   cspReportOnly = false,
   google = null,
   signupsOpen = false,
+  loginLimits,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -111,7 +115,7 @@ export function createApp({
     }
   });
 
-  app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production }));
+  app.use("/api/auth", authRouter({ db, jwtSecret, secureCookies: production, loginLimits }));
   // Sign-up needs Google: without it, it stays closed whatever SIGNUPS_OPEN says.
   const signupsOn = signupsOpen && google !== null;
   app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google, signupsOpen: signupsOn }));

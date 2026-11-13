@@ -662,6 +662,51 @@ describe("resetting a password", () => {
   });
 });
 
+describe("signing a student out everywhere", () => {
+  it("is offered to a current student only", async () => {
+    actionServer([asha], { "sign-out": noContent });
+    expect(await screen.findByRole("button", { name: "Sign out everywhere" })).toBeInTheDocument();
+  });
+
+  it("is not offered to a former student", async () => {
+    actionServer([formerAsha], { "sign-out": noContent });
+    await screen.findByRole("button", { name: "Reactivate" });
+    expect(screen.queryByRole("button", { name: "Sign out everywhere" })).not.toBeInTheDocument();
+  });
+
+  it("asks first, and Cancel sends nothing", async () => {
+    const { user, posts } = actionServer([asha], { "sign-out": noContent });
+    await user.click(await screen.findByRole("button", { name: "Sign out everywhere" }));
+    expect(
+      screen.getByText(
+        "Sign Asha Rao out on every phone and computer? Their password stays the same, so they can sign in again.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(posts).toEqual([]);
+  });
+
+  it("signs the student out and says so", async () => {
+    const { user, posts } = actionServer([asha], { "sign-out": noContent });
+    await user.click(await screen.findByRole("button", { name: "Sign out everywhere" }));
+    await user.click(screen.getByRole("button", { name: "Yes, sign out" }));
+
+    expect(await screen.findByText("Asha Rao is signed out on every device.")).toBeInTheDocument();
+    expect(posts).toEqual([{ action: "sign-out", body: undefined }]);
+  });
+
+  it("shows the server's refusal and keeps the question open", async () => {
+    const { user } = actionServer([asha], {
+      "sign-out": () => jsonResponse(404, { error: { code: "student_not_found", message: "That student does not exist." } }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Sign out everywhere" }));
+    await user.click(screen.getByRole("button", { name: "Yes, sign out" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("That student does not exist.");
+    expect(screen.getByRole("button", { name: "Yes, sign out" })).toBeEnabled();
+  });
+});
+
 describe("editing details", () => {
   const saved = (student: StudentProfile) => () => jsonResponse(200, { student });
   const ashaAtWork: StudentProfile = {

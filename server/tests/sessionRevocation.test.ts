@@ -61,6 +61,17 @@ describe("users.session_version (migration 023)", () => {
     inRollback(db, async (c) => {
       const id = await insertStudent(c, { passwordHash });
       await c.query("UPDATE users SET password_hash = 'another-hash', session_version = 0 WHERE id = $1", [id]);
+      const version = async () =>
+        (await c.query<{ v: number }>("SELECT session_version AS v FROM users WHERE id = $1", [id])).rows[0].v;
+      expect(await version()).toBe(1);
+      await c.query("UPDATE users SET session_version = 0 WHERE id = $1", [id]);
+      expect(await version()).toBe(1);
+    }));
+
+  it("may be raised by the app, to sign an account out everywhere", () =>
+    inRollback(db, async (c) => {
+      const id = await insertStudent(c, { passwordHash });
+      await c.query("UPDATE users SET session_version = session_version + 1 WHERE id = $1", [id]);
       const { rows } = await c.query<{ v: number }>("SELECT session_version AS v FROM users WHERE id = $1", [id]);
       expect(rows[0].v).toBe(1);
     }));
@@ -136,5 +147,66 @@ describe("a password change ends the other sign-ins", { timeout: 30_000 }, () =>
     const old = signSession({ userId: id, role: "student", sessionVersion: 0 }, SECRET);
     const res = await request(newApp()).get("/api/auth/me").set("Cookie", `${SESSION_COOKIE}=${old}`);
     expect(res.status).toBe(401);
+  });
+});
+
+describe("signing out of other devices", { timeout: 30_000 }, () => {
+  it("ends every other sign-in of the account and keeps this one", async () => {
+    const id = await insertStudent(db, { passwordHash });
+    const app = newApp();
+    const lostPhone = await signedIn(app, id);
+    const laptop = await signedIn(app, id);
+
+    const res = await laptop.post("/api/auth/sign-out-others");
+    expect(res.status).toBe(204);
+    expect((await laptop.get("/api/auth/me")).status).toBe(200);
+    expect((await lostPhone.get("/api/auth/me")).status).toBe(401);
+    // The password still works.
+    await signedIn(app, id);
+  });
+
+  it("works for an owner too, and leaves other accounts signed in", async () => {
+    const owner = await insertOwner(db, { passwordHash });
+    const student = await insertStudent(db, { passwordHash });
+    const app = newApp();
+    const ownerPhone = await signedIn(app, owner);
+    const ownerLaptop = await signedIn(app, owner);
+    const studentPhone = await signedIn(app, student);
+
+    expect((await ownerLaptop.post("/api/auth/sign-out-others")).status).toBe(204);
+    expect((await ownerPhone.get("/api/auth/me")).status).toBe(401);
+    expect((await studentPhone.get("/api/auth/me")).status).toBe(200);
+  });
+});
+
+describe("an owner signing a student out everywhere", { timeout: 30_000 }, () => {
+  it("ends all of the student's sign-ins, and the student can sign in again", async () => {
+    const owner = await insertOwner(db, { passwordHash });
+    const student = await insertStudent(db, { passwordHash });
+    const app = newApp();
+    const ownerAgent = await signedIn(app, owner);
+    const phone = await signedIn(app, student);
+    const tablet = await signedIn(app, student);
+
+    const res = await ownerAgent.post(`/api/students/${student}/sign-out`);
+    expect(res.status).toBe(204);
+    expect((await phone.get("/api/auth/me")).status).toBe(401);
+    expect((await tablet.get("/api/auth/me")).status).toBe(401);
+    expect((await ownerAgent.get("/api/auth/me")).status).toBe(200);
+    await signedIn(app, student);
+  });
+
+  it("answers an owner's id, or one that does not exist, like a missing student", async () => {
+    const owner = await insertOwner(db, { passwordHash });
+    const otherOwner = await insertOwner(db, { passwordHash });
+    const app = newApp();
+    const ownerAgent = await signedIn(app, owner);
+    const otherOwnerAgent = await signedIn(app, otherOwner);
+    for (const id of [otherOwner, 999_999_999]) {
+      const res = await ownerAgent.post(`/api/students/${id}/sign-out`);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("student_not_found");
+    }
+    expect((await otherOwnerAgent.get("/api/auth/me")).status).toBe(200);
   });
 });

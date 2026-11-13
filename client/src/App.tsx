@@ -12,6 +12,7 @@ import { NotFoundPage } from "./auth/NotFoundPage";
 import { RequestAccessPage } from "./auth/RequestAccessPage";
 import { SignupPage } from "./auth/SignupPage";
 import { NotificationBell } from "./components/NotificationBell";
+import { SignOutOtherDevices } from "./components/SignOutOtherDevices";
 import { AdmitStudentPage } from "./owner/AdmitStudentPage";
 import { AnnouncementsPage } from "./owner/AnnouncementsPage";
 import { ComplaintPage } from "./owner/ComplaintPage";
@@ -234,6 +235,7 @@ export function App() {
                       <HostelProfile onSaved={hostelSaved} />
                       <HostelFeesAndLimits />
                       <GoogleSignIn />
+                      <SignOutOtherDevices className="mx-auto mt-6 max-w-2xl" />
                     </>
                   }
                 />

@@ -8,7 +8,8 @@
 -- it was signed with (src/lib/token.ts), and requireAuth refuses one whose number is no
 -- longer the account's. The database raises it itself, whenever password_hash changes, so no
 -- path that sets a password (change, reset, reactivation, removing it for Google) can forget
--- to, and the app can never set it back.
+-- to. The app may also raise it, to sign an account out everywhere ("Sign out of other
+-- devices", an owner signing a student out), but can never set it back.
 -- Tests: tests/sessionRevocation.test.ts.
 ALTER TABLE users ADD COLUMN session_version integer NOT NULL DEFAULT 0;
 
@@ -17,7 +18,7 @@ CREATE FUNCTION users_session_version() RETURNS trigger
   SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  NEW.session_version := OLD.session_version
+  NEW.session_version := greatest(NEW.session_version, OLD.session_version)
     + CASE WHEN NEW.password_hash IS DISTINCT FROM OLD.password_hash THEN 1 ELSE 0 END;
   RETURN NEW;
 END

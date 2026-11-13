@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { Router, type CookieOptions } from "express";
-import { rateLimit } from "express-rate-limit";
+import { createHash, randomUUID } from "node:crypto";
+import { Router, type CookieOptions, type Request } from "express";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { parseBody, sendError } from "../lib/http";
 import { hashPassword, verifyPassword } from "../lib/password";
@@ -11,6 +11,8 @@ import { activeHostelBySlug, slugSchema } from "../services/hostels";
 export type AuthRouteDeps = AuthDeps & {
   // true in production (HTTPS): the browser then sends the cookie only over HTTPS.
   secureCookies: boolean;
+  // How many failed sign-ins lock an account or an address; LOGIN_LIMITS when not given.
+  loginLimits?: LoginLimits;
 };
 
 const loginSchema = z.object({
@@ -50,18 +52,43 @@ function publicUser(row: UserRow) {
 let dummyHash: Promise<string> | undefined;
 const getDummyHash = () => (dummyHash ??= hashPassword(randomUUID()));
 
-// Counts only failed attempts, so an owner who logs in normally is never locked out.
-// Created per router, so every app (and every test) has its own counter.
-function failedAttemptLimiter(message: string) {
+// Failed sign-ins allowed in 15 minutes (security audit). Students on one hostel Wi-Fi
+// share one internet address, so counting per address alone let anyone there lock every
+// student out. Now 10 failures lock one account at one address; the much higher count per
+// address still stops one place guessing across many accounts.
+export const LOGIN_LIMITS = { perAccount: 10, perIp: 100 };
+export type LoginLimits = typeof LOGIN_LIMITS;
+const LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+// Counts only failed attempts, so someone who signs in normally is never locked out.
+// Created per router, so every app (and every test) has its own counter. Counted in this
+// server's memory, so the counts reset when the free server sleeps or restarts.
+function failedAttemptLimiter(message: string, limit: number, keyGenerator?: (req: Request) => string) {
   return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 10,
+    windowMs: LIMIT_WINDOW_MS,
+    limit,
     skipSuccessfulRequests: true,
+    ...(keyGenerator ? { keyGenerator } : {}),
     standardHeaders: "draft-8",
     legacyHeaders: false,
     handler: (_req, res) => sendError(res, 429, "rate_limited", message),
   });
 }
+
+// The account a sign-in names, at the address it comes from: the hostel and the cleaned
+// email, hashed so this memory never holds email addresses.
+function accountAtAddress(req: Request): string {
+  const field = (name: string) => {
+    const value: unknown = req.body?.[name];
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  };
+  const account = createHash("sha256").update(`${field("hostel")}\n${field("email")}`).digest("hex");
+  return `${ipKeyGenerator(req.ip ?? "")}:${account}`;
+}
+
+// A signed-in account's own attempts (changing or removing the password): one student's
+// typos never block another's.
+const signedInAccount = (req: Request) => `user:${req.user!.id}`;
 
 // The session cookie's settings, shared with Google sign-in (routes/google.ts).
 export function sessionCookieOptions(secureCookies: boolean): CookieOptions {
@@ -78,7 +105,7 @@ const removePasswordSchema = z.object({
 });
 
 export function authRouter(deps: AuthRouteDeps): Router {
-  const { db, jwtSecret, secureCookies } = deps;
+  const { db, jwtSecret, secureCookies, loginLimits = LOGIN_LIMITS } = deps;
   const inHostel = hostelWork(db);
   const router = Router();
 
@@ -86,7 +113,8 @@ export function authRouter(deps: AuthRouteDeps): Router {
 
   router.post(
     "/login",
-    failedAttemptLimiter("Too many login attempts. Try again in 15 minutes."),
+    failedAttemptLimiter("Too many login attempts from here. Try again in 15 minutes.", loginLimits.perIp),
+    failedAttemptLimiter("Too many login attempts. Try again in 15 minutes.", loginLimits.perAccount, accountAtAddress),
     async (req, res) => {
       const body = parseBody(loginSchema, req, res);
       if (!body) return;
@@ -152,7 +180,7 @@ export function authRouter(deps: AuthRouteDeps): Router {
   router.post(
     "/change-password",
     requireAuth(deps, { allowTemporaryPassword: true }),
-    failedAttemptLimiter("Too many attempts. Try again in 15 minutes."),
+    failedAttemptLimiter("Too many attempts. Try again in 15 minutes.", LOGIN_LIMITS.perAccount, signedInAccount),
     async (req, res) => {
       const body = parseBody(changePasswordSchema, req, res);
       if (!body) return;
@@ -198,13 +226,34 @@ export function authRouter(deps: AuthRouteDeps): Router {
     },
   );
 
+  // "Sign out of other devices": for a lost phone, or a session someone else may have.
+  // Raising session_version (migration 023) ends every sign-in of the account; this one
+  // carries on with a session at the new number. The password is unchanged.
+  router.post("/sign-out-others", requireAuth(deps), async (req, res) => {
+    const userId = req.user!.id;
+    const { rows } = await inHostel(req, (tx) =>
+      tx.query<{ role: Role; session_version: number }>(
+        `UPDATE users SET session_version = session_version + 1
+         WHERE id = $1 AND hostel_id = current_hostel_id()
+         RETURNING role, session_version`,
+        [userId],
+      ),
+    );
+    res.cookie(
+      SESSION_COOKIE,
+      signSession({ userId, role: rows[0].role, sessionVersion: rows[0].session_version }, jwtSecret),
+      { ...cookieOptions, maxAge: SESSION_TTL_SECONDS * 1000 },
+    );
+    res.status(204).end();
+  });
+
   // An owner whose Google account is linked may drop the password, and from then on signs
   // in with Google only (decided in phase 0). The current password confirms it is them.
   router.post(
     "/remove-password",
     requireAuth(deps),
     requireRole("owner"),
-    failedAttemptLimiter("Too many attempts. Try again in 15 minutes."),
+    failedAttemptLimiter("Too many attempts. Try again in 15 minutes.", LOGIN_LIMITS.perAccount, signedInAccount),
     async (req, res) => {
       const body = parseBody(removePasswordSchema, req, res);
       if (!body) return;
