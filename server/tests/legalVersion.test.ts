@@ -5,6 +5,7 @@ import { NOTIFICATION_DAYS_KEPT } from "../src/jobs/pruneNotifications";
 import { TERMS_VERSION } from "../src/lib/legal";
 import { PHOTO_KEEP_HOURS } from "../src/services/complaints";
 import { SESSION_TTL_SECONDS } from "../src/lib/token";
+import { CODE_DAYS_KEPT } from "../src/services/structureDeletion";
 
 // The Terms and the Privacy Policy are shown by the client (client/src/legal/documents.ts)
 // and accepted at sign-up by the version the server names (multi-tenant phase 4b). The two
@@ -20,5 +21,6 @@ describe("the legal documents", () => {
     expect(documents).toContain(`Complaint photos: deleted ${PHOTO_KEEP_HOURS} hours`);
     expect(documents).toContain(`notifications: deleted after ${NOTIFICATION_DAYS_KEPT} days`);
     expect(documents).toContain(`for up to ${SESSION_TTL_SECONDS / 86400} days`);
+    expect(documents).toContain(`deleted ${CODE_DAYS_KEPT} days after they are made`);
   });
 });

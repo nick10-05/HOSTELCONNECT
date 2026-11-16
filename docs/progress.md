@@ -1545,3 +1545,37 @@ racing), `structureDeletionRoutes.test.ts`, `mailer.test.ts`, `StructurePage.tes
 Deploy: Brevo account and sender, `BREVO_API_KEY` and `EMAIL_FROM` on Render, then back up
 and apply 024 before deploying (see `docs/deploy.md`). The Privacy Policy draft should
 name Brevo as a processor of owners' email addresses before sign-up opens.
+
+### Deployed (2026-11-17)
+
+| Step | Result |
+|---|---|
+| PR #22 (floor wording) and PR #23 (this feature) merged | `main` = 52f7686, CI green, Render deployed it |
+| Backup before the migration | Backup #26, `hostelconnect-2026-11-16T1859Z.dump.age` (run from `backup-login-retry`) |
+| Migration | **Migrate production database** #12 on `main`: 001–023 skipped, `applied 024_delete_with_history.sql` |
+| Live check | `/api/health` ok; `/api/buildings/1/deletion` answers 401 signed out (the route exists) |
+
+Not checked live: the delete flow itself, since no owner account exists in production after the
+reset. Email codes stay off until `BREVO_API_KEY` and `EMAIL_FROM` are set on Render.
+
+## Getting ready to open sign-up (2026-11-17)
+
+- The backup fix (`backup-login-retry`) is merged, so the nightly backup on `main` tries
+  its new login again instead of failing about half the time.
+- The Privacy Policy draft names Brevo, the record of deleted buildings and rooms, and
+  that deletion codes are deleted after 7 days (`legalVersion.test.ts` checks the number).
+  Still a draft: nobody has accepted it, so the version stays `2026-11-draft-1`.
+
+Left before `SIGNUPS_OPEN=true`, in order:
+
+1. Brevo account, verified sender, API key; `BREVO_API_KEY` and `EMAIL_FROM` on Render.
+2. Google's answer to the Search Console review ("Deceptive pages", requested 2026-11-13).
+3. Google OAuth consent screen moved from Testing to In production, so any Google account
+   can sign up (in Testing only listed test users can).
+4. Operator details in the Terms and Privacy Policy (`client/src/legal/operator.ts` and
+   the bracketed gaps), then a lawyer's review; then remove the under-review note and set
+   the final version on both sides.
+5. Decide what happens to hostel #1 (`sns-hostel`), now empty and without an owner.
+6. A full run in production with a test hostel: sign up, structure, admit a student,
+   delete a room with an email code, the student signs in; then close sign-up again.
+7. `SIGNUPS_OPEN=true`.

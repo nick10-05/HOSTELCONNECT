@@ -108,3 +108,39 @@ export function githubEnvLine(url: string): string {
 export async function lockBackupLogin(admin: ClientBase): Promise<void> {
   await admin.query("ALTER ROLE hostel_backup NOLOGIN PASSWORD NULL");
 }
+
+// Supabase's pooler can keep accepting only the old password for a little while after
+// ALTER ROLE, so the first login with the new one is sometimes refused ("password
+// authentication failed", 28P01): backups #15 to #24 failed that way about half the time.
+// Runs `login` again after `delayMs` while it is refused that way, at most `attempts`
+// times in all (10 x 10 s by default), and passes any other failure straight on.
+const INVALID_PASSWORD = "28P01";
+
+const passwordRefused = (err: unknown) =>
+  (err as { code?: unknown } | null)?.code === INVALID_PASSWORD ||
+  (err instanceof Error && /password authentication failed/i.test(err.message));
+
+export async function untilLoginWorks<T>(
+  login: () => Promise<T>,
+  {
+    attempts = 10,
+    delayMs = 10_000,
+    sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    onRetry = () => {},
+  }: {
+    attempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    onRetry?: (attempt: number) => void;
+  } = {},
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await login();
+    } catch (err) {
+      if (attempt >= attempts || !passwordRefused(err)) throw err;
+      onRetry(attempt);
+      await sleep(delayMs);
+    }
+  }
+}

@@ -10,6 +10,7 @@ import {
   maskCommand,
   newBackupPassword,
   setBackupLogin,
+  untilLoginWorks,
 } from "../scripts/backupRole";
 import { toTestDatabaseUrl } from "./helpers/testDatabase";
 
@@ -162,5 +163,57 @@ describe("the nightly backup login", () => {
       await admin.query("ROLLBACK").catch(() => {});
       await admin.end();
     }
+  });
+});
+
+// Supabase's pooler may still hold the old password for a few seconds after
+// ALTER ROLE, so the first login with the new one can be refused (backups #15-#24).
+describe("untilLoginWorks", () => {
+  const refused = () => Object.assign(new Error('password authentication failed for user "hostel_backup"'), { code: "28P01" });
+  const noSleep = { delayMs: 10_000, sleep: async () => {} };
+
+  it("tries again while the new password is refused, then returns the answer", async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const result = await untilLoginWorks(
+      async () => {
+        calls += 1;
+        if (calls < 3) throw refused();
+        return "in";
+      },
+      { attempts: 5, delayMs: 10_000, sleep: async (ms) => void waits.push(ms) },
+    );
+    expect(result).toBe("in");
+    expect(calls).toBe(3);
+    expect(waits).toEqual([10_000, 10_000]);
+  });
+
+  it("gives up after the last attempt with the login's own error", async () => {
+    let calls = 0;
+    const attempt = untilLoginWorks(async () => {
+      calls += 1;
+      throw refused();
+    }, { attempts: 4, ...noSleep });
+    await expect(attempt).rejects.toMatchObject({ code: "28P01" });
+    expect(calls).toBe(4);
+  });
+
+  it("does not wait on any other failure", async () => {
+    let calls = 0;
+    const attempt = untilLoginWorks(async () => {
+      calls += 1;
+      throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
+    }, { attempts: 4, ...noSleep });
+    await expect(attempt).rejects.toMatchObject({ code: "42P01" });
+    expect(calls).toBe(1);
+  });
+
+  it("also knows the refusal by its message, if a pooler sends no code", async () => {
+    let calls = 0;
+    await untilLoginWorks(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('password authentication failed for user "hostel_backup"');
+    }, { attempts: 2, ...noSleep });
+    expect(calls).toBe(2);
   });
 });
