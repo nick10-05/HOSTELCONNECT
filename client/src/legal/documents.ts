@@ -126,7 +126,8 @@ export const PRIVACY: LegalDocument = {
         { list: [
           "your name, and the email and account id of the Google account you sign in with (Google does not give us your Google password);",
           "your hostel's name and address on HostelConnect, and the payment details you choose to show students (UPI ID, payee name, QR picture);",
-          "which version of the terms you accepted, and when.",
+          "which version of the terms you accepted, and when;",
+          "a record of each building or room you delete: what it was, who deleted it and when.",
         ] },
         "About students, entered by the hostel owner:",
         { list: [
@@ -163,9 +164,10 @@ export const PRIVACY: LegalDocument = {
         { list: [
           "Render (the web server) and Supabase (the database and the complaint photos), both in Singapore;",
           "Google, for owners' sign-in;",
+          "Brevo, which emails an owner the one-time code needed to delete a building or room (it receives the owner's email address and the code);",
           "GitHub, which keeps the nightly backups, encrypted with a key only we hold.",
         ] },
-        "Information is therefore stored outside India, in Singapore. These services keep short-lived technical logs, which can include IP addresses.",
+        "Information is therefore stored outside India: the database and photos in Singapore, and emails pass through Brevo's servers. These services keep short-lived technical logs, which can include IP addresses.",
       ],
     },
     {
@@ -174,6 +176,7 @@ export const PRIVACY: LegalDocument = {
         { list: [
           "Complaint photos: deleted 48 hours after they are added.",
           "In-app notifications: deleted after 60 days.",
+          "One-time codes for deleting a building or room: stored only in a scrambled (hashed) form, and deleted 7 days after they are made.",
           "A student who moves out keeps a deactivated account, so that the hostel's records stay complete and they can ask to rejoin; the owner can ask us to delete it.",
           "Everything else: for as long as the hostel uses HostelConnect. When a hostel leaves, its information is deleted within 30 days.",
           "Encrypted backups: up to 90 days.",
