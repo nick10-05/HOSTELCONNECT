@@ -9,6 +9,7 @@ import {
   maskCommand,
   newBackupPassword,
   setBackupLogin,
+  untilLoginWorks,
 } from "./backupRole";
 
 // The nightly backup's own login (2026-11-13), run by .github/workflows/backup.yml:
@@ -45,18 +46,26 @@ async function open(): Promise<void> {
     await client.end();
   }
 
-  // The same reads pg_dump --enable-row-security makes: every hostel's rows.
-  const backup = new Client({ connectionString: forNodePg(url) });
-  await backup.connect();
-  try {
-    await backup.query("SET row_security = on");
-    const { rows } = await backup.query<{ hostels: number; users: number }>(
-      "SELECT (SELECT count(*)::int FROM hostels) AS hostels, (SELECT count(*)::int FROM users) AS users",
-    );
-    console.log(`hostel_backup can log in and read every hostel: ${rows[0].hostels} hostels, ${rows[0].users} users.`);
-  } finally {
-    await backup.end();
-  }
+  // The same reads pg_dump --enable-row-security makes: every hostel's rows. Retried while
+  // the pooler still refuses the new password (untilLoginWorks), so pg_dump, the next
+  // step, only starts once the login really works.
+  const rows = await untilLoginWorks(
+    async () => {
+      const backup = new Client({ connectionString: forNodePg(url) });
+      try {
+        await backup.connect();
+        await backup.query("SET row_security = on");
+        const result = await backup.query<{ hostels: number; users: number }>(
+          "SELECT (SELECT count(*)::int FROM hostels) AS hostels, (SELECT count(*)::int FROM users) AS users",
+        );
+        return result.rows;
+      } finally {
+        await backup.end().catch(() => {});
+      }
+    },
+    { onRetry: (attempt) => console.log(`The new password is not accepted yet (try ${attempt}); trying again in 10 s.`) },
+  );
+  console.log(`hostel_backup can log in and read every hostel: ${rows[0].hostels} hostels, ${rows[0].users} users.`);
 
   appendFileSync(githubEnv, githubEnvLine(url));
 }
