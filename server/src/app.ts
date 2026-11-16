@@ -5,6 +5,7 @@ import express, { type Express } from "express";
 import type { Db } from "./db";
 import { isAppPage } from "./lib/appPages";
 import { sendError } from "./lib/http";
+import type { Mailer } from "./lib/mailer";
 import type { PhotoStorage } from "./lib/storage";
 import { apiNotFound, errorHandler } from "./middleware/errorHandler";
 import { requireSameOrigin } from "./middleware/sameOrigin";
@@ -66,6 +67,9 @@ export type AppDeps = {
   // How many failed sign-ins lock an account or an address (routes/auth.ts LOGIN_LIMITS
   // when not given); tests pass smaller ones.
   loginLimits?: LoginLimits;
+  // Sends the codes that allow deleting a building or room (mailerFromConfig); null or
+  // missing: deleting them is off.
+  mailer?: Mailer | null;
 };
 
 const DEFAULT_COMPLAINT_LIMITS: ComplaintLimits = { maxActive: 3, maxNewPer24h: 2 };
@@ -90,6 +94,7 @@ export function createApp({
   google = null,
   signupsOpen = false,
   loginLimits,
+  mailer = null,
 }: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -121,7 +126,7 @@ export function createApp({
   app.use("/api/auth", googleRouter({ db, jwtSecret, secureCookies: production, google, signupsOpen: signupsOn }));
   app.use("/api", signupRouter({ db, jwtSecret, secureCookies: production, signupsOpen: signupsOn }));
   app.use("/api", hostelsRouter({ db, jwtSecret }));
-  app.use("/api", structureRouter({ db, jwtSecret }));
+  app.use("/api", structureRouter({ db, jwtSecret, mailer }));
   app.use("/api", studentsRouter({ db, jwtSecret }));
   app.use("/api", rejoinRouter({ db, jwtSecret }));
   app.use("/api", notificationsRouter({ db, jwtSecret }));

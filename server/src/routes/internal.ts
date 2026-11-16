@@ -6,6 +6,7 @@ import { expirePhotos } from "../jobs/expirePhotos";
 import { sendFeeReminders } from "../jobs/feeReminders";
 import { createDueFeeRows } from "../jobs/feeRows";
 import { pruneNotifications } from "../jobs/pruneNotifications";
+import { pruneDeletionCodes } from "../services/structureDeletion";
 import { hostelToday } from "../lib/dates";
 import { sendError } from "../lib/http";
 import type { PhotoStorage } from "../lib/storage";
@@ -62,6 +63,7 @@ export function internalRouter(deps: InternalRouteDeps): Router {
     const feeReminders = { created: 0 };
     const digest = { created: 0 };
     const pruned = { deleted: 0 };
+    const deletionCodes = { deleted: 0 };
     let failedHostels = 0;
 
     const { rows: hostels } = await db.query<{ id: number; feesStartDate: string | null }>(
@@ -80,6 +82,7 @@ export function internalRouter(deps: InternalRouteDeps): Router {
           feeReminders.created += (await sendFeeReminders(tx, { today })).created;
           digest.created += (await sendDailyDigest(tx, { now })).created;
           pruned.deleted += (await pruneNotifications(tx, { now })).deleted;
+          deletionCodes.deleted += (await pruneDeletionCodes(tx, { now })).deleted;
         });
       } catch (err) {
         failedHostels += 1;
@@ -91,7 +94,7 @@ export function internalRouter(deps: InternalRouteDeps): Router {
       sendError(res, 500, "jobs_failed", `The jobs of ${failedHostels} hostel(s) failed.`);
       return;
     }
-    res.json({ expirePhotos: expired, feeRows, feeReminders, digest, pruned });
+    res.json({ expirePhotos: expired, feeRows, feeReminders, digest, pruned, deletionCodes });
   });
 
   return router;

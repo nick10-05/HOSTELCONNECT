@@ -39,12 +39,15 @@ const asha: StudentProfile = {
   isActive: true,
   deactivatedAt: null,
   mustChangePassword: true,
-  currentStay: { id: 2, ...place, startedOn: "2026-01-31", endedOn: null },
+  currentStay: { id: 2, ...place, removed: false, startedOn: "2026-01-31", endedOn: null },
   stays: [
-    { id: 2, ...place, startedOn: "2026-01-31", endedOn: null },
+    { id: 2, ...place, removed: false, startedOn: "2026-01-31", endedOn: null },
     {
+      // Block B was deleted since; the stay keeps its name.
       id: 1,
       ...place,
+      buildingId: null,
+      removed: true,
       buildingName: "Block B",
       floorNumber: null,
       roomId: null,
@@ -101,7 +104,7 @@ describe("StudentProfilePage", () => {
     expect(history).toHaveLength(2);
     expect(history[0]).toHaveTextContent("Block A · Floor 1 · Room 101 · Bed A");
     expect(history[0]).toHaveTextContent("31 Jan 2026 – now");
-    expect(history[1]).toHaveTextContent("Block B");
+    expect(history[1]).toHaveTextContent("Block B · No room yet (deleted)");
     expect(history[1]).toHaveTextContent("1 Aug 2025 – 30 Jan 2026");
   });
 

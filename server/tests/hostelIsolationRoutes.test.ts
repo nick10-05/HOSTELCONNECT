@@ -45,7 +45,7 @@ function withTwoHostels(fn: (ctx: { c: PoolClient; app: App; a: HostelB; b: Host
   return inRollback(db, async (c) => {
     const a = await fillHostelB(c, "Hostel A");
     const b = await fillHostelB(c, "Hostel B");
-    const app = createApp({ db: rollbackDb(c), jwtSecret: SECRET, clock: () => new Date() });
+    const app = createApp({ db: rollbackDb(c), jwtSecret: SECRET, clock: () => new Date(), mailer: { send: async () => {} } });
     await fn({ c, app, a, b });
   });
 }
@@ -104,9 +104,13 @@ async function expectOthersRowsRefused(c: PoolClient, app: App, me: HostelB, oth
     ["post", `/api/rooms/${other.room}/beds`, { bedNumber: "Z" }],
     ["post", `/api/beds/${other.bed2}/retire`],
     ["post", `/api/beds/${other.bed2}/reactivate`],
-    ["delete", `/api/buildings/${other.emptyBuilding}`],
+    // Deleting a building or room starts with its preview and an emailed code; both must
+    // not find the other hostel's (the delete itself needs a code made by one of them).
+    ["get", `/api/buildings/${other.emptyBuilding}/deletion`],
+    ["post", `/api/buildings/${other.emptyBuilding}/delete-code`, { confirmName: "x" }],
     ["delete", `/api/floors/${other.spareFloor}`],
-    ["delete", `/api/rooms/${other.spareRoom}`],
+    ["get", `/api/rooms/${other.spareRoom}/deletion`],
+    ["post", `/api/rooms/${other.spareRoom}/delete-code`, { confirmName: "x" }],
     ["patch", `/api/announcements/${other.announcement}`, { title: "Changed" }],
     ["delete", `/api/announcements/${other.announcement}`],
     ["get", `/api/complaints/${other.complaint}`],

@@ -5,23 +5,25 @@ import {
   addFloor,
   addRoom,
   createBuilding,
-  deleteBuilding,
   deleteFloor,
-  deleteRoom,
   getStructure,
   setBedActive,
   type Bed,
   type Building,
+  type DeletionKind,
   type Room,
 } from "../api/structure";
 import { IconTile, Skeleton } from "../ui";
 import { BuildingIcon } from "../ui/icons";
+import { DeleteWithCode } from "./DeleteWithCode";
 
 // The owner's screen for buildings, floors, rooms and beds. Every change is sent to the
 // server and then the whole tree is loaded again: a little more traffic, but the
 // screen always shows exactly what the server saved (≤200 beds, so it stays small).
 
 type Change = (action: () => Promise<void>) => Promise<boolean>;
+// Opens the sheet that deletes a building or room for good (with an emailed code).
+type AskDelete = (kind: DeletionKind, id: number) => void;
 
 const errorText = (err: unknown) =>
   err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
@@ -41,6 +43,8 @@ export function StructurePage() {
   const [buildings, setBuildings] = useState<Building[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<{ kind: DeletionKind; id: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => setBuildings(await getStructure()), []);
 
@@ -48,11 +52,18 @@ export function StructurePage() {
     load().catch((err: unknown) => setError(errorText(err)));
   }, [load]);
 
+  const askDelete: AskDelete = (kind, id) => {
+    setError(null);
+    setNotice(null);
+    setDeleting({ kind, id });
+  };
+
   // Runs one change, then reloads. Returns whether it worked, so a form can clear itself.
   // One change at a time: every button is disabled while busy.
   const change: Change = async (action) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await action();
       await load();
@@ -69,6 +80,11 @@ export function StructurePage() {
     <div className="space-y-6">
       <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink md:text-4xl">Buildings and rooms</h1>
 
+      {notice && (
+        <p role="status" className="hc-pill-green rounded-2xl px-3.5 py-3 text-sm font-medium">
+          {notice}
+        </p>
+      )}
       {error && (
         <p role="alert" className="hc-pill-red rounded-2xl px-3.5 py-3 text-sm font-medium">
           {error}
@@ -83,7 +99,7 @@ export function StructurePage() {
             <p className="text-sm text-muted">No buildings yet. Add your first building below.</p>
           )}
           {buildings.map((b) => (
-            <BuildingCard key={b.id} building={b} busy={busy} change={change} />
+            <BuildingCard key={b.id} building={b} busy={busy} change={change} askDelete={askDelete} />
           ))}
           <SingleFieldForm
             label="New building name"
@@ -93,19 +109,24 @@ export function StructurePage() {
           />
         </>
       )}
+
+      <DeleteWithCode
+        target={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={(name) => {
+          setDeleting(null);
+          void change(async () => {}).then((ok) => ok && setNotice(`${name} was deleted.`));
+        }}
+      />
     </div>
   );
 }
 
 type CardProps = { building: Building; busy: boolean; change: Change };
 
-function BuildingCard({ building, busy, change }: CardProps) {
+function BuildingCard({ building, busy, change, askDelete }: CardProps & { askDelete: AskDelete }) {
   const headingId = `building-${building.id}`;
-  const remove = () => {
-    if (window.confirm(`Delete ${building.name} with all its floors, rooms and beds?`)) {
-      void change(() => deleteBuilding(building.id));
-    }
-  };
+  const remove = () => askDelete("building", building.id);
 
   return (
     <section
@@ -156,7 +177,7 @@ function BuildingCard({ building, busy, change }: CardProps) {
           >
             {floor.rooms.length === 0 && <p className="text-sm text-muted">No rooms yet.</p>}
             {floor.rooms.map((room) => (
-              <RoomRow key={room.id} room={room} busy={busy} change={change} />
+              <RoomRow key={room.id} room={room} busy={busy} change={change} askDelete={askDelete} />
             ))}
           </Group>
         );
@@ -165,7 +186,7 @@ function BuildingCard({ building, busy, change }: CardProps) {
       {building.rooms.length > 0 && (
         <Group title="No floor">
           {building.rooms.map((room) => (
-            <RoomRow key={room.id} room={room} busy={busy} change={change} />
+            <RoomRow key={room.id} room={room} busy={busy} change={change} askDelete={askDelete} />
           ))}
         </Group>
       )}
@@ -190,7 +211,7 @@ function Group({ title, action, children }: { title: string; action?: ReactNode;
   );
 }
 
-function RoomRow({ room, busy, change }: { room: Room; busy: boolean; change: Change }) {
+function RoomRow({ room, busy, change, askDelete }: { room: Room; busy: boolean; change: Change; askDelete: AskDelete }) {
   const name = `room ${room.roomNumber}`;
   return (
     <div className="rounded-2xl border border-line p-3">
@@ -198,9 +219,7 @@ function RoomRow({ room, busy, change }: { room: Room; busy: boolean; change: Ch
         <span className="font-medium text-ink">Room {room.roomNumber}</span>
         <button
           type="button"
-          onClick={() => {
-            if (window.confirm(`Delete ${name} and its beds?`)) void change(() => deleteRoom(room.id));
-          }}
+          onClick={() => askDelete("room", room.id)}
           disabled={busy}
           aria-label={`Delete ${name}`}
           className={dangerButton}

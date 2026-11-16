@@ -36,7 +36,10 @@ export const categoryLabel: Record<Category, string> = {
 };
 
 // 'Block A · Floor 1 · Room 101 · Bed A'. The directory leaves the floor out to stay short.
-export function placeText(place: Place, { withFloor = false } = {}): string {
+// A stay whose place was deleted since ends in "(deleted)".
+type PlaceNames = Pick<Place, "buildingName" | "floorNumber" | "roomNumber" | "bedNumber"> & { removed?: boolean };
+
+export function placeText(place: PlaceNames, { withFloor = false } = {}): string {
   const parts = [place.buildingName];
   if (withFloor && place.floorNumber !== null) {
     parts.push(place.floorNumber === 0 ? "Ground floor" : `Floor ${place.floorNumber}`);
@@ -44,5 +47,6 @@ export function placeText(place: Place, { withFloor = false } = {}): string {
   if (place.roomNumber !== null) parts.push(`Room ${place.roomNumber}`);
   if (place.bedNumber !== null) parts.push(`Bed ${place.bedNumber}`);
   if (place.roomNumber === null) parts.push("No room yet");
-  return parts.join(" · ");
+  const text = parts.join(" · ");
+  return place.removed ? `${text} (deleted)` : text;
 }

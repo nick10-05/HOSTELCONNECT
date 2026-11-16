@@ -96,6 +96,11 @@ The decisions I made before starting (2026-11-07):
 
 How the separation works: every table that belongs to a hostel has a `hostel_id`. The database refuses a row that points into another hostel or tries to move to another one, and in phase 2 row-level security makes Postgres itself hide other hostels' rows, so a forgotten filter in the code cannot leak data. The work is split into six phases, each deployed on its own while sign-up stays closed; the progress is recorded in `docs/progress.md`.
 
+Deleting buildings and rooms (2026-11-17): an owner may delete one that students lived in,
+and the students' history keeps its name. Because that cannot be undone, it needs the typed
+name and a 6-digit code sent to the owner's email (through Brevo), and every deletion is
+logged. A building or room someone lives in, or is booked into, still cannot be deleted.
+
 ## How it was built
 
 HostelConnect was developed through an iterative, step-by-step process. I made the architectural decisions, defined the requirements, selected the technology stack and decided the trade-offs based on the hostel's actual needs.

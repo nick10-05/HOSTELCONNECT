@@ -101,15 +101,15 @@ describe("StructurePage", () => {
 
   it("shows the server's reason when a change is refused", async () => {
     fakeServer([blockA], () =>
-      jsonResponse(409, { error: { code: "room_in_use", message: "Students have lived in this room." } }),
+      jsonResponse(409, { error: { code: "floor_has_rooms", message: "This floor still has rooms." } }),
     );
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     render(<StructurePage />);
 
-    await user.click((await building("Block A")).getByRole("button", { name: "Delete room 101" }));
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete floor 1" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Students have lived in this room.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("This floor still has rooms.");
   });
 
   it("adds a room on a chosen floor or without one", async () => {
@@ -172,18 +172,140 @@ describe("StructurePage", () => {
     );
   });
 
-  it("asks before deleting, and does nothing if the owner says no", async () => {
+  it("asks before deleting a floor, and does nothing if the owner says no", async () => {
     const server = fakeServer([blockA]);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
     render(<StructurePage />);
 
-    await user.click((await building("Block A")).getByRole("button", { name: "Delete building Block A" }));
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete ground floor" }));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Block A"));
     expect(server.changes).toEqual([]);
 
     confirm.mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "Delete ground floor" }));
+    await vi.waitFor(() => expect(server.changes).toEqual([{ method: "DELETE", url: "/api/floors/10", body: undefined }]));
+  });
+});
+
+const preview = {
+  kind: "building",
+  id: 1,
+  name: "Block A",
+  confirmName: "Block A",
+  floors: 2,
+  rooms: 2,
+  beds: 3,
+  pastStays: 4,
+  currentStays: 0,
+  emailReady: true,
+};
+const sentCode = {
+  codeId: "6f1c2b9e-0000-4000-8000-000000000001",
+  expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+  resendAfterSeconds: 60,
+  sentTo: "ni•••@gmail.com",
+};
+
+describe("deleting a building or room for good", () => {
+  it("shows what goes, asks for the name, emails a code and deletes with it", async () => {
+    const server = fakeServer([blockA], (call) => {
+      if (call.url === "/api/buildings/1/deletion") return jsonResponse(200, { deletion: preview });
+      if (call.url === "/api/buildings/1/delete-code") return jsonResponse(201, { code: sentCode });
+      if (call.method === "DELETE") return jsonResponse(200, { deleted: preview });
+    });
+    const confirm = vi.spyOn(window, "confirm");
+    const user = userEvent.setup();
+    render(<StructurePage />);
+
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete building Block A" }));
+    const sheet = within(await screen.findByRole("dialog", { name: "Delete building" }));
+    expect(await sheet.findByText(/2 floors, 2 rooms, 3 beds/)).toBeInTheDocument();
+    expect(sheet.getByText(/4 past stays stay in the students' history/)).toBeInTheDocument();
+
+    // The code is only offered once the name is typed (any case, spaces around it).
+    const send = sheet.getByRole("button", { name: "Email me a code" });
+    expect(send).toBeDisabled();
+    await user.type(sheet.getByLabelText(/to confirm/), " block a ");
+    await user.click(send);
+
+    expect(await sheet.findByText(/sent a 6-digit code to/)).toHaveTextContent("ni•••@gmail.com");
+    expect(sheet.getByText(/sent a 6-digit code to/)).toHaveTextContent(/It works for (4:5\d|5:00) more/);
+    expect(sheet.getByRole("button", { name: /Send a new code in \d+s/ })).toBeDisabled();
+
+    const del = sheet.getByRole("button", { name: "Delete for good" });
+    expect(del).toBeDisabled();
+    await user.type(sheet.getByLabelText("Code from the email"), "12a3456");
+    expect(sheet.getByLabelText("Code from the email")).toHaveValue("123456");
+    await user.click(del);
+
+    expect(await screen.findByText("Block A was deleted.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(server.changes.filter((c) => c.method !== "GET")).toEqual([
+      { method: "POST", url: "/api/buildings/1/delete-code", body: { confirmName: "block a" } },
+      { method: "DELETE", url: "/api/buildings/1", body: { confirmName: "block a", codeId: sentCode.codeId, code: "123456" } },
+    ]);
+    expect(server.loads()).toBe(2);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("shows a wrong code's tries left and lets the owner try again", async () => {
+    fakeServer([blockA], (call) => {
+      if (call.url === "/api/rooms/20/deletion")
+        return jsonResponse(200, {
+          deletion: { ...preview, kind: "room", id: 20, name: "Block A · Room 101", confirmName: "101", pastStays: 0 },
+        });
+      if (call.url === "/api/rooms/20/delete-code") return jsonResponse(201, { code: sentCode });
+      if (call.method === "DELETE")
+        return jsonResponse(400, { error: { code: "wrong_code", message: "That code is not right. 4 tries left." } });
+    });
+    const user = userEvent.setup();
+    render(<StructurePage />);
+
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete room 101" }));
+    const sheet = within(await screen.findByRole("dialog", { name: "Delete room" }));
+    expect(await sheet.findByText(/3 beds/)).toBeInTheDocument();
+    expect(sheet.queryByText(/past stay/)).not.toBeInTheDocument();
+    await user.type(sheet.getByLabelText(/to confirm/), "101");
+    await user.click(sheet.getByRole("button", { name: "Email me a code" }));
+    await user.type(await sheet.findByLabelText("Code from the email"), "000000");
+    await user.click(sheet.getByRole("button", { name: "Delete for good" }));
+
+    expect(await sheet.findByRole("alert")).toHaveTextContent("4 tries left.");
+    expect(sheet.getByLabelText("Code from the email")).toHaveValue("");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("refuses to start while students live there, or when email is not set up", async () => {
+    let answer = { ...preview, currentStays: 2 };
+    fakeServer([blockA], (call) => (call.url.endsWith("/deletion") ? jsonResponse(200, { deletion: answer }) : undefined));
+    const user = userEvent.setup();
+    render(<StructurePage />);
+
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete building Block A" }));
+    const sheet = within(await screen.findByRole("dialog"));
+    expect(await sheet.findByRole("alert")).toHaveTextContent("2 students live here now");
+    expect(sheet.queryByRole("button", { name: "Email me a code" })).not.toBeInTheDocument();
+
+    await user.click(sheet.getByRole("button", { name: "Close" }));
+    answer = { ...preview, emailReady: false };
     await user.click(screen.getByRole("button", { name: "Delete building Block A" }));
-    await vi.waitFor(() => expect(server.changes).toEqual([{ method: "DELETE", url: "/api/buildings/1", body: undefined }]));
+    expect(await within(await screen.findByRole("dialog")).findByRole("alert")).toHaveTextContent("email is not set up");
+  });
+
+  it("shows why a code could not be sent", async () => {
+    fakeServer([blockA], (call) => {
+      if (call.url.endsWith("/deletion")) return jsonResponse(200, { deletion: preview });
+      return jsonResponse(502, { error: { code: "email_failed", message: "The email could not be sent. Try again." } });
+    });
+    const user = userEvent.setup();
+    render(<StructurePage />);
+
+    await user.click((await building("Block A")).getByRole("button", { name: "Delete building Block A" }));
+    const sheet = within(await screen.findByRole("dialog"));
+    await user.type(await sheet.findByLabelText(/to confirm/), "Block A");
+    await user.click(sheet.getByRole("button", { name: "Email me a code" }));
+    expect(await sheet.findByRole("alert")).toHaveTextContent("The email could not be sent.");
+    expect(sheet.getByRole("button", { name: "Email me a code" })).toBeEnabled();
   });
 });

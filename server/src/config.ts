@@ -107,6 +107,15 @@ const fields = z.object({
   // "true" lets new owners sign up with Google (multi-tenant phase 4a). Off by default:
   // sign-up stays closed until the Terms and Privacy Policy have been reviewed.
   SIGNUPS_OPEN: optional(z.enum(["true", "false"], "must be true or false")).transform((value) => value === "true"),
+
+  // Email through Brevo's HTTP API (lib/mailer.ts), for the codes that allow deleting a
+  // building or room. Both or neither; without them, deleting is off.
+  BREVO_API_KEY: optional(z.string().min(20, "must be at least 20 characters")),
+  EMAIL_FROM: optional(z.email("must be an email address")),
+  EMAIL_FROM_NAME: z.string().trim().min(1).max(60).default("HostelConnect"),
+  // "true" prints emails to the server's terminal instead of sending them. Local
+  // development only: refused in production.
+  EMAIL_CONSOLE: optional(z.enum(["true", "false"], "must be true or false")).transform((value) => value === "true"),
 });
 
 // Settings that only make sense together, or that production cannot run without: a
@@ -129,6 +138,11 @@ const schema = fields.superRefine((config, ctx) => {
   }
   if (config.SIGNUPS_OPEN && !config.GOOGLE_CLIENT_ID) {
     missing("SIGNUPS_OPEN", "needs Google sign-in (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PUBLIC_URL): owners sign up with Google");
+  }
+  if (config.BREVO_API_KEY && !config.EMAIL_FROM) missing("EMAIL_FROM", "is required when BREVO_API_KEY is set");
+  if (config.EMAIL_FROM && !config.BREVO_API_KEY) missing("BREVO_API_KEY", "is required when EMAIL_FROM is set");
+  if (config.EMAIL_CONSOLE && config.NODE_ENV === "production") {
+    missing("EMAIL_CONSOLE", "is for local development only; set BREVO_API_KEY and EMAIL_FROM in production");
   }
   if (config.NODE_ENV === "production") {
     for (const name of ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "JOB_SECRET"] as const) {

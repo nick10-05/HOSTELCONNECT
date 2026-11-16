@@ -20,7 +20,8 @@ import { listNotifications, markAllRead, markRead, notify } from "../src/service
 import { getComplaintPhoto } from "../src/services/photos";
 import { approveRejoinRequest, listRejoinRequests, rejectRejoinRequest, requestRejoin } from "../src/services/rejoin";
 import { answerPoll, closePoll, getPollResults, listOpenPollsForStudent, listPolls } from "../src/services/returnPolls";
-import { addBed, addFloor, addRoom, deleteBuilding, deleteFloor, deleteRoom, listStructure, reactivateBed, retireBed } from "../src/services/structure";
+import { addBed, addFloor, addRoom, deleteFloor, listStructure, reactivateBed, retireBed } from "../src/services/structure";
+import { deletionCodeKey, previewDeletion, requestDeletionCode } from "../src/services/structureDeletion";
 import {
   admitStudent,
   deactivateStudent,
@@ -128,9 +129,10 @@ describe("two hostels: hostel #1 never sees or touches hostel B", () => {
         ["addBed", () => addBed(tx, b.room, "Z")],
         ["retireBed", () => retireBed(tx, b.bed2)],
         ["reactivateBed", () => reactivateBed(tx, b.bed2)],
-        ["deleteBuilding", () => deleteBuilding(tx, b.emptyBuilding)],
+        ["previewDeletion of B's building", () => previewDeletion(tx, "building", b.emptyBuilding)],
         ["deleteFloor", () => deleteFloor(tx, b.spareFloor)],
-        ["deleteRoom", () => deleteRoom(tx, b.spareRoom)],
+        ["requestDeletionCode for B's room", () =>
+          requestDeletionCode(tx, { ownerId: owner, kind: "room", id: b.spareRoom, confirmName: "B-SPARE", key: deletionCodeKey("x".repeat(32)) })],
         ["updateAnnouncement", () => updateAnnouncement(tx, b.announcement, { title: "Changed" })],
         ["deleteAnnouncement", () => deleteAnnouncement(tx, b.announcement)],
         ["getOwnerComplaint", () => getOwnerComplaint(tx, b.complaint)],

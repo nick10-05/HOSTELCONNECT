@@ -259,21 +259,16 @@ describe("what the app role may change", () => {
       expect(rows[0].n).toBe(0);
     }));
 
-  it("cannot delete a building or room that a stay ever referenced", () =>
+  // Migration 024: a past stay no longer blocks deleting its place; it keeps the names.
+  it("deletes a room a past stay referred to, but not a building with a current stay", () =>
     inRollback(db, async (c) => {
       const { building, room, bed1 } = await structure(c);
-      await addStay(c, {
-        student: await insertStudent(c),
-        owner: await insertOwner(c),
-        building,
-        room,
-        bed: bed1,
-        endedOn: "2026-02-01",
-      });
-      const roomErr = await pgError(c, "DELETE FROM rooms WHERE id = $1", [room]);
-      expect(roomErr.code).toBe(FOREIGN_KEY_VIOLATION);
+      const owner = await insertOwner(c);
+      await addStay(c, { student: await insertStudent(c), owner, building, room, bed: bed1, endedOn: "2026-02-01" });
+      await c.query("DELETE FROM rooms WHERE id = $1", [room]);
+      await addStay(c, { student: await insertStudent(c), owner, building });
       const buildingErr = await pgError(c, "DELETE FROM buildings WHERE id = $1", [building]);
-      expect(buildingErr.code).toBe(FOREIGN_KEY_VIOLATION);
+      expect(buildingErr.code).toBe(CHECK_VIOLATION);
     }));
 
   it("cannot delete a floor that still has rooms", () =>
