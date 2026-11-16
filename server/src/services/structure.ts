@@ -188,7 +188,7 @@ export async function deleteFloor(db: Queryable, floorId: number): Promise<void>
   const hasRooms = new HttpError(
     409,
     "floor_has_rooms",
-    "This floor still has rooms. Delete or move them first.",
+    "This floor still has rooms, so it cannot be deleted. Delete its rooms first. Rooms students have lived in cannot be deleted, so neither can their floor.",
   );
   if (await exists(db, "SELECT 1 FROM rooms WHERE floor_id = $1", [floorId])) throw hasRooms;
   await writeOr(db, "DELETE FROM floors WHERE id = $1 AND hostel_id = current_hostel_id()", [floorId], FOREIGN_KEY_VIOLATION, hasRooms);
