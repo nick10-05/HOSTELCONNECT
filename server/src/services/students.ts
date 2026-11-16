@@ -1024,7 +1024,16 @@ export type StudentFilters = {
   limit: number;
 };
 
-export type Stay = Place & { id: number; startedOn: string; endedOn: string | null };
+// A stay, current or past. A past stay's building, room or bed may since have been
+// deleted (with an email code): its id is then null and the name is the one copied onto
+// the stay when it was written, and `removed` says so.
+export type Stay = Omit<Place, "buildingId"> & {
+  id: number;
+  buildingId: number | null;
+  removed: boolean;
+  startedOn: string;
+  endedOn: string | null;
+};
 
 export type StudentProfile = {
   id: number;
@@ -1055,16 +1064,22 @@ export type StudentProfile = {
   nextDueDate: string | null; // null for a former student
 };
 
-// The joins that turn a stay's ids into names, shared by the list and the profile.
+// The joins that turn a stay's ids into names, shared by the list and the profile. The
+// live name wins; the copy kept on the stay (migration 024) stands in once the place is
+// deleted. Current stays always keep their place, so only history ever needs the copy.
 const PLACE_JOINS = `
   LEFT JOIN buildings b ON b.id = s.building_id
   LEFT JOIN rooms r ON r.id = s.room_id
   LEFT JOIN floors f ON f.id = r.floor_id
   LEFT JOIN beds bd ON bd.id = s.bed_id`;
 const PLACE_COLUMNS = `
-  s.building_id AS "buildingId", b.name AS "buildingName", f.number AS "floorNumber",
-  s.room_id AS "roomId", r.room_number AS "roomNumber",
-  s.bed_id AS "bedId", bd.bed_number AS "bedNumber"`;
+  s.building_id AS "buildingId", COALESCE(b.name, s.building_name) AS "buildingName",
+  COALESCE(f.number, s.floor_number) AS "floorNumber",
+  s.room_id AS "roomId", COALESCE(r.room_number, s.room_number) AS "roomNumber",
+  s.bed_id AS "bedId", COALESCE(bd.bed_number, s.bed_number) AS "bedNumber",
+  (s.building_id IS NULL
+    OR (s.room_id IS NULL AND s.room_number IS NOT NULL)
+    OR (s.bed_id IS NULL AND s.bed_number IS NOT NULL)) AS removed`;
 
 type PlaceRow = { [K in keyof Place]: Place[K] | null };
 const placeOf = (row: PlaceRow): Place | null =>
@@ -1169,7 +1184,9 @@ export async function getStudent(db: Queryable, id: number, today: string): Prom
   }
   const { consentOn, consentBy, ...student } = rows[0];
 
-  const { rows: stayRows } = await db.query<PlaceRow & { id: number; startedOn: string; endedOn: string | null }>(
+  const { rows: stayRows } = await db.query<
+    PlaceRow & { id: number; removed: boolean; startedOn: string; endedOn: string | null }
+  >(
     `SELECT s.id, s.started_on AS "startedOn", s.ended_on AS "endedOn", ${PLACE_COLUMNS}
      FROM stays s ${PLACE_JOINS}
      WHERE s.student_id = $1 AND s.hostel_id = current_hostel_id()
@@ -1178,7 +1195,14 @@ export async function getStudent(db: Queryable, id: number, today: string): Prom
   );
   const stays: Stay[] = stayRows.map((row) => ({
     id: row.id,
-    ...placeOf(row)!,
+    buildingId: row.buildingId,
+    buildingName: row.buildingName!,
+    floorNumber: row.floorNumber,
+    roomId: row.roomId,
+    roomNumber: row.roomNumber,
+    bedId: row.bedId,
+    bedNumber: row.bedNumber,
+    removed: row.removed,
     startedOn: row.startedOn,
     endedOn: row.endedOn,
   }));

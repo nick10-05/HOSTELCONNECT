@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { createPool } from "./db";
 import { googleFromConfig } from "./lib/google";
+import { mailerFromConfig } from "./lib/mailer";
 import { storageFromConfig } from "./lib/storage";
 import { adoptFeesStartDate } from "./services/hostels";
 import { loadDotEnv } from "./loadEnv";
@@ -30,6 +31,7 @@ const app = createApp({
   cspReportOnly: config.CSP_REPORT_ONLY,
   google: googleFromConfig(config),
   signupsOpen: config.SIGNUPS_OPEN,
+  mailer: mailerFromConfig(config),
   // server/dist/index.js -> client/dist, the same layout in the repo and the Docker image.
   clientDir: production ? path.resolve(__dirname, "../../client/dist") : undefined,
 });

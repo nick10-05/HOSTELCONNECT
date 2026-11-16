@@ -2,7 +2,8 @@ import type { Queryable } from "../db";
 import { HttpError } from "../lib/http";
 import { requireBuildingPlace } from "./hostels";
 
-// Hostel structure: buildings, floors, rooms and beds (design doc, section 3).
+// Hostel structure: buildings, floors, rooms and beds (design doc, section 3). Deleting a
+// building or room needs an email code: services/structureDeletion.ts.
 // tests/structure.test.ts describes what each function must do.
 //
 // How refusals work:
@@ -168,19 +169,6 @@ export async function reactivateBed(db: Queryable, bedId: number): Promise<Bed> 
   return rows[0];
 }
 
-export async function deleteBuilding(db: Queryable, buildingId: number): Promise<void> {
-  await requireBuilding(db, buildingId);
-  const inUse = new HttpError(
-    409,
-    "building_in_use",
-    "Students have lived in this building, so it cannot be deleted. Its history must stay.",
-  );
-  if (await exists(db, "SELECT 1 FROM stays WHERE building_id = $1", [buildingId])) throw inUse;
-  // Floors, rooms and beds go with it (ON DELETE CASCADE). The foreign keys from
-  // stays still refuse if a stay was added since the check above.
-  await writeOr(db, "DELETE FROM buildings WHERE id = $1 AND hostel_id = current_hostel_id()", [buildingId], FOREIGN_KEY_VIOLATION, inUse);
-}
-
 export async function deleteFloor(db: Queryable, floorId: number): Promise<void> {
   if (!(await exists(db, "SELECT 1 FROM floors WHERE id = $1 AND hostel_id = current_hostel_id()", [floorId]))) {
     throw new HttpError(404, "floor_not_found", "That floor no longer exists.");
@@ -188,24 +176,10 @@ export async function deleteFloor(db: Queryable, floorId: number): Promise<void>
   const hasRooms = new HttpError(
     409,
     "floor_has_rooms",
-    "This floor still has rooms, so it cannot be deleted. Delete its rooms first. Rooms students have lived in cannot be deleted, so neither can their floor.",
+    "This floor still has rooms, so it cannot be deleted. Delete its rooms first.",
   );
   if (await exists(db, "SELECT 1 FROM rooms WHERE floor_id = $1", [floorId])) throw hasRooms;
   await writeOr(db, "DELETE FROM floors WHERE id = $1 AND hostel_id = current_hostel_id()", [floorId], FOREIGN_KEY_VIOLATION, hasRooms);
-}
-
-export async function deleteRoom(db: Queryable, roomId: number): Promise<void> {
-  if (!(await exists(db, "SELECT 1 FROM rooms WHERE id = $1 AND hostel_id = current_hostel_id()", [roomId]))) {
-    throw new HttpError(404, "room_not_found", "That room no longer exists.");
-  }
-  const inUse = new HttpError(
-    409,
-    "room_in_use",
-    "Students have lived in this room, so it cannot be deleted. Retire its beds instead.",
-  );
-  if (await exists(db, "SELECT 1 FROM stays WHERE room_id = $1", [roomId])) throw inUse;
-  // Its beds go with it (ON DELETE CASCADE).
-  await writeOr(db, "DELETE FROM rooms WHERE id = $1 AND hostel_id = current_hostel_id()", [roomId], FOREIGN_KEY_VIOLATION, inUse);
 }
 
 // Room and bed numbers are text ("101", "G1", "A"). Ordering by length first puts

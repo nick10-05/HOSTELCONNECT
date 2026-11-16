@@ -23,6 +23,7 @@ const PER_HOSTEL = [
   "buildings",
   "complaint_events",
   "complaints",
+  "deletion_codes",
   "fees",
   "floors",
   "hostel_settings",
@@ -32,6 +33,7 @@ const PER_HOSTEL = [
   "return_polls",
   "rooms",
   "stays",
+  "structure_deletions",
   "users",
 ];
 // hostels: the tenants themselves. schema_migrations: the migration runner's record.

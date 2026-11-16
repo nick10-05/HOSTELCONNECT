@@ -210,6 +210,7 @@ describe("getStudent", () => {
       roomNumber: "101",
       bedId: a.bed1,
       bedNumber: "A",
+      removed: false,
       startedOn: "2026-01-31",
       endedOn: null,
     });

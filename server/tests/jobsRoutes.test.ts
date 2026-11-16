@@ -26,7 +26,7 @@ const JOB_SECRET = "job-secret-for-tests-" + "j".repeat(20);
 // clock see one (the digest counts the whole database, so its number is not exact).
 const NOW = new Date("1999-02-10T01:30:00Z");
 // What run-jobs answers for the day-10 jobs when none has anything to do.
-const NOTHING_DAY_10 = { feeReminders: { created: 0 }, digest: { created: 0 }, pruned: { deleted: 0 } };
+const NOTHING_DAY_10 = { feeReminders: { created: 0 }, digest: { created: 0 }, pruned: { deleted: 0 }, deletionCodes: { deleted: 0 } };
 const PATH = "/api/internal/run-jobs";
 
 type Ctx = { c: PoolClient; storage: FakeStorage; app: ReturnType<typeof createApp> };

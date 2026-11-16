@@ -13,11 +13,9 @@ import { hostelTx, insertOwner, insertStudent, testPool } from "./helpers/db";
 vi.mock("../src/services/structure", () => ({
   listStructure: vi.fn(),
   createBuilding: vi.fn(),
-  deleteBuilding: vi.fn(),
   addFloor: vi.fn(),
   deleteFloor: vi.fn(),
   addRoom: vi.fn(),
-  deleteRoom: vi.fn(),
   addBed: vi.fn(),
   retireBed: vi.fn(),
   reactivateBed: vi.fn(),
@@ -145,15 +143,11 @@ describe("structure endpoints for the owner", () => {
     expect(back.body.bed.isActive).toBe(true);
   });
 
-  it("DELETE answers 204 for buildings, floors and rooms", async () => {
-    const cookie = await asOwner();
-    for (const path of ["/api/buildings/1", "/api/floors/4", "/api/rooms/2"]) {
-      const res = await request(app).delete(path).set("Cookie", cookie);
-      expect(res.status, path).toBe(204);
-    }
-    expect(service.deleteBuilding).toHaveBeenCalledWith(hostelTx(db), 1);
+  // Buildings and rooms are deleted with an email code: tests/structureDeletionRoutes.test.ts.
+  it("DELETE answers 204 for a floor", async () => {
+    const res = await request(app).delete("/api/floors/4").set("Cookie", await asOwner());
+    expect(res.status).toBe(204);
     expect(service.deleteFloor).toHaveBeenCalledWith(hostelTx(db), 4);
-    expect(service.deleteRoom).toHaveBeenCalledWith(hostelTx(db), 2);
   });
 
   it("answers 404 for an id that is not a positive whole number", async () => {
@@ -162,6 +156,6 @@ describe("structure endpoints for the owner", () => {
       const res = await request(app).delete(path).set("Cookie", cookie);
       expect(res.status, path).toBe(404);
     }
-    expect(service.deleteBuilding).not.toHaveBeenCalled();
+    expect(service.deleteFloor).not.toHaveBeenCalled();
   });
 });

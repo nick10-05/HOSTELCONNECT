@@ -11,8 +11,9 @@ const db = testPool();
 afterAll(() => db.end());
 
 const PER_HOSTEL = [
-  "announcements", "beds", "buildings", "complaint_events", "complaints", "fees", "floors", "hostel_settings",
-  "notifications", "rejoin_requests", "return_poll_responses", "return_polls", "rooms", "stays", "users",
+  "announcements", "beds", "buildings", "complaint_events", "complaints", "deletion_codes", "fees", "floors",
+  "hostel_settings", "notifications", "rejoin_requests", "return_poll_responses", "return_polls", "rooms", "stays",
+  "structure_deletions", "users",
 ];
 const INSUFFICIENT_PRIVILEGE = "42501";
 
@@ -25,7 +26,7 @@ function asAdmin() {
 }
 
 describe("row-level security", () => {
-  it("is on for the 15 tables that belong to a hostel, with the app's and the backup's policies, not forced", () =>
+  it("is on for the 17 tables that belong to a hostel, with the app's and the backup's policies, not forced", () =>
     inRollback(db, async (c) => {
       const { rows } = await c.query<{ table: string; enabled: boolean; forced: boolean; policies: string[] }>(
         `SELECT c.relname AS table, c.relrowsecurity AS enabled, c.relforcerowsecurity AS forced,

@@ -186,29 +186,6 @@ describe("retireBed and reactivateBed", () => {
     }));
 });
 
-describe("deleteBuilding", () => {
-  it("deletes an unused building with its floors, rooms and beds", () =>
-    inRollback(db, async (c) => {
-      const { building, room } = await insertStructure(c);
-      await structure.deleteBuilding(c, building);
-      expect(await count(c, "buildings WHERE id = $1", [building])).toBe(0);
-      expect(await count(c, "beds WHERE room_id = $1", [room])).toBe(0);
-    }));
-
-  it("refuses while any stay, even an ended one, refers to it", () =>
-    inRollback(db, async (c) => {
-      const { building } = await insertStructure(c);
-      await insertStay(c, { building, endedOn: "2026-02-01" });
-      await expectRefused(c, () => structure.deleteBuilding(c, building), 409, "building_in_use");
-      expect(await count(c, "buildings WHERE id = $1", [building])).toBe(1);
-    }));
-
-  it("refuses an unknown building", () =>
-    inRollback(db, async (c) => {
-      await expectRefused(c, () => structure.deleteBuilding(c, MISSING), 404, "building_not_found");
-    }));
-});
-
 describe("deleteFloor", () => {
   it("deletes an empty floor", () =>
     inRollback(db, async (c) => {
@@ -230,28 +207,6 @@ describe("deleteFloor", () => {
   it("refuses an unknown floor", () =>
     inRollback(db, async (c) => {
       await expectRefused(c, () => structure.deleteFloor(c, MISSING), 404, "floor_not_found");
-    }));
-});
-
-describe("deleteRoom", () => {
-  it("deletes an unused room with its beds", () =>
-    inRollback(db, async (c) => {
-      const { room } = await insertStructure(c);
-      await structure.deleteRoom(c, room);
-      expect(await count(c, "rooms WHERE id = $1", [room])).toBe(0);
-      expect(await count(c, "beds WHERE room_id = $1", [room])).toBe(0);
-    }));
-
-  it("refuses while any stay, even an ended one, refers to it", () =>
-    inRollback(db, async (c) => {
-      const { building, room } = await insertStructure(c);
-      await insertStay(c, { building, room, endedOn: "2026-02-01" });
-      await expectRefused(c, () => structure.deleteRoom(c, room), 409, "room_in_use");
-    }));
-
-  it("refuses an unknown room", () =>
-    inRollback(db, async (c) => {
-      await expectRefused(c, () => structure.deleteRoom(c, MISSING), 404, "room_not_found");
     }));
 });
 

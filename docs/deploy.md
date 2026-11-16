@@ -298,6 +298,25 @@ everywhere" on a student's profile. Sign-ins from before 023 count as number 0, 
 is signed out by the upgrade itself. Changing a password reads the new column, so apply 023 with **Migrate
 production database** before deploying this code.
 
+## Deleting buildings and rooms with an email code (migration 024)
+
+Owners can delete a building or room for good, also one students lived in: the stays keep
+copies of the building, floor, room and bed names, and history shows the place as
+"(deleted)". A building or room with a current or booked stay is still refused. Deleting
+asks for the typed name and a 6-digit code emailed to the owner's address through Brevo.
+
+1. **Brevo:** create a free account, verify the sender address the codes come from, and
+   create an API key (in Brevo's settings).
+2. **Render:** add `BREVO_API_KEY` and `EMAIL_FROM` (the verified sender) to the web
+   service. Without them the app runs as before and deleting buildings and rooms is off.
+3. **Database:** take a backup (**Back up production database**), then apply 024 with
+   **Migrate production database**, then deploy this code. The old code keeps working on
+   the new schema; the new code needs 024 (`deletion_codes`, `structure_deletions`).
+
+Every deletion is written to `structure_deletions` (who, when, what, the counts and the
+code used), which the app can add to but never change. Codes are kept 7 days, then the
+nightly job removes them.
+
 ## Free-plan limits to expect
 
 - Render sleeps after 15 minutes without visits; the next visit waits about a minute

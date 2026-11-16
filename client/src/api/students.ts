@@ -74,7 +74,15 @@ export type StudentListItem = {
   place: Place | null;
 };
 
-export type Stay = Place & { id: number; startedOn: string; endedOn: string | null };
+// A past stay's building, room or bed may have been deleted since: its id is then null,
+// the names are the ones kept on the stay, and `removed` is true.
+export type Stay = Omit<Place, "buildingId"> & {
+  id: number;
+  buildingId: number | null;
+  removed: boolean;
+  startedOn: string;
+  endedOn: string | null;
+};
 
 export type StudentProfile = {
   id: number;

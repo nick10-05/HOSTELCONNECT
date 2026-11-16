@@ -1506,3 +1506,42 @@ Still open: whether Render puts exactly one proxy in front of the app (`trust pr
 
 Deploy: apply migration 023 with **Migrate production database** (see `docs/deploy.md`).
 
+## Resetting the SNS test hostel in production (2026-11-16)
+
+All of hostel #1's (SNS) data was fake test data, so it was removed, owner included.
+Backup #25 (`hostelconnect-2026-11-16T1811Z.dump.age`) was taken first and restored in a
+local drill. The scope was reviewed before running, then one transaction removed every
+per-hostel row of hostel #1; afterwards all per-hostel tables count 0 for it. The
+`hostels` row (`sns-hostel`, active) and the migrations stay, and nobody can sign in to it
+until an owner is set up again. Before that, the nightly backup's login sometimes failed
+right after the password was renewed; it now tries again for up to 100 seconds (branch
+`backup-login-retry`).
+
+## Deleting buildings and rooms for good, with an email code (2026-11-17)
+
+Buildings and rooms that students lived in could not be deleted: past stays pointed at
+them. Now they can, and history keeps where each student was.
+
+- **Migration 024.** Stays get copies of the building, floor, room and bed names, filled
+  in by a trigger whenever a stay's place is written. Deleting a building or room empties
+  past stays' ids instead of being refused; a current or booked stay still blocks it
+  (`stays_current_keeps_place`). A started stay's place still cannot be edited, except
+  emptied when its place is deleted.
+- **Email code.** The owner types the building's name (or room number), then gets a
+  6-digit code at their own email through Brevo's HTTP API. It works for 5 minutes, 5
+  tries and once; a new one after 60 seconds; at most 5 an hour per owner and 20 a day per
+  hostel. Only an HMAC of it is kept (`deletion_codes`); the browser never sees it. A
+  wrong try is counted even though the request fails. Asking for a new code replaces the
+  old one; a code whose email failed cannot be used and does not start the wait.
+- **Audit.** Each deletion is written to `structure_deletions`, which the app cannot
+  change or remove.
+- **Screens.** A sheet on Buildings and rooms shows what would go and the past stays kept,
+  then the code step with the time left and the resend wait. Stay history shows a deleted
+  place as "(deleted)".
+
+Tests: `deleteWithHistory.test.ts`, `structureDeletion.test.ts` (including two requests
+racing), `structureDeletionRoutes.test.ts`, `mailer.test.ts`, `StructurePage.test.tsx`.
+
+Deploy: Brevo account and sender, `BREVO_API_KEY` and `EMAIL_FROM` on Render, then back up
+and apply 024 before deploying (see `docs/deploy.md`). The Privacy Policy draft should
+name Brevo as a processor of owners' email addresses before sign-up opens.
