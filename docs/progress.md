@@ -1566,16 +1566,43 @@ reset. Email codes stay off until `BREVO_API_KEY` and `EMAIL_FROM` are set on Re
   that deletion codes are deleted after 7 days (`legalVersion.test.ts` checks the number).
   Still a draft: nobody has accepted it, so the version stays `2026-11-draft-1`.
 
-Left before `SIGNUPS_OPEN=true`, in order:
+Left before `SIGNUPS_OPEN=true`, in order (updated the same day, see below):
 
-1. Brevo account, verified sender, API key; `BREVO_API_KEY` and `EMAIL_FROM` on Render.
-2. Google's answer to the Search Console review ("Deceptive pages", requested 2026-11-13).
-3. Google OAuth consent screen moved from Testing to In production, so any Google account
-   can sign up (in Testing only listed test users can).
+1. ~~Brevo account, verified sender, API key; `BREVO_API_KEY` and `EMAIL_FROM` on Render.~~ Done.
+2. ~~Google's answer to the Search Console review.~~ Done: "No issues detected".
+3. ~~Google OAuth consent screen moved to In production.~~ Done.
 4. Operator details in the Terms and Privacy Policy (`client/src/legal/operator.ts` and
    the bracketed gaps), then a lawyer's review; then remove the under-review note and set
-   the final version on both sides.
-5. Decide what happens to hostel #1 (`sns-hostel`), now empty and without an owner.
-6. A full run in production with a test hostel: sign up, structure, admit a student,
-   delete a room with an email code, the student signs in; then close sign-up again.
-7. `SIGNUPS_OPEN=true`.
+   the final version on both sides. **Still open.**
+5. ~~Decide what happens to hostel #1 (`sns-hostel`).~~ Done: suspended.
+6. ~~A full run in production.~~ Done, see below.
+7. `SIGNUPS_OPEN=true`. **Still open**, after step 4.
+
+## Launch checks in production (2026-11-17)
+
+| Step | How | Result |
+|---|---|---|
+| Hostel #1 (`sns-hostel`) | `UPDATE hostels SET status = 'suspended'` (guarded: only if still active with no accounts) | 1 row; `/api/hostels/sns-hostel` answers 404. The address stays taken; nothing deleted |
+| Google sign-in for everyone | Google Auth Platform: home, Privacy and Terms links added to Branding, then **Publish app** | "In production". Scopes `openid email` only, so no Google verification; adding a logo would require it |
+| Search Console | Security issues | "No issues detected" |
+| Brevo | Free plan; sender "HostelConnect" at the owner's Gmail address verified; API key `hostelconnect-render`, restricted to Transactional email | Key pasted into Render by hand (never shown or logged). Brevo sends from its own `…brevosend.com` address because the sender is a Gmail address |
+| Render | `BREVO_API_KEY`, `EMAIL_FROM` added | Redeployed and live; the server checks both at start |
+| Sign-up window | `SIGNUPS_OPEN=true` at 01:29:35, back to `false` at 01:34:42 (about 5 minutes) | One hostel signed up in it: the owner's own (`sns-boys-hostel`, Google sign-in). No other hostel exists |
+| Structure | Buildings and rooms screen | TEST Block › Floor 1 › rooms T101 and T102, bed A in each (checked against `/api/structure`) |
+| Admission | Admit a student screen | Test Student (`test.student@example.com`) in T101 bed A; temporary password shown once |
+| Refusal | Delete sheet on occupied T101 | "1 student lives here now or is booked to join. Move them before deleting." No code offered |
+| Email code | Delete sheet on T102: typed T102, "Email me a code" | Sent to the owner's Google address (shown masked); Brevo log: Sent, then Delivered, 01:37 |
+| Deletion | Code entered within its 5 minutes | "TEST Block · Room T102 was deleted."; `structure_deletions` has the row (room, 1 bed, 01:39); the code is used, 0 wrong tries |
+| Student sign-in | `/h/sns-boys-hostel/login` with the temporary password (typed by the owner) | Signed in as the student; asked for and given a new password; `/api/auth/me` answers student, `mustChangePassword: false` |
+| Sign-up closed | `/api/auth/options` | `{"google":true,"signupsOpen":false}` |
+
+Left in production on purpose: TEST Block, room T101 and Test Student in `sns-boys-hostel`
+(the owner moves the student out and deletes the building when no longer needed). Not
+checked live: a wrong code, an expired code and the resend wait (covered by tests).
+
+Brevo deletes an API key after 90 days without use. Deletions are rare, so the key may
+lapse: then "Email me a code" answers that the email could not be sent, and a new key goes
+into `BREVO_API_KEY` on Render.
+
+Still open before sign-up opens: the operator's details in the Terms and Privacy Policy,
+the lawyer's review, then `SIGNUPS_OPEN=true`.

@@ -313,6 +313,11 @@ asks for the typed name and a 6-digit code emailed to the owner's address throug
    **Migrate production database**, then deploy this code. The old code keeps working on
    the new schema; the new code needs 024 (`deletion_codes`, `structure_deletions`).
 
+Brevo deletes an API key after 90 days without use, and deletions are rare: if "Email me a
+code" says the email could not be sent, create a new key (restricted to Transactional
+email) and replace `BREVO_API_KEY` on Render. With a Gmail sender, Brevo sends from its own
+`…brevosend.com` address; a sender on your own domain, authenticated in Brevo, avoids that.
+
 Every deletion is written to `structure_deletions` (who, when, what, the counts and the
 code used), which the app can add to but never change. Codes are kept 7 days, then the
 nightly job removes them.
