@@ -5,8 +5,8 @@ import { approveRejoinRequest, listRejoinRequests, rejectRejoinRequest } from ".
 import { reactivateStudent, type ReactivationInput } from "../src/services/students";
 import { insertOwner, insertStay, insertStructure, insertStudent, testPool } from "./helpers/db";
 
-// The owner's review of rejoin requests: listRejoinRequests and rejectRejoinRequest
-// (Claude), approveRejoinRequest (you write it). Rows are committed, so each test makes
+// The owner's review of rejoin requests: listRejoinRequests, rejectRejoinRequest and
+// approveRejoinRequest. Rows are committed, so each test makes
 // its own people; the list tests look only at their own requests.
 // Approving hashes a password at cost 12, hence the longer timeout.
 const db = testPool();
@@ -63,7 +63,7 @@ async function expectRefused(call: Promise<unknown>, status: number, code: strin
   expect(err).toMatchObject({ status, code });
 }
 
-// ---- listRejoinRequests (Claude) ----
+// ---- listRejoinRequests ----
 
 describe("listRejoinRequests", () => {
   // Every test database run is fresh, but other files add requests too, so these tests
@@ -132,7 +132,7 @@ describe("listRejoinRequests", () => {
   });
 });
 
-// ---- rejectRejoinRequest (Claude) ----
+// ---- rejectRejoinRequest ----
 
 describe("rejectRejoinRequest", () => {
   it("rejects a pending request and changes nothing else", async () => {
@@ -169,7 +169,7 @@ describe("rejectRejoinRequest", () => {
   });
 });
 
-// ---- approveRejoinRequest (you write it) ----
+// ---- approveRejoinRequest ----
 
 describe("approveRejoinRequest", { timeout: 30_000 }, () => {
   it("reactivates the student and marks the request approved, together", async () => {

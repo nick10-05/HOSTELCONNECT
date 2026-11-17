@@ -3,7 +3,7 @@ import { HttpError } from "../src/lib/http";
 import { deactivateStudent, transferStudent } from "../src/services/students";
 import { insertOwner, insertStructure, insertStudent, testPool } from "./helpers/db";
 
-// deactivateStudent in src/services/students.ts (you write it). It runs its own
+// deactivateStudent in src/services/students.ts. It runs its own
 // transaction, so these tests use the pool and every test makes its own rows.
 const db = testPool();
 afterAll(() => db.end());

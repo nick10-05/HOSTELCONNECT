@@ -7,7 +7,7 @@ import { inRollback, insertStudent, testPool } from "./helpers/db";
 import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { rollbackDb } from "./helpers/rollbackDb";
 
-// A complaint with its optional photo (day 8, Claude): createComplaint uploads the photo
+// A complaint with its optional photo (day 8): createComplaint uploads the photo
 // inside the same transaction, after the student lock and the three limits, and only
 // while the usage guard allows uploads. Fake storage; the egress month is in 2001, which
 // no other test touches. Most tests run on rollbackDb; the race test commits.

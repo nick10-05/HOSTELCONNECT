@@ -6,7 +6,7 @@ import { updateStudent, type StudentEdit } from "../src/services/students";
 import { inRollback, insertOwner, insertStructure, insertStudent, testPool } from "./helpers/db";
 import { rollbackDb } from "./helpers/rollbackDb";
 
-// updateStudent in src/services/students.ts (Nikhil writes it). It runs its own
+// updateStudent in src/services/students.ts. It runs its own
 // transaction; rollbackDb turns that into a savepoint inside each test's transaction, so
 // nothing is left behind.
 const db = testPool();

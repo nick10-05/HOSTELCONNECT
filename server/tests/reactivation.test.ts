@@ -6,7 +6,7 @@ import { TEMP_PASSWORD_ALPHABET, TEMP_PASSWORD_LENGTH } from "../src/lib/tempPas
 import { deactivateStudent, reactivateStudent, type ReactivationInput } from "../src/services/students";
 import { insertOwner, insertStay, insertStructure, insertStudent, testPool } from "./helpers/db";
 
-// reactivateStudent in src/services/students.ts (you write it). It runs its own
+// reactivateStudent in src/services/students.ts. It runs its own
 // transaction, so these tests use the pool and every test makes its own rows.
 // Each reactivation hashes a password at cost 12, hence the longer timeout.
 const db = testPool();

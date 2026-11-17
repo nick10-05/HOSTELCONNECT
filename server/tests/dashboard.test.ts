@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { getDashboard } from "../src/services/dashboard";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// getDashboard (Claude). Other test files add buildings, students and requests at the
+// getDashboard. Other test files add buildings, students and requests at the
 // same time, so each test runs in a transaction that is rolled back and takes one
 // snapshot of the database (REPEATABLE READ): its own rows are exact, and totals are
 // compared before and after within that same snapshot.

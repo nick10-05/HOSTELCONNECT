@@ -4,7 +4,7 @@ import { HttpError } from "../src/lib/http";
 import { getOwnerComplaint, listOwnerComplaints, type OwnerComplaintFilters } from "../src/services/complaints";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// The owner's complaint list: listOwnerComplaints (you write it). The list covers every
+// The owner's complaint list: listOwnerComplaints. The list covers every
 // student, and other test files add complaints at the same time, so each test runs in a
 // transaction that is rolled back, with one snapshot of the database (REPEATABLE READ),
 // and looks at its own rows through a filter only it can match: its own building, or a

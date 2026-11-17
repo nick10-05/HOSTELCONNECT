@@ -76,7 +76,7 @@ async function addAnnouncement(c: PoolClient, opts: { pinned?: boolean; at: stri
   return rows[0].id;
 }
 
-describe("postAnnouncementInTransaction (you write it)", () => {
+describe("postAnnouncementInTransaction", () => {
   it("stores the announcement and returns it", () =>
     inSnapshot(async (c) => {
       const owner = await insertOwner(c);
@@ -145,7 +145,7 @@ describe("postAnnouncementInTransaction (you write it)", () => {
     }));
 });
 
-describe("deleteAnnouncementInTransaction (you write it)", () => {
+describe("deleteAnnouncementInTransaction", () => {
   it("deletes the announcement and all its notifications, read or not, and nothing else", () =>
     inSnapshot(async (c) => {
       const owner = await insertOwner(c);
@@ -207,7 +207,7 @@ describe("deleteAnnouncementInTransaction (you write it)", () => {
 
 // These tests write the announcement (and its notification) straight to the tables, so
 // they do not depend on the posting code.
-describe("updateAnnouncement (Claude)", () => {
+describe("updateAnnouncement", () => {
   it("changes each field on its own and keeps the rest", () =>
     inSnapshot(async (c) => {
       const id = await addAnnouncement(c, { at: "2026-11-01T09:00:00+05:30" });
@@ -266,7 +266,7 @@ describe("updateAnnouncement (Claude)", () => {
     }));
 });
 
-describe("listAnnouncements (Claude)", () => {
+describe("listAnnouncements", () => {
   it("puts pinned first, then newest, ties by id; pages with the total on every page", () =>
     inSnapshot(async (c) => {
       const before = await listAnnouncements(c, { page: 1, limit: 50 });

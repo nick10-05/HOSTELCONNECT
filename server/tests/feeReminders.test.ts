@@ -5,8 +5,7 @@ import { FEE_REMINDER_LINK, reminderStage, sendFeeReminders } from "../src/jobs/
 import { addDays } from "../src/lib/dates";
 import { inRollback, insertOwner, testPool } from "./helpers/db";
 
-// The fee-reminders job (day 10, Claude at Nikhil's request; section 12 lists "reminder
-// timing" under "You write"). The job works on every pending fee, so every test runs in a
+// The fee-reminders job (day 10). The job works on every pending fee, so every test runs in a
 // transaction that is rolled back, and uses due dates in 1998: no other file has fee rows
 // then, so every count here is exact.
 const db = testPool();

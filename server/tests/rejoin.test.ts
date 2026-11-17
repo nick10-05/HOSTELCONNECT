@@ -4,7 +4,7 @@ import { HttpError } from "../src/lib/http";
 import { requestRejoin } from "../src/services/rejoin";
 import { insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// requestRejoin in src/services/rejoin.ts (you write it). The rows are committed, so
+// requestRejoin in src/services/rejoin.ts. The rows are committed, so
 // every test makes its own people; the whole test database is recreated on the next run.
 const db = testPool();
 afterAll(() => db.end());

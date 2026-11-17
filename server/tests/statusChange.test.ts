@@ -9,7 +9,7 @@ import {
 } from "../src/services/complaints";
 import { insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// changeComplaintStatus (you write it): the update, the timeline event and the student's
+// changeComplaintStatus: the update, the timeline event and the student's
 // notification in one transaction, every refusal writing nothing, and races. Rows are
 // committed, because the races need real concurrent transactions, so each test makes its
 // own students and looks only at their rows.

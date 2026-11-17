@@ -14,7 +14,7 @@ import {
 } from "../src/services/returnPolls";
 import { inSnapshot as inSharedSnapshot, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// Starting, closing and answering return polls, and the two lists (day 9, Claude).
+// Starting, closing and answering return polls, and the two lists (day 9).
 // Starting a poll notifies EVERY active student, including other test files' students, so
 // every test runs inside a transaction that is rolled back, with one snapshot of the
 // database (the shared inSnapshot): counts of "every active student" are taken in it.

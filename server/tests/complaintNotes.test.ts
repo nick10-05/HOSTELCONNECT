@@ -3,7 +3,7 @@ import { HttpError } from "../src/lib/http";
 import { addComplaintNote, OWNER_NOTE_MAX, type ComplaintStatus } from "../src/services/complaints";
 import { insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// addComplaintNote (you write it): the owner's one-way note, its timeline event and the
+// addComplaintNote: the owner's one-way note, its timeline event and the
 // student's notification in one transaction; every refusal writes nothing. Rows are
 // committed, so each test makes its own students and looks only at their rows.
 const db = testPool();

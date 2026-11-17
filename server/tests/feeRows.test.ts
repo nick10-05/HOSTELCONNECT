@@ -5,8 +5,7 @@ import { createDueFeeRows, FEE_ROW_DAYS_AHEAD } from "../src/jobs/feeRows";
 import { nthDueDate } from "../src/services/fees";
 import { inRollback, insertOwner, testPool } from "./helpers/db";
 
-// The fee-rows job (day 9, Claude at Nikhil's request; section 12 lists "fee row creation
-// by joining date" under "You write"). The job works on every active student, so every
+// The fee-rows job (day 9). The job works on every active student, so every
 // test runs in a transaction that is rolled back, and uses dates in 1997 and 1998: other
 // files' students joined years later, so they have no due dates then, and every count here
 // is exact. (Another file's uncommitted rows for the same student cannot exist: these

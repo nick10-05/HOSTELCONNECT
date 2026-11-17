@@ -12,8 +12,7 @@ import {
 import { addDays } from "../src/lib/dates";
 import { inSnapshot, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// The owner's daily digest (day 10, Claude at Nikhil's request; section 12 lists "digest
-// content" under "You write"). The counts cover every complaint, request and fee in the
+// The owner's daily digest (day 10). The counts cover every complaint, request and fee in the
 // table, and other test files add those at the same time, so database tests run in one
 // snapshot that is rolled back (inSnapshot) and compare counts before and after their own
 // rows. Fee dates are in 1998, where no other file has fees.
