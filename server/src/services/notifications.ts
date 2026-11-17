@@ -75,7 +75,7 @@ export async function notify(
   return rowCount ?? 0;
 }
 
-// ---- The bell (Claude) ----
+// ---- The bell ----
 
 export type NotificationItem = {
   id: number;

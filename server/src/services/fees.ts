@@ -48,8 +48,7 @@ export function nextDueDate(joiningDate: string, today: string): string {
   return nthDueDate(joiningDate, n);
 }
 
-// ---- A student's own fees (day 9; section 12 lists "balance calculation" under "You
-// write"; Claude writes it at Nikhil's request, stub, contract and tests first) ----
+// ---- A student's own fees (day 9) ----
 
 export type FeeStatus = "pending" | "paid";
 
@@ -115,7 +114,7 @@ export async function getMyFees(db: Queryable, studentId: number, today: string)
   };
 }
 
-// ---- The owner's fee list and marking a fee (Claude) ----
+// ---- The owner's fee list and marking a fee ----
 
 // A fee row's state on a given day, computed, never stored (section 3):
 //   paid      status 'paid'

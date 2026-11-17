@@ -1,9 +1,8 @@
 import type { Queryable } from "../db";
 import { POLL_NOT_FOUND } from "./returnPolls";
 
-// Food counts for the cook (design doc, sections 2 and 9; day 8, written by Claude at
-// Nikhil's request; the return-poll filter on day 9). tests/foodCounts.test.ts describes
-// getFoodCounts.
+// Food counts for the cook (design doc, sections 2 and 9; day 8; the return-poll filter on
+// day 9). tests/foodCounts.test.ts describes getFoodCounts.
 
 export type FoodCount = { veg: number; nonVeg: number; total: number };
 export type BuildingFoodCount = FoodCount & { buildingId: number; buildingName: string };

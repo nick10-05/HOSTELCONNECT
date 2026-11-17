@@ -56,8 +56,7 @@ const POLL_COLUMNS = `id, title, status, created_at AS "createdAt", closed_at AS
 
 export const POLL_NOT_FOUND = () => new HttpError(404, "poll_not_found", "That poll does not exist.");
 
-// ---- Results (section 12 lists these under "You write"; Claude writes them at Nikhil's
-// request, stub, contract and tests first) ----
+// ---- Results ----
 
 // GET /api/return-polls/:id: one poll (open or closed) and who has returned, who has not
 // yet, and who has not answered.
@@ -144,7 +143,7 @@ export async function getPollCounts(db: Queryable, pollIds: number[]): Promise<M
   return new Map(rows.map(({ pollId, ...counts }) => [pollId, counts]));
 }
 
-// ---- Starting, closing and answering (Claude) ----
+// ---- Starting, closing and answering ----
 
 export type PollResponse = "returned" | "not_yet";
 
@@ -273,7 +272,7 @@ export async function answerPoll(db: Db, pollId: number, studentId: number, resp
   return inTransaction(db, (c) => answerPollInTransaction(c, pollId, studentId, response));
 }
 
-// ---- Lists (Claude) ----
+// ---- Lists ----
 
 export type PollWithCounts = ReturnPoll & { counts: PollCounts };
 

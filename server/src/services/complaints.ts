@@ -84,7 +84,7 @@ export const PHOTO_KEEP_HOURS = 48;
 // FOR UPDATE), as every other path that changes a student does, then count and insert.
 // The lock also stops a move-out happening between the check and the insert.
 //
-// The photo (day 8, written by Claude): only after the student lock and the three limits,
+// The photo (day 8): only after the student lock and the three limits,
 // so a refused complaint never uploads anything. Then, still in the same transaction:
 //   - uploads off (no storage, or the usage guard at UPLOADS_OFF_PERCENT): the whole
 //     request is refused, never silently saved without its photo (decided on day 8);

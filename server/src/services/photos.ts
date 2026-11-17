@@ -14,7 +14,6 @@ export type PhotoFields = {
 };
 
 // A short-lived link to the photo for one view of a complaint's detail page, or null.
-// Written by Claude at Nikhil's request (section 12 lists it under "You write").
 //
 // null, with nothing asked of storage and nothing counted, when:
 //   - the complaint has no photo, or it is deleted (deletedAt set);
