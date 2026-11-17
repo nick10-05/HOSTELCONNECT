@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 10
     environment: production
     env:
-      # The public address of the live app (docs/progress.md); not a secret.
+      # The public address of the live app; not a secret.
       APP_URL: https://hostelconnect-o8e6.onrender.com
       # The same value as JOB_SECRET in Render's settings.
       JOB_SECRET: ${{ secrets.JOB_SECRET }}
