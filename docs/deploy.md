@@ -71,7 +71,9 @@ Verifying Supabase's certificate is a later hardening step.
 
 Repository → Settings → Environments → **New environment** `production` → add secrets:
 `MIGRATION_DATABASE_URL`, `DATABASE_URL`, and `AGE_PUBLIC_KEY` (the `age1…` line).
-Only the migrate and backup workflows use this environment. A `BACKUP_DATABASE_URL`
+The migrate, backup, run-jobs and database activity check workflows use this environment
+(run-jobs only for `JOB_SECRET`). The backup also reads `HEALTHCHECKS_PING_URL` when it is
+set (step 6a). A `BACKUP_DATABASE_URL`
 secret from before 2026-11-13 is no longer read and can be deleted.
 
 ## 3. Create the tables
@@ -194,6 +196,60 @@ that signed up keep working.
 The repository is public, so anyone signed in to GitHub can download these artifacts;
 without your private key they are unreadable. GitHub keeps each for 90 days, and pauses
 nightly runs after 60 days without a commit (it emails first; re-enable in Actions).
+
+## 6a. Missed-backup alert (Healthchecks.io, free)
+
+GitHub emails when a backup run fails, but not when a run never starts: it sometimes drops
+scheduled runs, and it switches schedules off after 60 days without a commit. A free
+Healthchecks.io check covers both: each backup run reports its start and its end, and
+Healthchecks.io emails when a run fails or when none has finished by the next morning.
+
+1. Sign up at healthchecks.io (Hobbyist plan: free, 20 checks, no card).
+2. Add a check named `HostelConnect backup`:
+   - Schedule: **Cron**, `30 21 * * *`, time zone **UTC** (the workflow's own schedule).
+   - Grace time: **12 hours**. GitHub starts the nightly run 3 to 6.5 hours late (seen in
+     November 2026), so a shorter grace would raise false alarms.
+3. Copy the check's ping URL (`https://hc-ping.com/<uuid>`). Treat it as a secret:
+   anyone holding it can report a backup that never ran.
+4. GitHub → Settings → Environments → `production` → add the secret
+   `HEALTHCHECKS_PING_URL` with that URL.
+5. Actions → **Backup database** → Run workflow. The check turns green ("up"), and the
+   run's last step says "Reported to Healthchecks.io: success".
+
+Without the secret the two Healthchecks.io steps do nothing. A Healthchecks.io outage only
+adds a warning to the run; the backup itself never fails because of it. To replace the
+URL (it leaked, or the check was recreated): Healthchecks.io → the check → Settings →
+change the ping URL, then update the GitHub secret.
+
+## 6b. Hourly jobs on Cloudflare's clock (optional, free)
+
+GitHub's hourly "Run jobs" ran about 24 times in 7 days in November 2026. A Cloudflare
+Worker (`ops/cloudflare-jobs/`) makes the same call at 37 minutes past every hour; GitHub's
+workflow stays as the fallback (a second call in an hour does nothing). The Worker has no
+public address and no fetch handler: only its schedule starts it.
+
+1. Sign up at cloudflare.com (Workers Free plan, no card) and turn on two-factor sign-in.
+2. Optional: a second Healthchecks.io check, `HostelConnect jobs`: Cron `37 * * * *`, UTC,
+   grace 2 hours. Copy its ping URL.
+3. In Git Bash, from `ops/cloudflare-jobs`:
+   ```bash
+   npx wrangler login
+   npx wrangler secret put JOB_SECRET
+   npx wrangler secret put HEALTHCHECKS_PING_URL
+   npx wrangler deploy
+   ```
+   Each `secret put` asks for the value at a hidden prompt: paste Render's `JOB_SECRET`,
+   then the ping URL (skip that one without step 2). The first `secret put` may offer to
+   create the Worker; say yes.
+4. Cloudflare → Workers → `hostelconnect-jobs` → Settings: the trigger shows
+   `37 * * * *`, and Domains & Routes shows no workers.dev address.
+5. After the next :37, Logs show `Jobs ran: {...}` and the check turns green.
+
+Tests: `node --test ops/cloudflare-jobs/worker.test.mjs`.
+
+When `JOB_SECRET` changes, set it in Render, GitHub and here (`npx wrangler secret put
+JOB_SECRET`). To stop the Worker: Cloudflare → the Worker → Settings → Triggers → delete
+the cron, or `npx wrangler delete`.
 
 ## Recovery: the database is lost or damaged
 

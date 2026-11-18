@@ -8,6 +8,13 @@ name: Backup database
 # download its artifacts.
 #
 # Restore drill and restoring a backup: docs/RECOVERY.md (sections 5 and 9).
+#
+# Missed-backup alert (docs/deploy.md, "Missed-backup alert"): with the secret
+# HEALTHCHECKS_PING_URL set, each run tells Healthchecks.io when it starts and whether it
+# ended well. Healthchecks.io emails when a run fails, or when no run finishes at all by
+# the next morning: a run GitHub silently dropped, or schedules switched off after 60 days
+# without a commit, which GitHub's own failure emails never report. Without the secret
+# these steps do nothing, and a Healthchecks.io outage never fails the backup.
 # GitHub turns off scheduled workflows in a public repository after 60 days without
 # any commit; it emails a warning first. Re-enable it from the Actions tab.
 on:
@@ -36,11 +43,22 @@ jobs:
       # (server/scripts/backup-login.ts). The password and URL are hidden in the log.
       MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
       AGE_PUBLIC_KEY: ${{ secrets.AGE_PUBLIC_KEY }}
+      # Not a database credential, but anyone holding it could report a backup that never
+      # ran, so it is a secret too. curl reads it from standard input (-K -), so it is
+      # never on a command line; GitHub masks it in the log.
+      HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
     steps:
       - name: Check the secrets are set
         run: |
           test -n "$MIGRATION_DATABASE_URL" || { echo "MIGRATION_DATABASE_URL secret is missing"; exit 1; }
           case "$AGE_PUBLIC_KEY" in age1*) ;; *) echo "AGE_PUBLIC_KEY must be an age1... public key"; exit 1;; esac
+
+      - name: Tell Healthchecks.io the backup started
+        run: |
+          [ -n "$HEALTHCHECKS_PING_URL" ] || { echo "No HEALTHCHECKS_PING_URL: no missed-backup alert."; exit 0; }
+          printf 'url = "%s/start"\n' "$HEALTHCHECKS_PING_URL" |
+            curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null -K - ||
+            echo "::warning::Could not reach Healthchecks.io; the backup goes on."
 
       - uses: actions/checkout@v4
 
@@ -99,3 +117,17 @@ jobs:
         if: always()
         working-directory: server
         run: npx tsx scripts/backup-login.ts close
+
+      # Last, after the login is locked: success only when every step above succeeded,
+      # otherwise a failure, so Healthchecks.io emails at once.
+      - name: Tell Healthchecks.io how the backup ended
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          [ -n "$HEALTHCHECKS_PING_URL" ] || exit 0
+          if [ "$OUTCOME" = "success" ]; then suffix=""; else suffix="/fail"; fi
+          printf 'url = "%s%s"\n' "$HEALTHCHECKS_PING_URL" "$suffix" |
+            curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null -K - ||
+            { echo "::warning::Could not reach Healthchecks.io."; exit 0; }
+          echo "Reported to Healthchecks.io: $OUTCOME"
