@@ -1642,15 +1642,95 @@ from here, read-only: the docs, workflows, local configuration and GitHub's run 
 | Production database is the Supabase project `ycdrzvxytwqcbbufshsh` | Verified | The hostel created on the live site on 2026-11-17 appeared in that project's SQL Editor |
 | Local development uses Docker Postgres; `hostelconnect-dev` (`iurrardpekxiascrncjz`) is photo storage for local tests only | Verified | `.env` (hosts and project id only, no secrets read out) |
 | Nightly backup runs and passes | Verified | Latest run 2026-11-18 03:05 UTC, green; no migration since |
-| Restore tested | Partly | Production backups restored locally on 2026-11-07 and 2026-11-09 (migration 012). Not since 013–024, and never into a new Supabase project |
+| Restore tested | Yes, locally | Drill on the newest production backup passed on 2026-11-18 at migration 024 (below). Never yet into a new Supabase project |
 | Supabase transfer keeps the project id and address | Not known | Supabase's docs do not say; read the transfer preview on the day |
 | The project has no GitHub integration or log drains (both block a transfer) | Not known | The browser was signed out of Supabase; checked on the day |
 
 Not done, because each needs the owner or the developer in person:
 
 - The owner's Supabase account and organization (SNS Hostel email), and the transfer.
-- A restore drill on the current backup (needs the private key).
 - Giving the owner a copy of the backup key.
 - Moving Render, GitHub, Google or Brevo (optional; HANDOVER.md, steps 4 and 5).
 - A manual backup run: skipped, since the browser was signed out of GitHub and the night's
   backup had already passed at the current migration.
+
+### Restore drill on the newest production backup (2026-11-18)
+
+`ops/restore-drill.sh` on `hostelconnect-2026-11-18T0305Z.dump.age` (115,653 bytes, the
+nightly run of 2026-11-18 03:05 UTC), with the real key, into the local `restore_drill`
+database: "Drill passed", exit 0, and `restore_drill` dropped again.
+
+| Check | Result |
+|---|---|
+| Last migration in the backup | `024_delete_with_history.sql`, the newest file in `server/migrations/`; 24 rows in `schema_migrations` |
+| Rows per table | 2 hostels, 2 users, 1 building, 1 floor, 1 room, 1 bed, 1 stay, 1 structure deletion, 1 deletion code; every other table empty. Matches production after the launch checks (the owner and Test Student; TEST Block, Floor 1, T101, bed A; T102's deletion) |
+
+The downloaded backup was deleted afterwards. The local `hostelconnect-db` container was
+started only for the drill and stopped again; another project's database on port 5432
+was paused for it and started again.
+
+### Review of the activity check and the schedules (2026-11-18)
+
+Changes to `db-activity.yml` (not committed):
+
+- `DATABASE_URL` is now set only on the two steps that use it, not on the whole job, so
+  the `npm ci` step never runs with the secret in its environment.
+- A malformed secret prints "DATABASE_URL is not a valid URL." instead of Node's error,
+  which would quote the value.
+- A 15 s query timeout, an `error` listener on the client (a dropped connection no
+  longer crashes Node with the error text), and the application name
+  `db-activity-check`, so the connection is recognisable in Supabase.
+
+`docs/deploy.md` now lists every workflow that uses the `production` environment.
+
+Re-tested locally, the script taken from the parsed YAML: success against a throwaway
+Postgres 17 (exit 0); failures exit 1 and print only a code: invalid URL, closed port
+(`ECONNREFUSED`), wrong password (`28P01`), SSL refused (`unknown`). A dummy password in
+the URL appeared in none of the outputs.
+
+| Workflow | Schedule (UTC) | Concurrency group | Actually ran (GitHub's history) |
+|---|---|---|---|
+| Backup database | `30 21 * * *` (03:00 IST) | `backup` | Every night, but 3 to 6.5 hours late (00:52 to 04:07 UTC); green since 2026-11-16 |
+| Run jobs | `7 * * * *` (hourly) | `jobs` | 24 times in the last 7 days instead of 168, gaps up to 11 hours; no failures |
+| Database activity check | `47 9 * * *` (15:17 IST) | `db-activity` | Not yet on GitHub |
+| CI, Migrate | push and PR; manual | `ci-<ref>`, `migrate-production` | Not scheduled |
+
+No clash: each workflow has its own concurrency group and a different time, and an
+overlap would do no harm (`SELECT 1` takes one connection for well under a second, as a
+different role from the backup's). All four existing workflows are "active" on GitHub.
+
+GitHub's late and skipped scheduled runs are a known limit of free scheduled workflows,
+not a mistake in the cron lines. For pausing it does not matter: the database is still
+reached several times a day. It does mean fee reminders, the owner's digest and photo
+deletion can run hours late; every job catches up on its next run.
+
+## Missed-backup alert with Healthchecks.io (2026-11-18)
+
+| Part | Status | How it was verified |
+|---|---|---|
+| `backup.yml`: a "started" ping after the secret check, and a last step (`if: always()`) that reports success, or `/fail` when any step failed or the run was cancelled | Written, not committed | The YAML parses; the two step scripts, taken from it, run against a local stand-in server: it received `/start`, the plain URL for success, `/fail` for failure and for cancelled |
+| No secret set | Checked | Both steps print one line and exit 0, so merging before the secret exists changes nothing |
+| Healthchecks.io unreachable | Checked | A warning, exit 0: the backup never fails because of the alert. The ping URL is passed to curl on standard input and appeared in no output |
+| `docs/deploy.md`, step 6a | Written | Sign-up, the check (cron `30 21 * * *` UTC, 12 hours' grace for GitHub's late starts), the secret `HEALTHCHECKS_PING_URL`, a first run by hand |
+
+Not done, waiting for approval: the Healthchecks.io account and check, the GitHub secret,
+and committing. Not verifiable locally: that GitHub's `job.status` reads "failure" in the
+last step after an earlier step failed (GitHub documents it so); the first real run
+shows it.
+
+## Hourly jobs from a Cloudflare Worker (2026-11-18)
+
+| Part | Status | How it was verified |
+|---|---|---|
+| `ops/cloudflare-jobs/worker.mjs` | Written, not deployed or committed | At :37 every hour: a Healthchecks.io "start" ping (optional), `/api/health` until the app is awake (4 tries, 60 s each, 10 s apart), `POST /api/internal/run-jobs` with `X-Job-Secret`, then success or `/fail`. Scheduled handler only, no fetch handler. Logs and pings hold status codes and job counts only; a failure's reason is written by the Worker, never copied from an error |
+| `ops/cloudflare-jobs/wrangler.toml` | Written | `workers_dev = false`, `preview_urls = false`, cron `37 * * * *`, `APP_URL` as a plain variable; secrets only through `wrangler secret put`. `wrangler deploy --dry-run` (4.164.0) built it with no warning: 3.44 KiB, one variable binding |
+| `ops/cloudflare-jobs/worker.test.mjs` | 12 tests pass (`node --test`) | No fetch handler; the order of calls and the secret header; a sleeping server; giving up after 4 health checks without calling the jobs; 401, 429, 500 and no answer as failures; refusing a missing or short secret and a non-https address; no pings without the URL; Healthchecks.io down never fails the jobs; an unexpected error reported without its text. Every test checks that neither the secret nor the ping URL appears in a log line or a ping |
+| `docs/deploy.md` step 6b, `docs/RECOVERY.md` sections 1 and 7 | Written | Setup, checks after deploying, and `JOB_SECRET` now kept in three places |
+
+Not verified: the Worker in Cloudflare's own runtime. `wrangler dev` could not start its
+local runtime on this machine ("spawn UNKNOWN"), so the first real run after deploying is
+the first run in workerd. Also unknown: whether network waits count against the free
+plan's 10 ms CPU per scheduled run (expected not to), and how punctual Cloudflare's cron
+is in practice. GitHub's `jobs.yml` is unchanged and stays as the fallback.
+
+Not done, waiting for approval: the Cloudflare account, the secrets, deploying.

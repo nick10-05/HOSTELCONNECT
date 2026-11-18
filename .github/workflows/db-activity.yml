@@ -11,6 +11,10 @@ name: Database activity check
 # the fewest rights. The URL is never printed: GitHub masks the secret, and on failure
 # only the error code is shown, never the error text.
 #
+# GitHub starts scheduled runs late, often by hours, and sometimes skips one (2026-11-18:
+# the hourly jobs ran about 24 times in 7 days). A late or skipped day is harmless: a
+# pause needs 7 days without activity.
+#
 # A failed run (database paused or unreachable, wrong secret) makes GitHub email the
 # repository owner. Free: a public repository's Actions minutes cost nothing. GitHub
 # turns off scheduled workflows in a public repository after 60 days without any commit;
@@ -32,10 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    # DATABASE_URL is given only to the two steps that need it, not to the install step,
+    # so no package's code ever runs with the secret in its environment.
     steps:
       - name: Check the secret is set
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is missing"; exit 1; }
 
@@ -55,16 +61,33 @@ jobs:
 
       - name: Run SELECT 1
         working-directory: server
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           node - <<'EOF'
           const { Client } = require("pg");
           // Supabase's certificate is signed by its own CA: encrypt, as the app does
           // (sslmode=no-verify), unless the URL turns encryption off.
-          const url = new URL(process.env.DATABASE_URL);
+          let url;
+          try {
+            url = new URL(process.env.DATABASE_URL);
+          } catch {
+            // Node's own message would quote the whole value.
+            console.log("DATABASE_URL is not a valid URL.");
+            process.exit(1);
+          }
           if (url.searchParams.get("sslmode") !== "disable") url.searchParams.set("sslmode", "no-verify");
 
           async function once() {
-            const client = new Client({ connectionString: url.toString(), connectionTimeoutMillis: 15000 });
+            const client = new Client({
+              connectionString: url.toString(),
+              connectionTimeoutMillis: 15000,
+              query_timeout: 15000,
+              application_name: "db-activity-check",
+            });
+            // A dropped connection is reported here; without a listener Node would crash
+            // and print the error's text.
+            client.on("error", () => {});
             try {
               await client.connect();
               const { rows } = await client.query("SELECT 1 AS ok");

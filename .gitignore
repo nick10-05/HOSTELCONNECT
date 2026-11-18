@@ -25,3 +25,6 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+# Cloudflare Worker (ops/cloudflare-jobs): wrangler's local state, and local secrets if ever made
+.wrangler/
+.dev.vars*

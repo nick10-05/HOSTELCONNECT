@@ -29,8 +29,8 @@ they are moved too.
    check** runs are green.
 2. Download the newest backup and run the restore drill (`docs/RECOVERY.md`, section 9).
    It must end with "Drill passed" and show the newest file in `server/migrations/` as the
-   last migration. The last drills on a production backup were on 2026-11-07 and
-   2026-11-09, at migration 012; production is now at 024.
+   last migration. The last drill on a production backup passed on 2026-11-18, at
+   migration 024; repeat it if a migration has run since.
 3. Give the owner a copy of `hostelconnect-backup.key` (in person, on a USB stick or
    through a password manager's sharing; never by email or chat). Without it the backups
    cannot be opened by anyone else.

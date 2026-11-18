@@ -1,0 +1,28 @@
+# Cloudflare Worker that runs HostelConnect's hourly jobs (docs/deploy.md, step 6b).
+# Deploy from this folder: npx wrangler deploy. Free plan; no card.
+name = "hostelconnect-jobs"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+
+# No public address: neither the workers.dev subdomain nor preview links. The Worker has
+# no fetch handler either, so the schedule below is the only way to start it.
+workers_dev = false
+preview_urls = false
+
+[triggers]
+# 37 minutes past every hour (UTC): half an hour after GitHub's own "Run jobs" (:07),
+# which stays as a fallback.
+crons = ["37 * * * *"]
+
+[vars]
+# The live app's public address; not a secret.
+APP_URL = "https://hostelconnect-o8e6.onrender.com"
+
+# Secrets, set once with `npx wrangler secret put <NAME>` (typed at a hidden prompt,
+# never written here):
+#   JOB_SECRET             the same value as JOB_SECRET in Render and GitHub
+#   HEALTHCHECKS_PING_URL  optional: a second Healthchecks.io check for the hourly jobs
+
+[observability]
+# Workers Logs: each run's lines (status codes and job counts only) for a few days.
+enabled = true
