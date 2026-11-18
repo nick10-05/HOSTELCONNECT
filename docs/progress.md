@@ -1606,3 +1606,51 @@ into `BREVO_API_KEY` on Render.
 
 Still open before sign-up opens: the operator's details in the Terms and Privacy Policy,
 the lawyer's review, then `SIGNUPS_OPEN=true`.
+
+## Daily database activity check (2026-11-18)
+
+Supabase pauses a free project after 7 days without activity. The nightly backup and the
+hourly jobs already reach the database, but the jobs go through the app on Render, and both
+depend on other moving parts. A third, direct check now runs once a day.
+
+| Part | Status | How it was verified |
+|---|---|---|
+| `.github/workflows/db-activity.yml` ("Database activity check") | Written, not committed | Daily at 09:47 UTC (15:17 IST) and by hand ("Run workflow"). Environment `production`, the existing `DATABASE_URL` secret (role `hostel_app`, the fewest rights). Installs the server's runtime packages with no install scripts, then runs `SELECT 1` with `pg`: no table read, nothing written. Encrypts as the app does (`sslmode=no-verify`). Two tries 30 s apart; a failure prints only the error code and fails the run, which emails the owner |
+| The YAML | Checked | Parsed with `yaml`: schedule, the one secret, five steps |
+| The script | Checked locally | Against a throwaway Postgres 17 container: "SELECT 1 answered", exit 0. Against a closed port with a dummy password in the URL: two "failed (code ECONNREFUSED)" lines, exit 1, and the password nowhere in the output |
+| Cost | ₹0 | Public repository: GitHub Actions minutes are free. One short run a day |
+
+Not changed: the app's code, the backup and jobs workflows, the database, Render.
+
+Not yet known:
+
+- Whether the GitHub `DATABASE_URL` secret is reachable from GitHub's runners. The migrate
+  workflow has the secret, but this is the first workflow to connect with it. The first
+  manual run after merging will show it; if it fails with a network code, the secret holds
+  Supabase's direct (IPv6) address and should be the session pooler's, as in Render.
+- Whether Supabase counts a plain `SELECT 1` as activity. Its exact rule is not published
+  in detail; the backup and the jobs keep running alongside, so this check adds to them.
+
+## Handover to the hostel owner (2026-11-18)
+
+`docs/HANDOVER.md` is the guide for giving the SNS Hostel owner their own accounts: what
+each part is, the order to move them in, checks after each step, and how to undo. Done
+from here, read-only: the docs, workflows, local configuration and GitHub's run history.
+
+| Fact | Status | Source |
+|---|---|---|
+| Production database is the Supabase project `ycdrzvxytwqcbbufshsh` | Verified | The hostel created on the live site on 2026-11-17 appeared in that project's SQL Editor |
+| Local development uses Docker Postgres; `hostelconnect-dev` (`iurrardpekxiascrncjz`) is photo storage for local tests only | Verified | `.env` (hosts and project id only, no secrets read out) |
+| Nightly backup runs and passes | Verified | Latest run 2026-11-18 03:05 UTC, green; no migration since |
+| Restore tested | Partly | Production backups restored locally on 2026-11-07 and 2026-11-09 (migration 012). Not since 013–024, and never into a new Supabase project |
+| Supabase transfer keeps the project id and address | Not known | Supabase's docs do not say; read the transfer preview on the day |
+| The project has no GitHub integration or log drains (both block a transfer) | Not known | The browser was signed out of Supabase; checked on the day |
+
+Not done, because each needs the owner or the developer in person:
+
+- The owner's Supabase account and organization (SNS Hostel email), and the transfer.
+- A restore drill on the current backup (needs the private key).
+- Giving the owner a copy of the backup key.
+- Moving Render, GitHub, Google or Brevo (optional; HANDOVER.md, steps 4 and 5).
+- A manual backup run: skipped, since the browser was signed out of GitHub and the night's
+  backup had already passed at the current migration.
