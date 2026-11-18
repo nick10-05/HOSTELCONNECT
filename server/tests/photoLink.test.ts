@@ -5,7 +5,7 @@ import { issuePhotoLink, type PhotoFields } from "../src/services/photos";
 import { fakeStorage } from "./helpers/fakeStorage";
 import { inRollback, testPool } from "./helpers/db";
 
-// issuePhotoLink (Claude, at Nikhil's request; section 12 lists it under "You write").
+// issuePhotoLink.
 // Fake storage and a fixed clock; the egress counters use months in 1997, which no other
 // test touches. Most tests run in a rolled-back transaction; the race test commits, on
 // its own month.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nextDueDate, nthDueDate } from "../src/services/fees";
 
-// The due-date rule in src/services/fees.ts (you write it): joining date plus n months,
+// The due-date rule in src/services/fees.ts: joining date plus n months,
 // day clamped to the month's last day, always counted from the joining date.
 
 // The first `count` due dates for one joining date.

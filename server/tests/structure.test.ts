@@ -5,7 +5,7 @@ import { HttpError } from "../src/lib/http";
 import * as structure from "../src/services/structure";
 import { inRollback, insertStay, insertStructure, testPool } from "./helpers/db";
 
-// The structure rules in src/services/structure.ts (you write those). Each test runs
+// The structure rules in src/services/structure.ts. Each test runs
 // in a transaction that is rolled back, so nothing is left in the test database.
 const db = testPool();
 afterAll(() => db.end());

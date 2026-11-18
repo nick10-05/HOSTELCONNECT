@@ -4,8 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { getMyFees } from "../src/services/fees";
 import { inRollback, insertOwner, testPool } from "./helpers/db";
 
-// A student's own fees (day 9, Claude at Nikhil's request; section 12 lists "balance
-// calculation" under "You write"). Rows are written straight to the fees table, so these
+// A student's own fees (day 9). Rows are written straight to the fees table, so these
 // tests do not depend on the fee-rows job. Each test rolls back.
 const db = testPool();
 afterAll(() => db.end());

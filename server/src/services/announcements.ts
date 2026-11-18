@@ -46,7 +46,7 @@ const COLUMNS = `id, title, body, is_urgent AS "isUrgent", is_pinned AS "isPinne
 
 const NOT_FOUND = () => new HttpError(404, "announcement_not_found", "That announcement does not exist.");
 
-// ---- Posting (you write the core) ----
+// ---- Posting ----
 
 // Inside the caller's transaction (the caller owns BEGIN, COMMIT and ROLLBACK, as with
 // reactivateInTransaction): inserts the announcement by `ownerId` with `input`, then
@@ -92,7 +92,7 @@ export async function postAnnouncement(db: Db, ownerId: number, input: NewAnnoun
   return inTransaction(db, (c) => postAnnouncementInTransaction(c, ownerId, input));
 }
 
-// ---- Deleting (you write the core) ----
+// ---- Deleting ----
 
 // Inside the caller's transaction: deletes the announcement and every notification whose
 // dedup_key is announcementKey(id), for every user (section 3: "deleting an announcement
@@ -114,7 +114,7 @@ export async function deleteAnnouncement(db: Db, id: number): Promise<void> {
   return inTransaction(db, (c) => deleteAnnouncementInTransaction(c, id));
 }
 
-// ---- Editing (Claude) ----
+// ---- Editing ----
 
 // Any of the four fields; the ones left out keep their value. The route checks that at
 // least one is given, and title and body as when posting.
@@ -143,7 +143,7 @@ export async function updateAnnouncement(
   return rows[0];
 }
 
-// ---- Reading (Claude) ----
+// ---- Reading ----
 
 // One page of announcements, pinned first, then newest (section 5), ties by id (newest
 // first); and how many there are in all. The same list for the owner and the students.

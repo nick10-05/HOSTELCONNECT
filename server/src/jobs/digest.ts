@@ -3,8 +3,7 @@ import { hostelHour, hostelToday } from "../lib/dates";
 import { notify } from "../services/notifications";
 
 // The owner's daily digest (design doc, sections 9 and 10), run by POST /api/internal/run-jobs
-// every hour. Written by Claude at Nikhil's request (section 12 lists "digest content" under
-// "You write"). tests/digest.test.ts describes it.
+// every hour. tests/digest.test.ts describes it.
 //
 // Section 9: "The owner receives one digest notification a day, created by the first job run
 // after 8 am India time: pending complaints, pending rejoin requests, fees due in 3 days, and

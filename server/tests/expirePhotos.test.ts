@@ -8,8 +8,7 @@ import { fakeStorage, type FakeStorage } from "./helpers/fakeStorage";
 import { asHostel } from "./helpers/hostels";
 import { rollbackDb } from "./helpers/rollbackDb";
 
-// The expire-photos job (Claude, at Nikhil's request; section 12 lists "expiry and retry
-// logic" under "You write"). Fake storage and a fixed clock in 1998: no other test file
+// The expire-photos job. Fake storage and a fixed clock in 1998: no other test file
 // has photos due then, and every check looks at this test's own photos only. Most tests
 // run the job on rollbackDb (its transactions become savepoints, all rolled back); the
 // race test commits, holding the photo-job lock (tests/helpers/db.ts) while it does.

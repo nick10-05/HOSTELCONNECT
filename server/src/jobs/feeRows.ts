@@ -1,8 +1,7 @@
 import type { Queryable } from "../db";
 
 // The fee-rows job (design doc, sections 3, 9 and 10), run by POST /api/internal/run-jobs
-// every hour. Written by Claude at Nikhil's request (section 12 lists "fee row creation by
-// joining date" under "You write"). tests/feeRows.test.ts describes it.
+// every hour. tests/feeRows.test.ts describes it.
 
 // How far ahead a row is created: a fee row appears once its due date is within 7 days
 // (section 9), so the student sees it as "upcoming" a week early.

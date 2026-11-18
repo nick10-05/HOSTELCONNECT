@@ -785,8 +785,8 @@ export async function reactivateStudent(
 export type StudentEdit = Omit<AdmissionInput, "buildingId" | "roomId" | "bedId" | "joiningDate">;
 
 // Corrects a student's details after admission (design doc, section 5: PATCH
-// /api/students/:id). Claude wrote it at Nikhil's request; tests/updateStudent.test.ts says
-// what it must do.
+// /api/students/:id). tests/updateStudent.test.ts says what it must
+// do.
 //
 // - One transaction. Lock the student's users row first (SELECT ... FOR UPDATE, as
 //   deactivateStudent and transferStudent do), so an edit and a move-out cannot interleave.
@@ -895,7 +895,7 @@ export async function updateStudent(db: Db, studentId: number, input: StudentEdi
 // ---- Password reset (owner only) ----
 
 // Gives an active student a new temporary password, for one who forgot theirs (design doc,
-// section 5: POST /api/students/:id/reset-password). Nikhil writes it; the tests in
+// section 5: POST /api/students/:id/reset-password). The tests in
 // tests/resetStudentPassword.test.ts say what it must do.
 //
 // - A new password from generateTemporaryPassword(), hashed with hashPassword() before the

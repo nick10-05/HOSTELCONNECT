@@ -6,7 +6,7 @@ import { TEMP_PASSWORD_ALPHABET, TEMP_PASSWORD_LENGTH } from "../src/lib/tempPas
 import { resetStudentPassword } from "../src/services/students";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// resetStudentPassword in src/services/students.ts (Nikhil writes it). One statement, so
+// resetStudentPassword in src/services/students.ts. One statement, so
 // every test runs inside a transaction that is rolled back.
 const db = testPool();
 afterAll(() => db.end());

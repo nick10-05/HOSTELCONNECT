@@ -2,8 +2,7 @@ import type { Queryable } from "../db";
 import { notify } from "../services/notifications";
 
 // The fee-reminders job (design doc, sections 9 and 10), run by POST /api/internal/run-jobs
-// every hour, after the fee-rows job. Written by Claude at Nikhil's request (section 12 lists
-// "reminder timing" under "You write"). tests/feeReminders.test.ts describes it.
+// every hour, after the fee-rows job. tests/feeReminders.test.ts describes it.
 //
 // Section 9: "Each student is reminded once 3 days before the due date, on the due date, and
 // 3 days after if still pending." Each reminder belongs to a window of days, not one day, so a

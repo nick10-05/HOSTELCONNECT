@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { NOTIFICATION_DAYS_KEPT, pruneNotifications } from "../src/jobs/pruneNotifications";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// The prune job (day 10, Claude). It looks at every notification, so each test runs in a
+// The prune job (day 10). It looks at every notification, so each test runs in a
 // transaction that is rolled back, with notifications dated in 1995 and a clock in 1995:
 // every other file's notifications are years newer, so nothing else is old enough and every
 // count here is exact.

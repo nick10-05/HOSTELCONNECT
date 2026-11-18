@@ -3,7 +3,7 @@ import { HttpError } from "../src/lib/http";
 import { listNotifications, markAllRead, markRead } from "../src/services/notifications";
 import { insertOwner, testPool } from "./helpers/db";
 
-// The bell's services (Claude): listNotifications, markRead and markAllRead. Every test
+// The bell's services: listNotifications, markRead and markAllRead. Every test
 // makes its own people, and each person only ever sees their own notifications.
 const db = testPool();
 afterAll(() => db.end());

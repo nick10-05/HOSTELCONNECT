@@ -8,7 +8,7 @@ import {
 } from "../src/services/complaints";
 import { insertStudent, testPool } from "./helpers/db";
 
-// setComplaintPriority (Claude): only the priority changes, and nothing the student could
+// setComplaintPriority: only the priority changes, and nothing the student could
 // see. Rows are committed, so each test makes its own students and looks only at them.
 const db = testPool();
 afterAll(() => db.end());

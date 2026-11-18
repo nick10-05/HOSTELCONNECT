@@ -107,7 +107,7 @@ Photos are not in backups (they live 48 hours), so restored complaints say "phot
 
 **After any restore** tell the owner which changes since the backup's date must be
 entered again (usually that day's fee payments), and write a short note in
-`docs/progress.md`: what broke, which backup, what was re-entered.
+the log at the end of this guide (section 11): what broke, which backup, what was re-entered.
 
 ## 6. The owner forgot his password
 
@@ -191,7 +191,7 @@ rm local-seeded.dump.age
 The dump is made exactly as the nightly backup makes it, and encrypted to the same key.
 Compare the row counts with the local database
 (`docker exec -i hostelconnect-db psql -U hostel_admin -d hostelconnect -c "SELECT count(*) FROM users"`).
-Record each drill in `docs/progress.md`: date, file, rows per table, result.
+Record each drill in section 11: date, file, rows per table, result.
 
 **Rehearsing the move to hostels** (multi-tenant phase 6), before migrations 013 to 022
 reach production. With the newest production backup, in Git Bash from the repository
@@ -208,7 +208,7 @@ account with a password is found by sign-in, the app sees all accounts inside ho
 and is refused outside any hostel, and nobody is marked under 18. It prints counts and
 PASS or FAIL only, never a name or an email. It ends with "Every check passed" or exits
 with an error. Drop `restore_drill` afterwards, and record the result in
-`docs/progress.md`.
+section 11.
 
 ## 10. Monthly check (15 minutes)
 
@@ -225,3 +225,13 @@ with an error. Drop `restore_drill` afterwards, and record the result in
       emails first; Actions → the workflow → Enable).
 - [ ] You can still sign in to GitHub, Render and Supabase, and both copies of the backup
       key are where this guide says.
+
+## 11. Drill and incident log
+
+Newest first. One row per restore drill or real restore.
+
+| Date | What | Result |
+|---|---|---|
+| 2026-11-18 | Restore drill on the newest production backup, `hostelconnect-2026-11-18T0305Z.dump.age` | Passed at migration 024 (`024_delete_with_history.sql`, 24 rows in `schema_migrations`): 2 hostels, 2 users, 1 building, floor, room, bed and stay, 1 structure deletion, 1 deletion code, every other table empty, matching production after the launch checks. `restore_drill` dropped and the downloaded backup deleted |
+| 2026-11-07 | Restore drill on the newest production backup, `hostelconnect-2026-11-07T0105Z.dump.age` | Passed: users 2, stays 2, 12 migrations (the last `012_polls_fees_settings.sql`); `restore_drill` dropped and the downloaded backup deleted. The second user was a test student, since moved out |
+| 2026-11-07 | Restore drill on seeded data, with the real key (section 9) | Passed; row counts not recorded |

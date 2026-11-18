@@ -4,7 +4,7 @@ import { AMBER_PERCENT, egressKey, getUsage, UPLOADS_OFF_PERCENT, type UsageLimi
 import { inRollback, insertStudent, testPool } from "./helpers/db";
 import { asHostel } from "./helpers/hostels";
 
-// The usage guard (Nikhil). Other test files add complaints at the same time, so storage
+// The usage guard. Other test files add complaints at the same time, so storage
 // and failed deletions are totals over every complaint: each test runs in one rolled-back
 // snapshot (REPEATABLE READ), reads what was already there with plain SQL, and adds its
 // own photos on top. Egress uses months in 1995, which no other test touches. The clock is

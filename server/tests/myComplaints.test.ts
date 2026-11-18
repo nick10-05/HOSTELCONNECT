@@ -3,7 +3,7 @@ import { HttpError } from "../src/lib/http";
 import { getMyComplaint, listMyComplaints } from "../src/services/complaints";
 import { insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// A student's own complaints: listMyComplaints and getMyComplaint (you write them), with
+// A student's own complaints: listMyComplaints and getMyComplaint, with
 // the ownership filter. Rows are committed and written straight to the tables, so each
 // test makes its own students and looks only at them.
 const db = testPool();

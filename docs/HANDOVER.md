@@ -4,8 +4,8 @@ How to give the SNS Hostel owner their own account for each part of HostelConnec
 losing data. Each step says who does it, how to check it worked, and whether it can be
 undone. Do them in order and one at a time; the site stays up throughout.
 
-What is known and what is not was checked on 2026-11-18 (docs/progress.md, "Handover").
-Anything marked **Check** was not confirmed in advance and must be looked at on the day.
+What is known and what is not was checked on 2026-11-18. Anything marked **Check** was not
+confirmed in advance and must be looked at on the day.
 
 ## What there is to hand over
 

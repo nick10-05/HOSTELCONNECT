@@ -3,8 +3,7 @@ import type { PhotoStorage } from "../lib/storage";
 
 // The expire-photos job (design doc, sections 9 and 10), run by POST /api/internal/run-jobs
 // every hour. Complaint photos live 48 hours; this deletes the ones whose time is up.
-// Written by Claude at Nikhil's request (section 12 lists "expiry and retry logic" under
-// "You write"). tests/expirePhotos.test.ts describes it.
+// tests/expirePhotos.test.ts describes it.
 
 // Photos per run (section 10: "up to 50").
 export const EXPIRE_BATCH = 50;

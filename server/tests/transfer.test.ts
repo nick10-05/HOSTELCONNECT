@@ -4,7 +4,7 @@ import { HttpError } from "../src/lib/http";
 import { transferStudent, type TransferInput } from "../src/services/students";
 import { insertOwner, insertStay, insertStructure, insertStudent, testPool } from "./helpers/db";
 
-// transferStudent in src/services/students.ts (you write it). Like admitStudent it runs
+// transferStudent in src/services/students.ts. Like admitStudent it runs
 // its own transaction, so these tests use the pool and every test makes its own building
 // and student.
 const db = testPool();

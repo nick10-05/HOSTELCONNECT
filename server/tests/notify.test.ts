@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { notify } from "../src/services/notifications";
 import { inRollback, insertOwner, insertStudent, testPool } from "./helpers/db";
 
-// notify in src/services/notifications.ts (you write it). Rows are committed, so every
+// notify in src/services/notifications.ts. Rows are committed, so every
 // test uses its own title (or key) and looks only at its own rows: other test files add
 // students and notifications at the same time.
 const db = testPool();

@@ -90,11 +90,11 @@ The decisions I made before starting (2026-11-07):
 - **A free beta first.** It stays on the free Render and Supabase plans, and owners pay nothing. I move to paid hosting (about USD 30–35 a month) once real hostels depend on it. During the beta, the first visit after a quiet spell still takes about a minute.
 - **Limits per hostel:** 300 students, 20 buildings and one hostel per owner account. I can raise them for a hostel that needs more. Sign-up can be switched off at any time if it is abused.
 - **Students under 18.** When an owner admits a student marked under 18, they must confirm that they hold the guardian's consent, and the app records who confirmed it and when.
-- **Legal documents.** Claude drafts the Terms of Service, Privacy Policy and data processing agreement from what the app actually stores. A lawyer reviews them, and sign-up stays closed until then.
+- **Legal documents.** The Terms of Service, Privacy Policy and data processing agreement are drafted from what the app actually stores. A lawyer reviews them, and sign-up stays closed until then.
 - **The address** stays on onrender.com for the beta.
 - **Owners sign in with Google only**, including me: I link my Google account to the existing owner account and then drop its password. Students keep their email and temporary password, and sign in at their hostel's own address (`/h/<hostel>/login`).
 
-How the separation works: every table that belongs to a hostel has a `hostel_id`. The database refuses a row that points into another hostel or tries to move to another one, and in phase 2 row-level security makes Postgres itself hide other hostels' rows, so a forgotten filter in the code cannot leak data. The work is split into six phases, each deployed on its own while sign-up stays closed; the progress is recorded in `docs/progress.md`.
+How the separation works: every table that belongs to a hostel has a `hostel_id`. The database refuses a row that points into another hostel or tries to move to another one, and in phase 2 row-level security makes Postgres itself hide other hostels' rows, so a forgotten filter in the code cannot leak data. The work is split into six phases, each deployed on its own while sign-up stays closed.
 
 Deleting buildings and rooms (2026-11-17): an owner may delete one that students lived in,
 and the students' history keeps its name. Because that cannot be undone, it needs the typed
@@ -105,10 +105,8 @@ logged. A building or room someone lives in, or is booked into, still cannot be 
 
 HostelConnect was developed through an iterative, step-by-step process. I made the architectural decisions, defined the requirements, selected the technology stack and decided the trade-offs based on the hostel's actual needs.
 
-I used Claude as a coding assistant to scaffold the application, implement features and write tests. I reviewed the proposed changes, discussed implementation decisions, investigated failures and approved each step before moving forward.
-
 Testing was an important part of the process. The project has 1,009 server tests and 317 client tests. New tests were not simply accepted because they passed. They were deliberately checked against planted bugs to confirm that they failed when the expected behaviour was broken. Afterward, the correct implementation was restored and the tests were run again.
 
-Development was divided into manageable stages, with implementation, testing, verification and documentation handled incrementally. Decisions, corrections and progress were recorded in `docs/progress.md`.
+Development was divided into manageable stages, with implementation, testing, verification and documentation handled incrementally. Decisions and their trade-offs are recorded in this document.
 
-The goal was not just to generate working code with AI, but to understand the system, verify its behaviour and build an application that could be maintained and improved.
+The goal was not just working code, but to understand the system, verify its behaviour and build an application that could be maintained and improved.

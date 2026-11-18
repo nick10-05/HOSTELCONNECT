@@ -5,7 +5,7 @@ import { HttpError } from "../src/lib/http";
 import { listFees, markFeeInTransaction, PAYMENT_LINK, type FeeFilters } from "../src/services/fees";
 import { inRollback, insertOwner, testPool } from "./helpers/db";
 
-// The owner's fee list and marking a fee paid or pending (day 9, Claude). Each test rolls
+// The owner's fee list and marking a fee paid or pending (day 9). Each test rolls
 // back. Fee rows are dated July 1997: no other test file has fee rows then (the others roll
 // back too, and use other years), so the month's totals here are exact.
 const db = testPool();

@@ -200,7 +200,7 @@ server/scripts/     migrate, seed-owner, import-students, seed-200-students, res
 server/src/         routes/, services/, middleware/, jobs/, lib/
 server/tests/       unit and integration tests
 ops/                restore-drill.sh, restore-data.sh
-docs/               deploy.md, RECOVERY.md, progress.md, import-template.csv
+docs/               deploy.md, RECOVERY.md, decisions.md, import-template.csv
 ```
 
 ## Operating it
@@ -208,8 +208,8 @@ docs/               deploy.md, RECOVERY.md, progress.md, import-template.csv
 - [docs/deploy.md](docs/deploy.md): setting up Render, Supabase, secrets and backups.
 - [docs/RECOVERY.md](docs/RECOVERY.md): what to do when something breaks, restoring a
   backup, the owner's lost password, rotating secrets, and a monthly checklist.
-- [docs/progress.md](docs/progress.md): what was built each day, decisions, and how each
-  deployment was checked.
+- [docs/decisions.md](docs/decisions.md): the design decisions and trade-offs, and how the
+  app was built and tested.
 
 ### Free-tier limits, honestly
 
