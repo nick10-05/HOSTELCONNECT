@@ -15,7 +15,7 @@ No secret is written here. Every account is on a free plan with no card.
 
 | Thing | Where it is | Used by |
 |---|---|---|
-| GitHub `nick10-05/HOSTELCONNECT` (public) | github.com | Code, CI, the three scheduled or manual workflows |
+| GitHub `nick10-05/HOSTELCONNECT` (public) | github.com | Code and CI, plus four workflows: **Backup database** (nightly), **Run jobs** (hourly), **Database activity check** (daily) and **Migrate production database** (by hand only) |
 | Render web service `hostelconnect` (Singapore) | render.com | The app: one Docker container |
 | Supabase project `hostelconnect` (Singapore) | supabase.com | Postgres and the photo bucket `complaint-photos` |
 | Supabase **admin password** (role `postgres`) | Your password manager | Migrations only: GitHub secret `MIGRATION_DATABASE_URL` |
@@ -26,21 +26,43 @@ No secret is written here. Every account is on a free plan with no card.
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Render only | Photo storage. The secret key reaches every bucket of the project |
 | `AGE_PUBLIC_KEY` | GitHub secret (safe to share) | Encrypts each backup |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL` | Render only; the client in Google Cloud Console (project `HostelConnect`) | Owners' Google sign-in. The secret lets anyone exchange sign-in codes as the app |
+| Brevo account (Free plan) and `BREVO_API_KEY`, `EMAIL_FROM` | brevo.com; the key and the verified sender address in Render only | Emails the 6-digit code an owner needs to delete a building or room. Brevo deletes a key after 90 days without use: section 3, "Email me a code" |
+| Healthchecks.io account (Free plan), check `HostelConnect backup` | healthchecks.io; it emails the developer | Missed-backup alert: section 2 |
+| `HEALTHCHECKS_PING_URL` | GitHub secret only (`https://hc-ping.com/…`) | The backup reports its start and end to that check. Anyone holding it could report a backup that never ran, so it is a secret |
 | **Backup private key** `hostelconnect-backup.key` | Two places off this laptop (USB stick, password manager) | The only way to open a backup. **Lost key = useless backups** |
-| Owner's app password | The owner's own memory or password manager | Logging in; reset with section 6 |
+| Owner's sign-in | The owner's own Google account (the one used at sign-up); HostelConnect stores no owner password | Logging in, and the email that deletion codes go to. Section 6 if they cannot sign in |
 
 GitHub secrets live in Settings → Environments → `production`. Render's are in the
-service's Environment page. `FEES_START_DATE` (Render) is a setting, not a secret.
+service's Environment page. `FEES_START_DATE` and `SIGNUPS_OPEN` (Render) are settings,
+not secrets; `SIGNUPS_OPEN` stays `false` until new hostels may sign up.
 
 ## 2. Health checks
 
 1. Open `/api/health`. The first visit after 15 idle minutes waits about a minute while
    Render wakes the server; that is normal.
-2. GitHub → Actions: the latest **CI**, **Backup database** (03:00 IST nightly) and
-   **Run jobs** (7 minutes past every hour) runs are green. A failed run emails you.
-3. Render → the service → Events and Logs: the latest deploy is "live".
-4. Supabase → the project: not paused; Database and Storage usage well under the limits.
-5. The owner's dashboard: no amber or red usage banner, no warning about photo deletions.
+2. GitHub → Actions: the latest **CI**, **Backup database**, **Run jobs** and **Database
+   activity check** runs are green. A failed run emails you. GitHub starts scheduled runs
+   late and skips some (November 2026), so expect:
+   - **Backup database**: one run a night, scheduled for 03:00 IST but usually starting
+     3 to 6.5 hours later;
+   - **Run jobs**: a few runs a day, not one every hour, with gaps of up to about 11 hours.
+     Every job only does what is due, so a late run catches up; fee reminders, the
+     owner's digest (from 08:00 IST) and photo deletion can arrive hours late;
+   - **Database activity check**: one run a day (15:17 IST, often later). It runs `SELECT 1`
+     straight against the database, so a run fails when the database is paused or
+     unreachable, even if Render is fine.
+   A run GitHub silently dropped sends no email: the missed-backup alert below covers the
+   backup.
+3. Healthchecks.io → the check **HostelConnect backup** is "up". Each backup run reports its
+   start and its end. Healthchecks.io emails when a run reports a failure, or when no run
+   has finished within 12 hours of 21:30 UTC (03:00 IST): a dropped run, or schedules
+   switched off after 60 days without a commit. On that email, open GitHub → Actions →
+   **Backup database**: re-enable the workflow if GitHub disabled it, read the failed
+   run's log, and run it by hand. Setup and replacing the ping URL: `docs/deploy.md`,
+   step 6a.
+4. Render → the service → Events and Logs: the latest deploy is "live".
+5. Supabase → the project: not paused; Database and Storage usage well under the limits.
+6. The owner's dashboard: no amber or red usage banner, no warning about photo deletions.
 
 ## 3. The site is down
 
@@ -52,14 +74,15 @@ Work down the list; stop at the first thing that is wrong.
 | The page loads but `/api/health` fails, or every action errors | The database is paused or unreachable | Section 4 |
 | Render log says the database refused the password | `DATABASE_URL` in Render does not match `hostel_app`'s password | Section 7, "App database password" |
 | Everything was fine until a merge | The new code | Roll back in Render, then fix on a branch. If the merge added a migration, the rollback still works: migrations only add |
+| "Email me a code" (deleting a building or room) says the email could not be sent | Usually the Brevo API key: Brevo deletes a key after 90 days without use, and deletions are rare | Brevo → Settings → API keys: create a new key restricted to Transactional email (Brevo may ask to verify the account's phone). Render → Environment → replace `BREVO_API_KEY` → save (redeploys). Delete the old key in Brevo if it still exists. If the key is fine, check Brevo's transactional log, and that `EMAIL_FROM` is still a verified sender |
 
 While it is down, tell the owner. Students can still pay by UPI; the owner marks fees later.
 
 ## 4. The database is paused
 
-Supabase pauses a free project after 7 days without activity (the nightly backup and the
-hourly jobs should prevent it). Supabase → the project → **Restore project** (Resume). It
-takes a few minutes. No data is lost and no restore is needed. Then check `/api/health`.
+Supabase pauses a free project after 7 days without activity (the nightly backup, the daily
+database activity check and the hourly jobs should prevent it). Supabase → the project →
+**Restore project** (Resume). It takes a few minutes. No data is lost and no restore is needed. Then check `/api/health`.
 
 ## 5. Restoring a backup
 
@@ -109,10 +132,38 @@ Photos are not in backups (they live 48 hours), so restored complaints say "phot
 entered again (usually that day's fee payments), and write a short note in
 the log at the end of this guide (section 11): what broke, which backup, what was re-entered.
 
-## 6. The owner forgot his password
+## 6. The owner cannot sign in
 
-The owner has no one to ask, so you reset it from your laptop. In a **new** PowerShell
-window (the variable dies with it):
+The owner signs in with Google only: **Sign in with Google** on the hostel's own page,
+`/h/<address>/login` (SNS: `/h/sns-boys-hostel/login`). HostelConnect stores no password
+for them, so there is nothing to reset here. Work down the list:
+
+1. **The wrong Google account.** Only the Google account the hostel was signed up with
+   works. In a browser signed in to several Google accounts, pick that one on Google's
+   screen, or use a private window. The deletion codes also go to that account's address.
+2. **The site or Google is down.** Check `/api/health` (section 3) and
+   https://www.google.com/appsstatus.
+3. **The owner cannot get into the Google account itself** (forgotten password, lost
+   phone): HostelConnect cannot help with that. The owner recovers it at
+   https://accounts.google.com/signin/recovery, using the recovery phone or email set on
+   the account. Once they are back in Google, they sign in to HostelConnect as before;
+   nothing in HostelConnect changes.
+4. **The Google account is lost for good.** There is no script or screen to move a hostel
+   to another Google account. The hostel's data is safe (it is in the database and the
+   backups), but the owner cannot sign in until the developer changes their sign-in by
+   hand in the database, which has not been written or tested yet. Treat it as an
+   incident: keep the site running, and record it in section 11.
+
+**Prevention, at the handover:** on the owner's Google account, set a recovery phone and a
+recovery email, turn on 2-Step Verification, and keep Google's backup codes somewhere safe
+(https://myaccount.google.com/security).
+
+### A hostel #1 owner who signs in with a password
+
+Only hostel #1 (`sns-hostel`, suspended since 2026-11-16) has an owner with a password;
+owners of every other hostel sign in with Google, and the script refuses them. If hostel #1
+is ever used again and its owner forgets the password, you reset it from your laptop. In a
+**new** PowerShell window (the variable dies with it):
 
 ```powershell
 cd C:\Users\NICK\projects\HOSTELCONNECT\server
@@ -123,12 +174,12 @@ npm run reset:owner-password -- --hostel <hostel's address, e.g. sns-hostel> --e
 - `DATABASE_URL` is the app's URL from Render (the `no-verify` one). With `--production`
   the script ignores `.env` and refuses a database on this machine.
 - It asks you to type the owner's email again. Then it prints a temporary password once.
-- Give it to the owner in person or by phone, never in a group chat. He must choose a new
+- Give it to the owner in person or by phone, never in a group chat. They must choose a new
   one at the next login.
 - Then: `Clear-Host; Remove-Item Env:DATABASE_URL` and close the window.
 
 If it says "No owner account has that email", nothing changed: check the spelling.
-This script resets the owner's password only.
+This script resets hostel #1's owner password only.
 
 **A student forgot their password:** no script is needed. The owner opens the student's
 profile → **Reset password** → **Yes, reset password**, and gives the temporary password shown
@@ -148,6 +199,8 @@ Rotate when a secret may have leaked (pasted somewhere, a laptop lost) and once 
 | Supabase admin password | Supabase → Project Settings → Database → reset password. Update GitHub `MIGRATION_DATABASE_URL` | The nightly backup and migrations fail until the secret is updated; run **Backup database** by hand after |
 | `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API keys → create a new secret key, set it in Render, then delete the old key | Photo upload and viewing fail between the two edits |
 | `GOOGLE_CLIENT_SECRET` | Google Cloud Console → Clients → HostelConnect web → Add secret; set it in Render; then disable and delete the old secret there | Google sign-in fails between the Render change and its redeploy; passwords unaffected |
+| `BREVO_API_KEY` | Brevo → Settings → API keys → new key restricted to Transactional email; set it in Render (redeploys); then delete the old key in Brevo | "Email me a code" fails until Render has redeployed |
+| `HEALTHCHECKS_PING_URL` | Healthchecks.io → the check → Settings → change the ping URL; update the GitHub secret; run **Backup database** by hand and check the check is "up" | Backups run as normal; until the secret is updated, the check gets no pings and emails that the backup is late |
 | Backup key pair | `age-keygen -o hostelconnect-backup-<year>.key`; put its public key in the GitHub secret `AGE_PUBLIC_KEY`. **Keep the old private key** for 90 days: older backups need it | None |
 
 ## 8. Moving to another host
@@ -158,13 +211,23 @@ The app is one Docker image (`Dockerfile`), so any host that runs containers wil
    `/api/health`.
 2. Set: `NODE_ENV=production`, `DATABASE_URL`, a new `JWT_SECRET`, `SUPABASE_URL`,
    `SUPABASE_SECRET_KEY`, `JOB_SECRET`, and `FEES_START_DATE` if it is set on Render.
+   Also, copied from Render: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (owners cannot
+   sign in without them), `BREVO_API_KEY`, `EMAIL_FROM` and `EMAIL_FROM_NAME` if set
+   (deletion codes), and `SIGNUPS_OPEN` (keep `false` unless sign-up is open). Set
+   `PUBLIC_URL` to the **new** address, with no path. The server refuses to start with some
+   but not all of the three Google settings, or with `SIGNUPS_OPEN=true` and no Google.
    Optional limits (`STORAGE_LIMIT_MB`, `EGRESS_LIMIT_MB`, `PHOTO_MAX_BYTES`,
    `PHOTO_LINK_SECONDS`, `COMPLAINT_MAX_ACTIVE`, `COMPLAINT_MAX_NEW_PER_DAY`,
    `STORAGE_BUCKET`): copy whatever Render has. `PORT` only if the host requires it.
 3. The app expects exactly one proxy in front of it (it trusts one `X-Forwarded-For` hop
    in production). Check the host works that way, or rate limits see the wrong address.
-4. Change `APP_URL` in `.github/workflows/jobs.yml` to the new address.
-5. Tell the owner and students the new address. Then delete the Render service.
+4. Google Cloud Console → project `HostelConnect` → Clients → HostelConnect web: add
+   `<new address>/api/auth/google/callback` to the authorised redirect URIs, and update
+   the home, privacy and terms links under Branding. Until then Google refuses owners'
+   sign-in on the new address. Remove the old redirect URI once the old host is gone.
+5. Change `APP_URL` in `.github/workflows/jobs.yml` to the new address (and in
+   `ops/cloudflare-jobs/wrangler.toml` if the Worker is deployed, then redeploy it).
+6. Tell the owner and students the new address. Then delete the Render service.
 
 Moving the database is section 5B with the new provider's URLs (session-mode, IPv4).
 
@@ -212,8 +275,11 @@ section 11.
 
 ## 10. Monthly check (15 minutes)
 
-- [ ] Actions: CI, Backup database and Run jobs all green; Run jobs shows "schedule" runs
-      every hour, Backup database one every night.
+- [ ] Actions: CI, Backup database, Run jobs and Database activity check all green.
+      Backup database shows one run a night and Database activity check one a day (both
+      often hours late); Run jobs shows a few "schedule" runs a day (section 2).
+- [ ] Healthchecks.io: `HostelConnect backup` is "up", and its log shows a start and a
+      success for each night.
 - [ ] Download last night's backup and run the restore drill (section 9). Every third month
       at least; monthly is better.
 - [ ] Keep one backup a month on your own drive for a year (the artifacts expire after 90 days).
@@ -223,8 +289,10 @@ section 11.
 - [ ] Dependabot or `npm audit` warnings: read them; update on a branch, never on `main`.
 - [ ] A commit in the last 60 days, or GitHub will switch the scheduled workflows off (it
       emails first; Actions → the workflow → Enable).
-- [ ] You can still sign in to GitHub, Render and Supabase, and both copies of the backup
-      key are where this guide says.
+- [ ] You can still sign in to GitHub, Render, Supabase, Brevo and Healthchecks.io, and
+      both copies of the backup key are where this guide says.
+- [ ] Brevo: if no building or room was deleted for about 80 days, the key is close to
+      Brevo's 90-day limit; expect to replace it (section 3) at the next deletion.
 
 ## 11. Drill and incident log
 
