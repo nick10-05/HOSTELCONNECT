@@ -60,8 +60,14 @@ jobs:
         run: npm run migrate
       - run: npm test
       - run: npm run build
-      - name: Check dependencies for known vulnerabilities
-        run: npm audit --audit-level=high
+      # Blocks on the dependencies that ship (the app's runtime packages). The build and
+      # test tools (vite, vitest and theirs) never reach the live site, so an advisory in
+      # them is printed as a warning instead of failing every run until upstream fixes it
+      # (decided 2026-11-18, for a picomatch advisory with no fixed version yet).
+      - name: Check the app's dependencies for known vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - name: Report advisories in the build and test tools (does not fail)
+        run: npm audit --audit-level=high || echo "::warning::npm audit reports advisories in development dependencies; read the log above."
 
   client:
     runs-on: ubuntu-latest
@@ -83,5 +89,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Check dependencies for known vulnerabilities
-        run: npm audit --audit-level=high
+      # Blocks on the dependencies that ship (the app's runtime packages). The build and
+      # test tools (vite, vitest and theirs) never reach the live site, so an advisory in
+      # them is printed as a warning instead of failing every run until upstream fixes it
+      # (decided 2026-11-18, for a picomatch advisory with no fixed version yet).
+      - name: Check the app's dependencies for known vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - name: Report advisories in the build and test tools (does not fail)
+        run: npm audit --audit-level=high || echo "::warning::npm audit reports advisories in development dependencies; read the log above."
