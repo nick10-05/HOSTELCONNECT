@@ -161,6 +161,19 @@ flowchart LR
 - **One origin.** React is served by the same Express app, so the session is an httpOnly,
   SameSite=Lax cookie with no CORS setup, and JavaScript can never read the token.
 
+## ⚖️ Engineering decisions & trade-offs
+
+The full reasoning is in [`docs/decisions.md`](docs/decisions.md).
+
+| Decision | Why | What it costs |
+|---|---|---|
+| **Structured complaints, not another chat** | Limits (3 open per student, 2 new a day, 1 per category) protect the owner's time, and a daily digest replaces constant pings | Students can't discuss complaints, and the owner checks a dashboard instead of getting an alert for each one |
+| **Hourly scheduled jobs, no background process** | Free servers sleep, so jobs run from GitHub Actions and are idempotent: a late or extra run does no harm | Scheduled work can be delayed; paid always-on hosting is the upgrade path |
+| **Plain SQL, and the database has the last word** | Full control and visibility over every query; a unique index makes double-booking a bed impossible even when two requests race | More SQL written by hand than with an ORM |
+| **Security sized to the threat** | The realistic attacker is a curious or angry student: per-student query filters, 404 instead of 403, login limits, a database role that can't drop tables, strict CSP | No two-factor login for the owner yet |
+| **Money stays outside the app** | Students pay the owner's UPI directly: no gateway fees, failed payments, refunds or stored financial data | The owner confirms each payment by hand |
+| **Encrypted nightly backups, tested by restore drills** | Records survive a crash, a hack or an accidental delete; encrypted because the repository is public | Up to a day of changes could be lost in the worst case |
+
 ## 🧰 Stack
 
 | | |
