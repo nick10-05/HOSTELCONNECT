@@ -29,7 +29,7 @@
   <rect x="1" y="1" width="1198" height="338" rx="21" fill="none" stroke="#1E2647" stroke-width="2"/>
   <rect x="2" y="2" width="1196" height="336" rx="20" fill="none" stroke="url(#sw)" stroke-width="2.5" stroke-linecap="round"
         stroke-dasharray="613 2451"><animate attributeName="stroke-dashoffset" values="0;-3064" dur="8s" repeatCount="indefinite"/></rect>
-  <g class="fade" style="animation-delay:.1s"><text x="64" y="76" font-family='ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace' font-size="14" font-weight="700" fill="#EC4899" letter-spacing="2.5">HOSTEL MANAGEMENT · LIVE</text></g>
+  <g class="fade" style="animation-delay:.1s"><text x="64" y="76" font-family='ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace' font-size="14" font-weight="700" fill="#EC4899" letter-spacing="2.5">HOSTEL MANAGEMENT · DEPLOYED</text></g>
   <g class="fade" style="animation-delay:.3s"><text x="60" y="152" font-family='-apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif' font-size="72" font-weight="800" letter-spacing="-2" fill="url(#ng)">HostelConnect</text></g>
   <g class="fade" style="animation-delay:.55s">
     <text x="64" y="194" font-family='-apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif' font-size="21" font-weight="600" fill="#F4F5FB">From a chaotic WhatsApp group to one calm app.</text>

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/nick10-05/HOSTELCONNECT/actions/workflows/ci.yml"><img src="https://github.com/nick10-05/HOSTELCONNECT/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/status-live%20·%20real%20users-34D399" alt="Live with real users">
+  <img src="https://img.shields.io/badge/status-deployed-34D399" alt="Deployed">
   <img src="https://img.shields.io/badge/tests-160%2B%20files-34D399" alt="160+ test files">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
   <img src="https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white" alt="Express 5">
