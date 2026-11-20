@@ -1,12 +1,35 @@
-# HostelConnect
+<p align="center">
+  <a href="https://hostelconnect-o8e6.onrender.com"><img src="docs/assets/banner.svg" alt="HostelConnect: from a chaotic WhatsApp group to one calm hostel app" width="100%"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nick10-05/HOSTELCONNECT/actions/workflows/ci.yml"><img src="https://github.com/nick10-05/HOSTELCONNECT/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/status-live%20·%20real%20users-34D399" alt="Live with real users">
+  <img src="https://img.shields.io/badge/tests-160%2B%20files-34D399" alt="160+ test files">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
+  <img src="https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white" alt="Express 5">
+  <img src="https://img.shields.io/badge/PostgreSQL-RLS-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL with row-level security">
+  <img src="https://img.shields.io/badge/hosting-%E2%82%B90%2Fmonth-EC4899" alt="Runs at ₹0 a month">
+</p>
+
+<p align="center">
+  <b><a href="https://hostelconnect-o8e6.onrender.com">Live app</a></b> ·
+  <a href="docs/decisions.md">Design decisions</a> ·
+  <a href="docs/RECOVERY.md">Recovery runbook</a> ·
+  <a href="docs/deploy.md">Deploy guide</a>
+</p>
 
 An owner-first management app for one hostel: two buildings, up to 200 students, run at
-₹0 a month on free tiers.
+₹0 a month on free tiers. Accounts are created by the owner; the first visit after a quiet
+spell takes about a minute while the free server wakes up.
 
-**Live:** https://hostelconnect-o8e6.onrender.com (accounts are created by the owner; the
-first visit after a quiet spell takes about a minute while the free server wakes up).
+## ⚡ At a glance
 
-## Why it exists
+| 🏠 A complete product | 🔐 Locked down | ⚙️ Runs itself | 📱 Feels like an app |
+|---|---|---|---|
+| Complaints with timelines, notices, fee cycles with UPI QR, return polls, transfers, CSV import, rejoin requests | Row-level security, a database role that can't drop tables, strict CSP, private photos behind 60-second signed links | Hourly idempotent jobs, a daily digest, nightly `age`-encrypted backups and a tested restore drill | Floating tab bar, frosted glass, Aurora and Midnight themes, WCAG AA contrast, 44 px touch targets |
+
+## 🎯 Why it exists
 
 Students used to raise complaints in a WhatsApp group. Everyone posted everything, the
 complaints were buried in chatter, the same issue came back every day, and the owner was
@@ -22,7 +45,7 @@ can reach everyone) and removes what failed:
 | Constant pings to the owner | No notification per complaint: a dashboard, and one digest a day |
 | Arguments in replies | No replies. The owner changes the status and may add a one-way note |
 
-## What it does
+## ✨ What it does
 
 **The owner**
 
@@ -59,7 +82,7 @@ button and link is at least 44px tall. The colours live as tokens in
 `client/src/index.css`; the shared parts (buttons, cards, lists, filters, sheets, toasts,
 icons) are in `client/src/ui/`.
 
-## Screenshots
+## 📸 Screenshots
 
 All from a local development database with fake students and a demo UPI ID. The owner's
 pages are shown in light mode on a laptop, the student's in dark mode on a phone.
@@ -84,7 +107,7 @@ QR drawn from it), with the tab bar at the bottom.
   <img src="docs/screenshots/student-fees.png" alt="Student fees page on a phone in dark mode" width="300">
 </p>
 
-## Architecture
+## 🧩 Architecture
 
 ```mermaid
 flowchart LR
@@ -138,7 +161,7 @@ flowchart LR
 - **One origin.** React is served by the same Express app, so the session is an httpOnly,
   SameSite=Lax cookie with no CORS setup, and JavaScript can never read the token.
 
-## Stack
+## 🧰 Stack
 
 | | |
 |---|---|
@@ -147,7 +170,7 @@ flowchart LR
 | Tests | Vitest, Supertest, Testing Library; server tests run against a real Postgres |
 | Hosting | Render (Docker), Supabase (Postgres and storage), GitHub Actions |
 
-## Security in short
+## 🔐 Security in short
 
 - Two roles, checked on every request; every student query is filtered by the student's
   own id, and another student's record answers 404, not 403, so ids cannot be probed.
@@ -165,7 +188,10 @@ flowchart LR
   artifacts of a public repository can be downloaded by anyone signed in to GitHub.
 - Phone numbers never appear in logs, URLs or notification text.
 
-## Running it locally
+## 💻 Running it locally
+
+<details>
+<summary><b>Postgres, migrations, seed data and tests</b></summary>
 
 You need Node 24, Docker and Git.
 
@@ -190,7 +216,12 @@ npm run dev                 # app on http://localhost:5173 (calls /api on port 3
 Tests: `npm test` in `server` (creates and migrates its own `hostelconnect_test`
 database each run) and in `client`.
 
-## Repository layout
+</details>
+
+## 🗂️ Repository layout
+
+<details>
+<summary><b>Where everything lives</b></summary>
 
 ```
 .github/workflows/  ci.yml, jobs.yml (hourly), backup.yml (nightly), migrate.yml (by hand)
@@ -203,7 +234,9 @@ ops/                restore-drill.sh, restore-data.sh
 docs/               deploy.md, RECOVERY.md, decisions.md, import-template.csv
 ```
 
-## Operating it
+</details>
+
+## 🛠️ Operating it
 
 - [docs/deploy.md](docs/deploy.md): setting up Render, Supabase, secrets and backups.
 - [docs/RECOVERY.md](docs/RECOVERY.md): what to do when something breaks, restoring a
@@ -211,7 +244,8 @@ docs/               deploy.md, RECOVERY.md, decisions.md, import-template.csv
 - [docs/decisions.md](docs/decisions.md): the design decisions and trade-offs, and how the
   app was built and tested.
 
-### Free-tier limits, honestly
+<details>
+<summary><b>Free-tier limits, honestly</b></summary>
 
 The free Render server sleeps after 15 idle minutes and takes about a minute to wake.
 Supabase pauses a project after a week without activity (the hourly jobs and nightly
@@ -219,3 +253,5 @@ backup keep it busy) and gives no backup you can download, hence the encrypted n
 dump. GitHub switches scheduled workflows off after 60 days without a commit. Up to a
 day of changes can be lost in the worst case; the restore drill in `docs/RECOVERY.md` is
 how that promise is checked.
+
+</details>
